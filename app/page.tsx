@@ -54,8 +54,8 @@ const models = [
   }
 ];
 
-const toolsMap: { [tool: string]: string } = {
-  'API-get-self': 'Fetch workspace'
+const toolsMap: { [tool: string]: `tool-${string}` } = {
+  'API-get-self': 'tool-Fetch workspace'
 }
 
 const ChatBotDemo = () => {
@@ -91,6 +91,9 @@ const ChatBotDemo = () => {
                   <img src="vlad.png" className="h-[150px] aspect-square border mb-2" />
                   <Response>
                     Hello, I am Vlad a software developer.
+                  </Response>
+                  <Response>
+                    You can ask me about my experience, my past projects or my notions templates.
                   </Response>
                 </MessageContent>
               </Message>
@@ -146,7 +149,7 @@ const ChatBotDemo = () => {
                             </Reasoning>
                           );
                         case 'dynamic-tool':
-                          const content = part.output?.content[0]?.text
+                          const content = (part.output as {content: [{text: string, type: 'text'}]})?.content[0]?.text
                           return <>
                             <Tool defaultOpen={false} key={`${message.id}-${i}`}>
                               <ToolHeader type={toolsMap[part.toolName]} state={part.state} />
