@@ -19,10 +19,17 @@ import {
   PromptInputToolbar,
   PromptInputTools,
 } from '@/components/ai-elements/prompt-input';
+import {
+  Tool,
+  ToolContent,
+  ToolHeader,
+  ToolOutput,
+  ToolInput,
+} from '@/components/ai-elements/tool';
 import { useState } from 'react';
 import { useChat } from '@ai-sdk/react';
 import { Response } from '@/components/ai-elements/response';
-import { GlobeIcon } from 'lucide-react';
+import { GlobeIcon, MessageCircle } from 'lucide-react';
 import {
   Source,
   Sources,
@@ -46,6 +53,10 @@ const models = [
     value: 'openai/gpt-5'
   }
 ];
+
+const toolsMap: { [tool: string]: string } = {
+  'API-get-self': 'Fetch workspace'
+}
 
 const ChatBotDemo = () => {
   const [input, setInput] = useState('');
@@ -74,6 +85,16 @@ const ChatBotDemo = () => {
       <div className="flex flex-col h-full">
         <Conversation className="h-full">
           <ConversationContent>
+            <div>
+              <Message from="assistant">
+                <MessageContent>
+                  <img src="vlad.png" className="h-[150px] aspect-square border mb-2" />
+                  <Response>
+                    Hello, I am Vlad a software developer.
+                  </Response>
+                </MessageContent>
+              </Message>
+            </div>
             {messages.map((message) => (
               <div key={message.id}>
                 {message.role === 'assistant' && (
@@ -124,6 +145,15 @@ const ChatBotDemo = () => {
                               <ReasoningContent>{part.text}</ReasoningContent>
                             </Reasoning>
                           );
+                        case 'dynamic-tool':
+                          const content = part.output?.content[0]?.text
+                          return <>
+                            <Tool defaultOpen={false} key={`${message.id}-${i}`}>
+                              <ToolHeader type={toolsMap[part.toolName]} state={part.state} />
+                              <ToolInput input={part.input} />
+                              <ToolOutput output={<Response>{content}</Response>} errorText={part.errorText} />
+                            </Tool>
+                          </>
                         default:
                           return null;
                       }

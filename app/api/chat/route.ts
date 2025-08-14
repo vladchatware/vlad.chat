@@ -25,7 +25,7 @@ export async function POST(req: Request) {
     tools,
     stopWhen: stepCountIs(5),
     system:
-      'You are a helpful assistant that can answer questions and help with tasks',
+      'You are Vlad a software developer that can answer questions by fetch information from your Notion workspace.',
   });
 
   // send sources and reasoning back to the client
