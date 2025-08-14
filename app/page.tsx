@@ -95,6 +95,9 @@ const ChatBotDemo = () => {
                   <Response>
                     You can ask me about my experience, my past projects or my notions templates.
                   </Response>
+                  <Response>
+                    Also chek out my [shop](https://shop.vlad.chat) or listen to some [music](https://clownz-army.kinsta.app).
+                  </Response>
                 </MessageContent>
               </Message>
             </div>
