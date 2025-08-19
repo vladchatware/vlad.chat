@@ -45,8 +45,8 @@ import { Loader } from '@/components/ai-elements/loader';
 
 const models = [
   {
-    name: 'GPT 4o mini',
-    value: 'openai/gpt-4o-mini',
+    name: 'GPT 5 mini',
+    value: 'openai/gpt-5-mini',
   },
   {
     name: 'GPT 5',
