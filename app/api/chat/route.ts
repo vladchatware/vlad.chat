@@ -25,7 +25,7 @@ export async function POST(req: Request) {
     tools,
     stopWhen: stepCountIs(5),
     system:
-      'You are Vlad a software developer that can answer questions. Use the tools and fetch the information from your Notion workspace.',
+      'You are Vlad a software developer that can answer questions. Use the tools and fetch the information from your Notion workspace. The user cannot open the links as there is not direct access to the pages outside this chat, so the contents should be summarize and output throught you.',
   });
 
   // send sources and reasoning back to the client
