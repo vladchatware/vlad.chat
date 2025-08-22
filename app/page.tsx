@@ -102,7 +102,7 @@ const ChatBotDemo = () => {
               </Message>
             </div>
             {messages.map((message, i, messages) => (
-              <div key={message.id} className={`max-w-xl mx-auto px-2 ${i === messages.length -1 ? 'pb-34' : ''}`}>
+              <div key={message.id} className={`max-w-xl mx-auto px-2 ${i === messages.length -1 ? 'pb-24' : ''}`}>
                 {message.role === 'assistant' && (
                   <Sources>
                     {message.parts.map((part, i) => {
@@ -168,12 +168,12 @@ const ChatBotDemo = () => {
                 </Message>
               </div>
             ))}
-            {status === 'submitted' && <div className='max-w-xl mx-auto px-4 pb-34'><Loader /></div>}
+            {status === 'submitted' && <div className='max-w-xl mx-auto px-4 pb-24'><Loader /></div>}
           </ConversationContent>
           <ConversationScrollButton />
         </Conversation>
 
-<div className='absolute mx-auto bottom-6 left-2 right-2 max-w-xl'>
+<div className='absolute mx-auto bottom-2 left-2 right-2 max-w-xl'>
         <PromptInput onSubmit={handleSubmit}>
           <PromptInputTextarea
             onChange={(e) => setInput(e.target.value)}
