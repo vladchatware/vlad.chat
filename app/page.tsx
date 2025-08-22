@@ -81,11 +81,11 @@ const ChatBotDemo = () => {
   };
 
   return (
-    <div className="max-w-4xl mx-auto m-6 relative size-full h-screen">
+    <div className="relative size-full h-screen">
       <div className="flex flex-col h-full">
-        <Conversation className="h-full">
+        <Conversation>
           <ConversationContent>
-            <div>
+            <div className="max-w-xl mx-auto px-2">
               <Message from="assistant">
                 <MessageContent>
                   <img src="vlad.png" className="h-[150px] aspect-square border mb-2" />
@@ -101,8 +101,8 @@ const ChatBotDemo = () => {
                 </MessageContent>
               </Message>
             </div>
-            {messages.map((message) => (
-              <div key={message.id}>
+            {messages.map((message, i, messages) => (
+              <div key={message.id} className={`max-w-xl mx-auto px-2 ${i === messages.length -1 ? 'pb-34' : ''}`}>
                 {message.role === 'assistant' && (
                   <Sources>
                     {message.parts.map((part, i) => {
@@ -154,7 +154,7 @@ const ChatBotDemo = () => {
                         case 'dynamic-tool':
                           const content = (part.output as {content: [{text: string, type: 'text'}]})?.content[0]?.text
                           return <>
-                            <Tool defaultOpen={false} key={`${message.id}-${i}`}>
+                            <Tool key={`${message.id}-${i}`}>
                               <ToolHeader type={toolsMap[part.toolName]} state={part.state} />
                               <ToolInput input={part.input} />
                               <ToolOutput output={<Response>{content}</Response>} errorText={part.errorText} />
@@ -168,12 +168,13 @@ const ChatBotDemo = () => {
                 </Message>
               </div>
             ))}
-            {status === 'submitted' && <Loader />}
+            {status === 'submitted' && <div className='max-w-xl mx-auto px-4 pb-34'><Loader /></div>}
           </ConversationContent>
           <ConversationScrollButton />
         </Conversation>
 
-        <PromptInput onSubmit={handleSubmit} className="mt-4">
+<div className='absolute mx-auto bottom-6 left-2 right-2 max-w-xl'>
+        <PromptInput onSubmit={handleSubmit}>
           <PromptInputTextarea
             onChange={(e) => setInput(e.target.value)}
             value={input}
@@ -185,7 +186,7 @@ const ChatBotDemo = () => {
                 onClick={() => setWebSearch(!webSearch)}
               >
                 <GlobeIcon size={16} />
-                <span>Search</span>
+                <span style={{paddingBottom: 1}}>Search</span>
               </PromptInputButton>
               <PromptInputModelSelect
                 onValueChange={(value) => {
@@ -208,6 +209,7 @@ const ChatBotDemo = () => {
             <PromptInputSubmit disabled={!input} status={status} />
           </PromptInputToolbar>
         </PromptInput>
+        </div>
       </div>
     </div>
   );
