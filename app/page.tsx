@@ -82,7 +82,7 @@ const ChatBotDemo = () => {
 
   return (
     <div className="relative size-full h-screen">
-      <div className="flex flex-col h-full">
+      <div className="flex flex-col h-full" style={{ alignItems: 'center', alignSelf: 'center' }}>
         <Conversation>
           <ConversationContent>
             <div className="max-w-xl mx-auto px-2">
@@ -102,7 +102,7 @@ const ChatBotDemo = () => {
               </Message>
             </div>
             {messages.map((message, i, messages) => (
-              <div key={message.id} className={`max-w-xl mx-auto px-2 ${i === messages.length -1 ? 'pb-24' : ''}`}>
+              <div key={message.id} className={`max-w-xl mx-auto px-2 ${i === messages.length - 1 ? 'pb-24' : ''}`}>
                 {message.role === 'assistant' && (
                   <Sources>
                     {message.parts.map((part, i) => {
@@ -173,42 +173,42 @@ const ChatBotDemo = () => {
           <ConversationScrollButton />
         </Conversation>
 
-<div className='absolute mx-auto bottom-2 left-2 right-2 max-w-xl'>
-        <PromptInput onSubmit={handleSubmit}>
-          <PromptInputTextarea
-            onChange={(e) => setInput(e.target.value)}
-            value={input}
-          />
-          <PromptInputToolbar>
-            <PromptInputTools>
-              <PromptInputButton
-                variant={webSearch ? 'default' : 'ghost'}
-                onClick={() => setWebSearch(!webSearch)}
-              >
-                <GlobeIcon size={16} />
-                <span style={{paddingBottom: 1}}>Search</span>
-              </PromptInputButton>
-              <PromptInputModelSelect
-                onValueChange={(value) => {
-                  setModel(value);
-                }}
-                value={model}
-              >
-                <PromptInputModelSelectTrigger>
-                  <PromptInputModelSelectValue />
-                </PromptInputModelSelectTrigger>
-                <PromptInputModelSelectContent>
-                  {models.map((model) => (
-                    <PromptInputModelSelectItem key={model.value} value={model.value}>
-                      {model.name}
-                    </PromptInputModelSelectItem>
-                  ))}
-                </PromptInputModelSelectContent>
-              </PromptInputModelSelect>
-            </PromptInputTools>
-            <PromptInputSubmit disabled={!input} status={status} />
-          </PromptInputToolbar>
-        </PromptInput>
+        <div className='mx-auto bottom-2 left-2 right-2 max-w-xl' style={{ minWidth: '50%', paddingBlock: 16 }}>
+          <PromptInput onSubmit={handleSubmit}>
+            <PromptInputTextarea
+              onChange={(e) => setInput(e.target.value)}
+              value={input}
+            />
+            <PromptInputToolbar>
+              <PromptInputTools>
+                <PromptInputButton
+                  variant={webSearch ? 'default' : 'ghost'}
+                  onClick={() => setWebSearch(!webSearch)}
+                >
+                  <GlobeIcon size={16} />
+                  <span style={{ paddingBottom: 1 }}>Search</span>
+                </PromptInputButton>
+                <PromptInputModelSelect
+                  onValueChange={(value) => {
+                    setModel(value);
+                  }}
+                  value={model}
+                >
+                  <PromptInputModelSelectTrigger>
+                    <PromptInputModelSelectValue />
+                  </PromptInputModelSelectTrigger>
+                  <PromptInputModelSelectContent>
+                    {models.map((model) => (
+                      <PromptInputModelSelectItem key={model.value} value={model.value}>
+                        {model.name}
+                      </PromptInputModelSelectItem>
+                    ))}
+                  </PromptInputModelSelectContent>
+                </PromptInputModelSelect>
+              </PromptInputTools>
+              <PromptInputSubmit disabled={!input} status={status} />
+            </PromptInputToolbar>
+          </PromptInput>
         </div>
       </div>
     </div>
