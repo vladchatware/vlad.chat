@@ -12,7 +12,7 @@ export async function POST(req: Request) {
   }: { messages: UIMessage[]; model: string; webSearch: boolean } =
     await req.json();
 
-  const transport = new StreamableHTTPClientTransport(new URL('https://notion-mcp-server-i5w6.onrender.com/mcp'))
+  const transport = new StreamableHTTPClientTransport(new URL('https://vlad.chat/api/mcp'))
   const notion = await experimental_createMCPClient({
     transport
   })

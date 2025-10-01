@@ -26,7 +26,7 @@ import {
   ToolOutput,
   ToolInput,
 } from '@/components/ai-elements/tool';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useChat } from '@ai-sdk/react';
 import { Response } from '@/components/ai-elements/response';
 import { GlobeIcon, MessageCircle } from 'lucide-react';
@@ -152,7 +152,7 @@ const ChatBotDemo = () => {
                             </Reasoning>
                           );
                         case 'dynamic-tool':
-                          const content = (part.output as {content: [{text: string, type: 'text'}]})?.content[0]?.text
+                          const content = (part.output as { content: [{ text: string, type: 'text' }] })?.content[0]?.text
                           return <>
                             <Tool key={`${message.id}-${i}`}>
                               <ToolHeader type={toolsMap[part.toolName]} state={part.state} />
