@@ -186,9 +186,16 @@ const ChatBotDemo = () => {
               {suggestions.map(suggestion =>
                 <Suggestion
                   key={suggestion}
-                  onClick={() => {
-                    setInput(suggestion)
-                    handleSubmit({ preventDefault: () => { } })
+                  onClick={(suggestion) => {
+                    sendMessage(
+                      { text: suggestion },
+                      {
+                        body: {
+                          model: model,
+                          webSearch: webSearch,
+                        },
+                      },
+                    );
                   }} suggestion={suggestion} />
               )}
             </Suggestions>

@@ -74,11 +74,8 @@ Returns all pages or databases, excluding duplicated linked databases, that have
 To limit the request to search only pages or to search only databases, use the filter param.`,
       {
         sort: z.object({
-          timestamp: z.string().describe('The name of the timestamp to sort against. Possible values include last_edited_time.'),
+          timestamp: z.any().describe('The name of the timestamp to sort against. Possible values include last_edited_time.'),
           direction: z.enum(["ascending", "descending"]).describe('The direction to sort. Possible values include ascending and descending.')
-        }).default({
-          timestamp: 'last_edited_time',
-          direction: 'ascending'
         }).describe('A set of criteria, direction and timestamp keys, that orders the results. The only supported timestamp value is "last_edited_time". Supported direction values are "ascending" and "descending". If sort is not provided, then the most recently edited results are returned first.'),
         query: z.string().describe('Semantic search query over your entire Notion workspace and connected sources. For best results, dont provide more than one question per tool call.'),
         start_cursor: z.string().optional().describe('A cursor value returned in a previous response that If supplied, limits the response to results starting after the cursor. If not supplied, then the first page of results is returned.'),
@@ -88,8 +85,8 @@ To limit the request to search only pages or to search only databases, use the f
           value: z.string().describe('The value of the property to filter the results by. Possible values for object type include page or database. Limitation: Currently the only filter allowed is object which will filter by type of object (either page or database)')
         }).optional().nullable()
       },
-      async (args) => {
-        const res = await notion.search(args)
+      async ({ query, start_cursor, page_size, filter, sort }) => {
+        const res = await notion.search({ query, start_cursor, page_size })
         return {
           content: [{ type: 'text', text: JSON.stringify(res, null, 2) }]
         }
