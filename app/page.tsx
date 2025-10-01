@@ -180,7 +180,7 @@ const ChatBotDemo = () => {
           <ConversationScrollButton />
         </Conversation>
 
-        <div className='mx-auto bottom-2 left-2 right-2 max-w-xl' style={{ maxWidth: 800, paddingBlock: 16 }}>
+        <div className='mx-auto bottom-2 left-2 right-2 max-w-xl' style={{ maxWidth: 800, paddingInline: 16, paddingBlock: 16 }}>
           <div style={{ paddingBlock: 10 }}>
             <Suggestions>
               {suggestions.map(suggestion =>
