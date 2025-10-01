@@ -42,6 +42,7 @@ import {
   ReasoningTrigger,
 } from '@/components/ai-elements/reasoning';
 import { Loader } from '@/components/ai-elements/loader';
+import { Suggestion, Suggestions } from '@/components/ai-elements/suggestion';
 
 const models = [
   {
@@ -53,6 +54,12 @@ const models = [
     value: 'openai/gpt-5'
   }
 ];
+
+const suggestions = [
+  'Show your CV',
+  'Show me your actirivy',
+  'Can I hire you?'
+]
 
 const toolsMap: { [tool: string]: `tool-${string}` } = {
   'API-get-self': 'tool-Fetch workspace'
@@ -96,7 +103,7 @@ const ChatBotDemo = () => {
                     You can ask me about my experience, my past projects or my notions templates.
                   </Response>
                   <Response>
-                    Also chek out my [shop](https://shop.vlad.chat) or listen to some [music](https://clownz-army.kinsta.app).
+                    Also chek out my [shop](https://shop.vlad.chat) or listen to some [music](https://music.vlad.chat).
                   </Response>
                 </MessageContent>
               </Message>
@@ -173,7 +180,19 @@ const ChatBotDemo = () => {
           <ConversationScrollButton />
         </Conversation>
 
-        <div className='mx-auto bottom-2 left-2 right-2 max-w-xl' style={{ minWidth: '50%', paddingBlock: 16 }}>
+        <div className='mx-auto bottom-2 left-2 right-2 max-w-xl' style={{ maxWidth: 800, paddingBlock: 16 }}>
+          <div style={{ paddingBlock: 10 }}>
+            <Suggestions>
+              {suggestions.map(suggestion =>
+                <Suggestion
+                  key={suggestion}
+                  onClick={() => {
+                    setInput(suggestion)
+                    handleSubmit({ preventDefault: () => { } })
+                  }} suggestion={suggestion} />
+              )}
+            </Suggestions>
+          </div>
           <PromptInput onSubmit={handleSubmit}>
             <PromptInputTextarea
               onChange={(e) => setInput(e.target.value)}
