@@ -1,5 +1,6 @@
-import { streamText, UIMessage, convertToModelMessages, experimental_createMCPClient, stepCountIs } from 'ai';
+import { streamText, UIMessage, convertToModelMessages, experimental_createMCPClient, stepCountIs, smoothStream } from 'ai';
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { system } from '@/lib/ai'
 
 // Allow streaming responses up to 30 seconds
 export const maxDuration = 30;
@@ -24,12 +25,11 @@ export async function POST(req: Request) {
     messages: convertToModelMessages(messages),
     tools,
     stopWhen: stepCountIs(5),
-    system:
-      `You are Vlad a software developer that can answer questions.
-      You have information stored about you in notion knowledge base.
-      Lookup information in your notion knowledge base first before answering a question.
-      Show the titles document contents, not just links.
-`,
+    system,
+    experimental_transform: smoothStream({
+      delayInMs: 20, // optional: defaults to 10ms
+      chunking: 'line', // optional: defaults to 'word'
+    }),
   });
 
   // send sources and reasoning back to the client

@@ -8,7 +8,15 @@ import {
 import { Message, MessageContent } from '@/components/ai-elements/message';
 import {
   PromptInput,
+  PromptInputActionAddAttachments,
+  PromptInputActionMenu,
+  PromptInputActionMenuContent,
+  PromptInputActionMenuTrigger,
+  PromptInputAttachment,
+  PromptInputAttachments,
+  PromptInputBody,
   PromptInputButton,
+  type PromptInputMessage,
   PromptInputModelSelect,
   PromptInputModelSelectContent,
   PromptInputModelSelectItem,
@@ -18,7 +26,7 @@ import {
   PromptInputTextarea,
   PromptInputToolbar,
   PromptInputTools,
-} from '@/components/ai-elements/prompt-input';
+} from '@/components/ai-elements/prompt-input'
 import {
   Tool,
   ToolContent,
@@ -26,10 +34,10 @@ import {
   ToolOutput,
   ToolInput,
 } from '@/components/ai-elements/tool';
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { useChat } from '@ai-sdk/react';
 import { Response } from '@/components/ai-elements/response';
-import { GlobeIcon, MessageCircle } from 'lucide-react';
+import { CopyIcon, GlobeIcon, MessageCircle, RefreshCcwIcon } from 'lucide-react';
 import {
   Source,
   Sources,
@@ -43,6 +51,7 @@ import {
 } from '@/components/ai-elements/reasoning';
 import { Loader } from '@/components/ai-elements/loader';
 import { Suggestion, Suggestions } from '@/components/ai-elements/suggestion';
+import { Action, Actions } from '@/components/ai-elements/actions';
 
 const models = [
   {
@@ -66,36 +75,46 @@ const toolsMap: { [tool: string]: `tool-${string}` } = {
 }
 
 const ChatBotDemo = () => {
+  const [showSuggestions, setShowSuggestions] = useState(true)
   const [input, setInput] = useState('');
   const [model, setModel] = useState<string>(models[0].value);
   const [webSearch, setWebSearch] = useState(false);
   const { messages, sendMessage, status } = useChat();
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (input.trim()) {
-      sendMessage(
-        { text: input },
-        {
-          body: {
-            model: model,
-            webSearch: webSearch,
-          },
-        },
-      );
-      setInput('');
+  const handleSubmit = (message: PromptInputMessage) => {
+    const hasText = Boolean(message.text);
+    const hasAttachments = Boolean(message.files?.length);
+
+    setShowSuggestions(false)
+
+    if (!(hasText || hasAttachments)) {
+      return;
     }
+
+    sendMessage(
+      {
+        text: message.text || 'Sent with attachments',
+        files: message.files
+      },
+      {
+        body: {
+          model: model,
+          webSearch: webSearch,
+        },
+      },
+    );
+    setInput('');
   };
 
   return (
-    <div className="relative size-full h-screen">
-      <div className="flex flex-col h-full" style={{ alignItems: 'center', alignSelf: 'center' }}>
-        <Conversation>
+    <div className="max-w-4xl mx-auto p-6 relative size-full h-screen">
+      <div className="flex flex-col h-full">
+        <Conversation className="h-full">
           <ConversationContent>
-            <div className="max-w-xl mx-auto px-2">
+            <div>
               <Message from="assistant">
                 <MessageContent>
-                  <img src="vlad.png" className="h-[150px] aspect-square border mb-2" />
+                  <img src="vlad.png" width={150} />
                   <Response>
                     Hello, I am Vlad a software developer.
                   </Response>
@@ -109,133 +128,155 @@ const ChatBotDemo = () => {
               </Message>
             </div>
             {messages.map((message, i, messages) => (
-              <div key={message.id} className={`max-w-xl mx-auto px-2 ${i === messages.length - 1 ? 'pb-24' : ''}`}>
-                {message.role === 'assistant' && (
+              <div key={message.id}>
+                {message.role === 'assistant' && message.parts.filter((part) => part.type === 'source-url').length > 0 && (
                   <Sources>
-                    {message.parts.map((part, i) => {
-                      switch (part.type) {
-                        case 'source-url':
-                          return (
-                            <>
-                              <SourcesTrigger
-                                count={
-                                  message.parts.filter(
-                                    (part) => part.type === 'source-url',
-                                  ).length
-                                }
-                              />
-                              <SourcesContent key={`${message.id}-${i}`}>
-                                <Source
-                                  key={`${message.id}-${i}`}
-                                  href={part.url}
-                                  title={part.url}
-                                />
-                              </SourcesContent>
-                            </>
-                          );
+                    <SourcesTrigger
+                      count={
+                        message.parts.filter(
+                          (part) => part.type === 'source-url',
+                        ).length
                       }
-                    })}
+                    />
+                    {message.parts.filter((part) => part.type === 'source-url').map((part, i) => (
+                      <SourcesContent key={`${message.id}-${i}`}>
+                        <Source
+                          key={`${message.id}-${i}`}
+                          href={part.url}
+                          title={part.url}
+                        />
+                      </SourcesContent>
+                    ))}
                   </Sources>
                 )}
-                <Message from={message.role} key={message.id}>
-                  <MessageContent>
-                    {message.parts.map((part, i) => {
-                      switch (part.type) {
-                        case 'text':
-                          return (
-                            <Response key={`${message.id}-${i}`}>
-                              {part.text}
-                            </Response>
-                          );
-                        case 'reasoning':
-                          return (
-                            <Reasoning
-                              key={`${message.id}-${i}`}
-                              className="w-full"
-                              isStreaming={status === 'streaming'}
-                            >
-                              <ReasoningTrigger />
-                              <ReasoningContent>{part.text}</ReasoningContent>
-                            </Reasoning>
-                          );
-                        case 'dynamic-tool':
-                          const content = (part.output as { content: [{ text: string, type: 'text' }] })?.content[0]?.text
-                          return <>
-                            <Tool key={`${message.id}-${i}`}>
-                              <ToolHeader type={toolsMap[part.toolName]} state={part.state} />
-                              <ToolInput input={part.input} />
-                              <ToolOutput output={<Response>{content}</Response>} errorText={part.errorText} />
-                            </Tool>
-                          </>
-                        default:
-                          return null;
-                      }
-                    })}
-                  </MessageContent>
-                </Message>
+                {message.parts.map((part, i) => {
+                  switch (part.type) {
+                    case 'text':
+                      return (
+                        <Fragment key={`${message.id}-${i}`}>
+                          <Message from={message.role}>
+                            <MessageContent>
+                              <Response>
+                                {part.text}
+                              </Response>
+                            </MessageContent>
+                          </Message>
+                          {message.role === 'assistant' && i === messages.length - 1 && (
+                            <Actions className="mt-2">
+                              <Action
+                                onClick={() => { /* TODO */ }}
+                                label="Retry"
+                              >
+                                <RefreshCcwIcon className="size-3" />
+                              </Action>
+                              <Action
+                                onClick={() =>
+                                  navigator.clipboard.writeText(part.text)
+                                }
+                                label="Copy"
+                              >
+                                <CopyIcon className="size-3" />
+                              </Action>
+                            </Actions>
+                          )}
+                        </Fragment>
+                      );
+                    case 'reasoning':
+                      return (
+                        <Reasoning
+                          key={`${message.id}-${i}`}
+                          className="w-full"
+                          isStreaming={status === 'streaming'}
+                        >
+                          <ReasoningTrigger />
+                          <ReasoningContent>{part.text}</ReasoningContent>
+                        </Reasoning>
+                      );
+                    case 'dynamic-tool':
+                      const content = (part.output as { content: [{ text: string, type: 'text' }] })?.content[0]?.text
+                      return <>
+                        <Tool key={`${message.id}-${i}`}>
+                          <ToolHeader type={'tool-notion'} state={part.state} />
+                          <ToolInput input={part.input} />
+                          <ToolOutput output={<Response>{content}</Response>} errorText={part.errorText} />
+                        </Tool>
+                      </>
+                    default:
+                      return null;
+                  }
+                })}
               </div>
             ))}
-            {status === 'submitted' && <div className='max-w-xl mx-auto px-4 pb-24'><Loader /></div>}
+            {status === 'submitted' && <Loader />}
           </ConversationContent>
           <ConversationScrollButton />
         </Conversation>
 
-        <div className='mx-auto bottom-2 left-2 right-2 max-w-xl' style={{ maxWidth: 800, paddingInline: 16, paddingBlock: 16 }}>
-          <div style={{ paddingBlock: 10 }}>
-            <Suggestions>
-              {suggestions.map(suggestion =>
-                <Suggestion
-                  key={suggestion}
-                  onClick={(suggestion) => {
-                    sendMessage(
-                      { text: suggestion },
-                      {
-                        body: {
-                          model: model,
-                          webSearch: webSearch,
-                        },
-                      },
-                    );
-                  }} suggestion={suggestion} />
-              )}
-            </Suggestions>
-          </div>
-          <PromptInput onSubmit={handleSubmit}>
+        {showSuggestions && <Suggestions>
+          {suggestions.map(suggestion =>
+            <Suggestion
+              key={suggestion}
+              onClick={(suggestion) => {
+                setShowSuggestions(false)
+                sendMessage(
+                  { text: suggestion },
+                  {
+                    body: {
+                      model: model,
+                      webSearch: webSearch,
+                    },
+                  },
+                );
+              }} suggestion={suggestion} />
+          )}
+        </Suggestions>}
+
+        <PromptInput onSubmit={handleSubmit} className="mt-4" globalDrop multiple>
+          <PromptInputBody>
+            <PromptInputAttachments>
+              {(attachment) => <PromptInputAttachment data={attachment} />}
+            </PromptInputAttachments>
             <PromptInputTextarea
               onChange={(e) => setInput(e.target.value)}
               value={input}
             />
-            <PromptInputToolbar>
-              <PromptInputTools>
-                <PromptInputButton
-                  variant={webSearch ? 'default' : 'ghost'}
-                  onClick={() => setWebSearch(!webSearch)}
-                >
-                  <GlobeIcon size={16} />
-                  <span style={{ paddingBottom: 1 }}>Search</span>
-                </PromptInputButton>
-                <PromptInputModelSelect
-                  onValueChange={(value) => {
-                    setModel(value);
-                  }}
-                  value={model}
-                >
-                  <PromptInputModelSelectTrigger>
-                    <PromptInputModelSelectValue />
-                  </PromptInputModelSelectTrigger>
-                  <PromptInputModelSelectContent>
-                    {models.map((model) => (
-                      <PromptInputModelSelectItem key={model.value} value={model.value}>
-                        {model.name}
-                      </PromptInputModelSelectItem>
-                    ))}
-                  </PromptInputModelSelectContent>
-                </PromptInputModelSelect>
-              </PromptInputTools>
-              <PromptInputSubmit disabled={!input} status={status} />
-            </PromptInputToolbar>
-          </PromptInput>
-        </div>
+          </PromptInputBody>
+          <PromptInputToolbar>
+            <PromptInputTools>
+              <PromptInputActionMenu>
+                <PromptInputActionMenuTrigger />
+                <PromptInputActionMenuContent>
+                  <PromptInputActionAddAttachments />
+                </PromptInputActionMenuContent>
+              </PromptInputActionMenu>
+              <PromptInputButton
+                variant={webSearch ? 'default' : 'ghost'}
+                onClick={() => setWebSearch(!webSearch)}
+              >
+                <GlobeIcon size={16} />
+                <span>Search</span>
+              </PromptInputButton>
+              <PromptInputModelSelect
+                onValueChange={(value) => {
+                  setModel(value);
+                }}
+                value={model}
+              >
+                <PromptInputModelSelectTrigger>
+                  <PromptInputModelSelectValue />
+                </PromptInputModelSelectTrigger>
+                <PromptInputModelSelectContent>
+                  {models.map((model) => (
+                    <PromptInputModelSelectItem key={model.value} value={model.value}>
+                      {model.name}
+                    </PromptInputModelSelectItem>
+                  ))}
+                </PromptInputModelSelectContent>
+              </PromptInputModelSelect>
+            </PromptInputTools>
+            <PromptInputSubmit disabled={!input && !status} status={status} />
+          </PromptInputToolbar>
+        </PromptInput>
       </div>
     </div>
   );
