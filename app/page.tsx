@@ -79,7 +79,7 @@ const ChatBotDemo = () => {
   const [input, setInput] = useState('');
   const [model, setModel] = useState<string>(models[0].value);
   const [webSearch, setWebSearch] = useState(false);
-  const { messages, sendMessage, status } = useChat();
+  const { messages, sendMessage, status, error, regenerate } = useChat();
 
   const handleSubmit = (message: PromptInputMessage) => {
     const hasText = Boolean(message.text);
@@ -164,7 +164,7 @@ const ChatBotDemo = () => {
                           {message.role === 'assistant' && i === messages.length - 1 && (
                             <Actions className="mt-2">
                               <Action
-                                onClick={() => { /* TODO */ }}
+                                onClick={() => { regenerate() }}
                                 label="Retry"
                               >
                                 <RefreshCcwIcon className="size-3" />
@@ -186,7 +186,7 @@ const ChatBotDemo = () => {
                         <Reasoning
                           key={`${message.id}-${i}`}
                           className="w-full"
-                          isStreaming={status === 'streaming'}
+                          isStreaming={status === 'streaming' && i === message.parts.length - 1 && message.id === messages.at(-1)?.id}
                         >
                           <ReasoningTrigger />
                           <ReasoningContent>{part.text}</ReasoningContent>
@@ -195,7 +195,7 @@ const ChatBotDemo = () => {
                     case 'dynamic-tool':
                       const content = (part.output as { content: [{ text: string, type: 'text' }] })?.content[0]?.text
                       return <>
-                        <Tool key={`${message.id}-${i}`}>
+                        <Tool key={`${message.id}-${i}`} defaultOpen={false}>
                           <ToolHeader type={'tool-notion'} state={part.state} />
                           <ToolInput input={part.input} />
                           <ToolOutput output={<Response>{content}</Response>} errorText={part.errorText} />
@@ -208,6 +208,7 @@ const ChatBotDemo = () => {
               </div>
             ))}
             {status === 'submitted' && <Loader />}
+            {error && <><div>An error occured.</div><button type="button" onClick={() => regenerate()}>Retry</button></>}
           </ConversationContent>
           <ConversationScrollButton />
         </Conversation>
