@@ -26,10 +26,7 @@ export async function POST(req: Request) {
     tools,
     stopWhen: stepCountIs(5),
     system,
-    experimental_transform: smoothStream({
-      delayInMs: 20, // optional: defaults to 10ms
-      chunking: 'line', // optional: defaults to 'word'
-    }),
+    experimental_transform: smoothStream(),
   });
 
   // send sources and reasoning back to the client
