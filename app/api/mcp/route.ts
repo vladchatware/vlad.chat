@@ -1,6 +1,7 @@
 import { z } from "zod"
 import notion from "@/lib/notion"
 import { createMcpHandler } from "mcp-handler"
+import { PageObjectResponse, PartialPageObjectResponse } from "@notionhq/client";
 
 const handler = createMcpHandler(
   (server) => {
@@ -13,8 +14,9 @@ const handler = createMcpHandler(
       },
       async ({ start_cursor, page_size }) => {
         const users = await notion.users.list({ start_cursor, page_size })
+        const text = users.results.map(u => `${u.id}:${u.name}:${u.type}`).join('\n')
         return {
-          content: [{ type: 'text', text: JSON.stringify(users, null, 2) }]
+          content: [{ type: 'text', text }]
         }
       }
     )
@@ -22,8 +24,8 @@ const handler = createMcpHandler(
       'notion-retrieve-block',
       'Retrieves a Block object using the ID specified.',
       { block_id: z.string().describe('Identifier for a Notion block') },
-      async (args) => {
-        const block = await notion.blocks.retrieve(args)
+      async ({ block_id }) => {
+        const block = await notion.blocks.retrieve({ block_id })
         return {
           content: [{ type: 'text', text: JSON.stringify(block, null, 2) }]
         }
@@ -36,8 +38,8 @@ const handler = createMcpHandler(
         page_id: z.string().describe('Identifier for a Notion page'),
         filter_properties: z.string().array().optional().describe('A list of page property value IDs associated with the page. Use this param to limit the response to a specific page property value or values. To retrieve multiple properties, specify each page property ID. For example: ?filter_properties=iAk8&filter_properties=b7dh.')
       },
-      async (args) => {
-        const page = await notion.pages.retrieve(args)
+      async ({ page_id, filter_properties }) => {
+        const page = await notion.pages.retrieve({ page_id, filter_properties })
         return {
           content: [{ type: 'text', text: JSON.stringify(page, null, 2) }]
         }
@@ -58,8 +60,8 @@ const handler = createMcpHandler(
       'notion-retrieve-datasources',
       'Retrieves a data source object — information that describes the structure and columns of a data source — for a provided data source ID. The response adheres to any limits to an integration’s capabilities and the permissions of the parent database. To fetch data source rows (i.e. the child pages of a data source) rather than columns, use the notion-query-datasource.',
       { data_source_id: z.string() },
-      async (args) => {
-        const dataSource = await notion.dataSources.retrieve(args)
+      async ({ data_source_id }) => {
+        const dataSource = await notion.dataSources.retrieve({ data_source_id })
         return {
           content: [{ type: 'text', text: JSON.stringify(dataSource, null, 2) }]
         }
@@ -76,19 +78,25 @@ To limit the request to search only pages or to search only databases, use the f
         sort: z.object({
           timestamp: z.any().describe('The name of the timestamp to sort against. Possible values include last_edited_time.'),
           direction: z.enum(["ascending", "descending"]).describe('The direction to sort. Possible values include ascending and descending.')
-        }).describe('A set of criteria, direction and timestamp keys, that orders the results. The only supported timestamp value is "last_edited_time". Supported direction values are "ascending" and "descending". If sort is not provided, then the most recently edited results are returned first.'),
+        }).default({ direction: 'ascending' }).describe('A set of criteria, direction and timestamp keys, that orders the results. The only supported timestamp value is "last_edited_time". Supported direction values are "ascending" and "descending". If sort is not provided, then the most recently edited results are returned first.'),
         query: z.string().describe('Semantic search query over your entire Notion workspace and connected sources. For best results, dont provide more than one question per tool call.'),
         start_cursor: z.string().optional().describe('A cursor value returned in a previous response that If supplied, limits the response to results starting after the cursor. If not supplied, then the first page of results is returned.'),
         page_size: z.number().default(100).describe('The number of items from the full list to include in the response. Maximum: 100.'),
         filter: z.object({
-          property: z.string().describe('The name of the property to filter by. Currently the only property you can filter by is the object type. Possible values include object. Limitation: Currently the only filter allowed is object which will filter by type of object (either page or database)'),
-          value: z.string().describe('The value of the property to filter the results by. Possible values for object type include page or database. Limitation: Currently the only filter allowed is object which will filter by type of object (either page or database)')
-        }).optional().nullable()
+          property: z.string().optional().describe('The name of the property to filter by. Currently the only property you can filter by is the object type. Possible values include object. Limitation: Currently the only filter allowed is object which will filter by type of object (either page or database)'),
+          value: z.string().optional().describe('The value of the property to filter the results by. Possible values for object type include page or database. Limitation: Currently the only filter allowed is object which will filter by type of object (either page or database)')
+        }).default({})
       },
       async ({ query, start_cursor, page_size, filter, sort }) => {
         const res = await notion.search({ query, start_cursor, page_size })
+        const text = res
+          .results
+          // @ts-expect-error FIXME Types
+          .filter(entry => entry.properties?.Name)
+          // @ts-expect-error FIXME Types
+          .map(entry => `${entry.object}:${entry.id}:${entry.properties?.Name?.title[0]?.plain_text}`).join('\n')
         return {
-          content: [{ type: 'text', text: JSON.stringify(res, null, 2) }]
+          content: [{ type: 'text', text }]
         }
       }
     )

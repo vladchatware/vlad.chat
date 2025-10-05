@@ -52,6 +52,9 @@ import {
 import { Loader } from '@/components/ai-elements/loader';
 import { Suggestion, Suggestions } from '@/components/ai-elements/suggestion';
 import { Action, Actions } from '@/components/ai-elements/actions';
+import { useAuthActions } from "@convex-dev/auth/react"
+import { Authenticated, Unauthenticated, useQuery } from 'convex/react';
+import { api } from '@/convex/_generated/api';
 
 const models = [
   {
@@ -75,13 +78,24 @@ const toolsMap: { [tool: string]: `tool-${string}` } = {
 }
 
 const ChatBotDemo = () => {
+  const isAuthenticated = useQuery(api.auth.isAuthenticated)
+  const user = useQuery(api.users.viewer)
+  const { signIn, signOut } = useAuthActions()
   const [showSuggestions, setShowSuggestions] = useState(true)
   const [input, setInput] = useState('');
   const [model, setModel] = useState<string>(models[0].value);
   const [webSearch, setWebSearch] = useState(false);
-  const { messages, sendMessage, status, error, regenerate } = useChat();
+  const { messages, sendMessage, status, error, regenerate } = useChat({
+    onError: error => {
+      console.log('error caught', error)
+    }
+  });
 
-  const handleSubmit = (message: PromptInputMessage) => {
+  const handleSubmit = async (message: PromptInputMessage) => {
+    if (!isAuthenticated) {
+      await signIn('anonymous')
+      console.log('signed in')
+    }
     const hasText = Boolean(message.text);
     const hasAttachments = Boolean(message.files?.length);
 
@@ -195,7 +209,7 @@ const ChatBotDemo = () => {
                     case 'dynamic-tool':
                       const content = (part.output as { content: [{ text: string, type: 'text' }] })?.content[0]?.text
                       return <>
-                        <Tool key={`${message.id}-${i}`} defaultOpen={false}>
+                        <Tool key={`${message.id}-${i}`} defaultOpen={false} data-state={'closed'}>
                           <ToolHeader type={'tool-notion'} state={part.state} />
                           <ToolInput input={part.input} />
                           <ToolOutput output={<Response>{content}</Response>} errorText={part.errorText} />
@@ -208,11 +222,19 @@ const ChatBotDemo = () => {
               </div>
             ))}
             {status === 'submitted' && <Loader />}
-            {error && <><div>An error occured.</div><button type="button" onClick={() => regenerate()}>Retry</button></>}
           </ConversationContent>
           <ConversationScrollButton />
         </Conversation>
 
+        {error && <Suggestions>
+          <Suggestion suggestion={`An error occured: ${error.message}. Regenerate.`} onClick={() => regenerate()} />
+        </Suggestions>}
+
+        <Authenticated>
+          <Suggestions>
+            <Suggestion suggestion={`You have only ${user?.trialMessages} messages left. Sign in to reset your limits.`} onClick={() => { }} />
+          </Suggestions>
+        </Authenticated>
         {showSuggestions && <Suggestions>
           {suggestions.map(suggestion =>
             <Suggestion
