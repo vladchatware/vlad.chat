@@ -28,8 +28,7 @@ export async function POST(req: Request) {
 
   const customer = await stripe.customers.retrieve(user.stripeId)
 
-  console.log(customer.email, customer.balance)
-
+  // @ts-expect-error FIXME Stripe type correct import 
   if (customer.balance <= 0) return new NextResponse('out of tokens')
 
   if (user.trialMessages! <= 0) return new NextResponse('no more messages left', { status: 429 })
