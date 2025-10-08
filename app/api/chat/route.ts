@@ -17,18 +17,40 @@ export async function POST(req: Request) {
 
   if (!user) return new NextResponse('no user present in session', { status: 403 })
 
-  if (!user.stripeId) {
-    const customer = await stripe.customers.create(({ email: user.email }))
-    await fetchMutation(api.users.connect, { stripeId: customer.id }, { token: await convexAuthNextjsToken() })
-    user.stripeId = customer.id
+  if (!user.isAnonymous) {
+    if (!user.stripeId) {
+      const customer = await stripe.customers.create(({
+        email: user.email
+      }))
+      await fetchMutation(api.users.connect, { stripeId: customer.id }, { token: await convexAuthNextjsToken() })
+      user.stripeId = customer.id
+
+      await stripe.billing.creditGrants.create({
+        customer: customer.id,
+        category: 'promotional',
+        amount: {
+          monetary: {
+            currency: 'usd',
+            value: 5
+          },
+          type: 'monetary'
+        },
+        applicability_config: {
+          scope: {
+            price_type: 'metered'
+          }
+        },
+        name: 'Sign Up credits'
+      })
+    }
+
+    const customer = await stripe.customers.retrieve(user.stripeId)
+
+    // @ts-expect-error FIXME Stripe type correct import 
+    if (customer.balance <= 0) return new NextResponse('out of tokens')
+  } else {
+    if (user.trialMessages! <= 0) return new NextResponse('no more messages left', { status: 429 })
   }
-
-  const customer = await stripe.customers.retrieve(user.stripeId)
-
-  // @ts-expect-error FIXME Stripe type correct import 
-  if (customer.balance <= 0) return new NextResponse('out of tokens')
-
-  if (user.trialMessages! <= 0) return new NextResponse('no more messages left', { status: 429 })
 
   const transport = new StreamableHTTPClientTransport(new URL('https://vlad.chat/api/mcp'))
   const notion = await experimental_createMCPClient({
@@ -46,8 +68,11 @@ export async function POST(req: Request) {
     system,
     experimental_transform: smoothStream(),
     onFinish: async ({ usage, providerMetadata }) => {
-      await stripe.billing.meterEvents.create({ event_name: 'tokens', payload: { 'value': `${usage.totalTokens}`, 'stripe_customer_id': user.stripeId } })
-      await fetchMutation(api.users.messages, {}, { token: await convexAuthNextjsToken() })
+      if (user.isAnonymous) {
+        await fetchMutation(api.users.messages, {}, { token: await convexAuthNextjsToken() })
+      } else {
+        await stripe.billing.meterEvents.create({ event_name: 'tokens', payload: { 'value': `${usage.totalTokens}`, 'stripe_customer_id': user.stripeId } })
+      }
     },
   });
 
