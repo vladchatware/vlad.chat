@@ -1,7 +1,7 @@
 import { components } from "../_generated/api"
 import { Agent } from "@convex-dev/agent"
 import { openai } from "@ai-sdk/openai"
-import { usageHandler } from "../usage"
+// import { usageHandler } from "../usage"
 
 export const agent = new Agent(components.agent, {
   name: 'Basic Agent',
