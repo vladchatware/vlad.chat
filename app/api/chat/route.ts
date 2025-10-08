@@ -5,9 +5,7 @@ import { api, internal } from '@/convex/_generated/api';
 import { convexAuthNextjsToken } from '@convex-dev/auth/nextjs/server';
 import { fetchMutation, fetchQuery } from "convex/nextjs"
 import { NextResponse } from 'next/server';
-
-// Allow streaming responses up to 30 seconds
-export const maxDuration = 30;
+import { stripe } from '@/lib/stripe';
 
 export async function POST(req: Request) {
   const {
@@ -18,6 +16,21 @@ export async function POST(req: Request) {
   const user = await fetchQuery(api.users.viewer, {}, { token: await convexAuthNextjsToken() })
 
   if (!user) return new NextResponse('no user present in session', { status: 403 })
+
+  if (!user.stripeId) {
+    const customer = await stripe.customers.create(({
+      email: user.email,
+      balance: 5
+    }))
+    await fetchMutation(api.users.connect, { stripeId: customer.id }, { token: await convexAuthNextjsToken() })
+    user.stripeId = customer.id
+  }
+
+  const customer = await stripe.customers.retrieve(user.stripeId)
+
+  console.log(customer.email, customer.balance)
+
+  if (customer.balance <= 0) return new NextResponse('out of tokens')
 
   if (user.trialMessages! <= 0) return new NextResponse('no more messages left', { status: 429 })
 
@@ -37,8 +50,8 @@ export async function POST(req: Request) {
     system,
     experimental_transform: smoothStream(),
     onFinish: async ({ usage, providerMetadata }) => {
-      await fetchMutation(api.usage.insertRawUsage, { usage, model, provider: 'openai', providerMetadata }, { token: await convexAuthNextjsToken() })
-      console.log(usage)
+      await stripe.billing.meterEvents.create({ event_name: 'tokens', payload: { 'value': `${usage.totalTokens}`, 'stripe_customer_id': user.stripeId } })
+      await fetchMutation(api.users.messages, {}, { token: await convexAuthNextjsToken() })
     },
   });
 

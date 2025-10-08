@@ -12,9 +12,7 @@ import type * as agents_simple from "../agents/simple.js";
 import type * as auth from "../auth.js";
 import type * as crons from "../crons.js";
 import type * as http from "../http.js";
-import type * as invoicing from "../invoicing.js";
 import type * as threads from "../threads.js";
-import type * as usage from "../usage.js";
 import type * as users from "../users.js";
 
 import type {
@@ -36,9 +34,7 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   crons: typeof crons;
   http: typeof http;
-  invoicing: typeof invoicing;
   threads: typeof threads;
-  usage: typeof usage;
   users: typeof users;
 }>;
 declare const fullApiWithMounts: typeof fullApi;

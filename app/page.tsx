@@ -94,7 +94,6 @@ const ChatBotDemo = () => {
   const handleSubmit = async (message: PromptInputMessage) => {
     if (!isAuthenticated) {
       await signIn('anonymous')
-      console.log('signed in')
     }
     const hasText = Boolean(message.text);
     const hasAttachments = Boolean(message.files?.length);
@@ -230,11 +229,11 @@ const ChatBotDemo = () => {
           <Suggestion suggestion={`An error occured: ${error.message}. Regenerate.`} onClick={() => regenerate()} />
         </Suggestions>}
 
-        <Authenticated>
-          <Suggestions>
-            <Suggestion suggestion={`You have only ${user?.trialMessages} messages left. Sign in to reset your limits.`} onClick={() => { }} />
+        {user?.isAnonymous && <Authenticated>
+          <Suggestions className='mb-4'>
+            <Suggestion suggestion={`You have only ${user?.trialMessages} messages left. Sign in with google to reset your limits.`} onClick={() => { signIn('google') }} />
           </Suggestions>
-        </Authenticated>
+        </Authenticated>}
         {showSuggestions && <Suggestions>
           {suggestions.map(suggestion =>
             <Suggestion
