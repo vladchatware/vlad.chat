@@ -24,30 +24,11 @@ export async function POST(req: Request) {
       }))
       await fetchMutation(api.users.connect, { stripeId: customer.id }, { token: await convexAuthNextjsToken() })
       user.stripeId = customer.id
-
-      await stripe.billing.creditGrants.create({
-        customer: customer.id,
-        category: 'promotional',
-        amount: {
-          monetary: {
-            currency: 'usd',
-            value: 5
-          },
-          type: 'monetary'
-        },
-        applicability_config: {
-          scope: {
-            price_type: 'metered'
-          }
-        },
-        name: 'Sign Up credits'
-      })
     }
 
-    const customer = await stripe.customers.retrieve(user.stripeId)
-
-    // @ts-expect-error FIXME Stripe type correct import 
-    if (customer.balance <= 0) return new NextResponse('out of tokens')
+    if (user.trialTokens <= 0 && user.tokens <= 0) {
+      return new NextResponse('out of tokens', { status: 429 })
+    }
   } else {
     if (user.trialMessages! <= 0) return new NextResponse('no more messages left', { status: 429 })
   }
@@ -71,7 +52,7 @@ export async function POST(req: Request) {
       if (user.isAnonymous) {
         await fetchMutation(api.users.messages, {}, { token: await convexAuthNextjsToken() })
       } else {
-        await stripe.billing.meterEvents.create({ event_name: 'tokens', payload: { 'value': `${usage.totalTokens}`, 'stripe_customer_id': user.stripeId } })
+        await fetchMutation(api.users.usage, { usage, model, provider: 'AI Gateway', providerMetadata }, { token: await convexAuthNextjsToken() })
       }
     },
   });

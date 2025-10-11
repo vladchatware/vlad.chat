@@ -3,11 +3,18 @@ import { internal, api } from "./_generated/api";
 
 const crons = cronJobs();
 
-// crons.daily(
-//   "Rate Limits",
-//   { hourUTC: 17, minuteUTC: 30 },
-//   api.usage.resetLimits,
-//   {}
-// )
+crons.daily(
+  "Trial messages",
+  { hourUTC: 17, minuteUTC: 30 },
+  internal.users.resetMessages,
+  {}
+)
+
+crons.weekly(
+  "Trial tokens",
+  { hourUTC: 17, minuteUTC: 30, dayOfWeek: 'sunday' },
+  internal.users.resetTokens,
+  {}
+)
 
 export default crons;

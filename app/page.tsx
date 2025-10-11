@@ -104,6 +104,11 @@ const ChatBotDemo = () => {
       return;
     }
 
+    if (user.tokens <= 0 && user.trialTokens <= 0) {
+      alert('No more tokens, top up first.')
+      return;
+    }
+
     sendMessage(
       {
         text: message.text || 'Sent with attachments',
@@ -118,6 +123,17 @@ const ChatBotDemo = () => {
     );
     setInput('');
   };
+
+  const checkout = async () => {
+    const res = await fetch(`/api/checkout_session`, {
+      method: 'POST',
+      body: JSON.stringify({
+        price: 5
+      })
+    })
+    const session = await res.json()
+    window.open(session.url, '_blank')
+  }
 
   return (
     <div className="max-w-4xl mx-auto p-6 relative size-full h-screen">
@@ -232,9 +248,12 @@ const ChatBotDemo = () => {
         {user?.isAnonymous && <Authenticated>
           <Suggestions className='mb-4'>
             <Suggestion suggestion={`You have only ${user?.trialMessages} messages left. Sign in with google to reset your limits.`} onClick={() => { signIn('google') }} />
+            <Suggestion suggestion={`You have run out of credits. Buy more.`} onClick={() => { checkout() }} />
           </Suggestions>
         </Authenticated>}
         {showSuggestions && <Suggestions>
+          <Suggestion suggestion={`Sign in with google`} onClick={() => { signIn('google') }} />
+          <Suggestion suggestion={`You have run out of credits. Buy more.`} onClick={() => { checkout() }} />
           {suggestions.map(suggestion =>
             <Suggestion
               key={suggestion}
