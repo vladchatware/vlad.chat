@@ -1,7 +1,7 @@
 import { z } from "zod"
 import notion from "@/lib/notion"
 import { createMcpHandler } from "mcp-handler"
-import { PageObjectResponse, PartialPageObjectResponse } from "@notionhq/client";
+import { DataSourceObjectResponse, PageObjectResponse, PartialPageObjectResponse } from "@notionhq/client";
 
 const handler = createMcpHandler(
   (server) => {
@@ -88,13 +88,15 @@ To limit the request to search only pages or to search only databases, use the f
         }).default({})
       },
       async ({ query, start_cursor, page_size, filter, sort }) => {
-        const res = await notion.search({ query, start_cursor, page_size })
-        const text = res
-          .results
-          // @ts-expect-error FIXME Types
-          .filter(entry => entry.properties?.Name)
-          // @ts-expect-error FIXME Types
-          .map(entry => `${entry.object}:${entry.id}:${entry.properties?.Name?.title[0]?.plain_text}`).join('\n')
+        const res = await notion.search({ query, start_cursor, page_size: 1 })
+        const payload = res.results.map(result => {
+          return {
+            object: result.object,
+            id: result.id,
+            properties: (result as PageObjectResponse | DataSourceObjectResponse).properties
+          }
+        })
+        const text = JSON.stringify(payload, null, 2)
         return {
           content: [{ type: 'text', text }]
         }
