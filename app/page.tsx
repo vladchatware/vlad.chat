@@ -222,7 +222,7 @@ const ChatBotDemo = () => {
                         </Reasoning>
                       );
                     case 'dynamic-tool':
-                      const content = part.output?.content[0]?.text ?? []
+                      const content = (part.output as { content: [{ text: string }] })?.content[0]?.text ?? []
                       return <>
                         <Tool key={`${message.id}-${i}`} defaultOpen={true}>
                           <ToolHeader type={'tool-notion'} state={part.state} />
