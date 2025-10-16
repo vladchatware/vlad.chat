@@ -73,10 +73,6 @@ const suggestions = [
   'Can I hire you?'
 ]
 
-const toolsMap: { [tool: string]: `tool-${string}` } = {
-  'API-get-self': 'tool-Fetch workspace'
-}
-
 const ChatBotDemo = () => {
   const isAuthenticated = useQuery(api.auth.isAuthenticated)
   const user = useQuery(api.users.viewer)
@@ -91,21 +87,27 @@ const ChatBotDemo = () => {
     }
   });
 
-  const handleSubmit = async (message: PromptInputMessage) => {
+  useEffect(() => {
     if (!isAuthenticated) {
-      await signIn('anonymous')
+      signIn('anonymous')
     }
+  }, [])
+
+  useEffect(() => {
+    if (input.length) {
+      setShowSuggestions(false)
+    } else {
+      setShowSuggestions(true)
+    }
+  }, [input])
+
+  const handleSubmit = async (message: PromptInputMessage) => {
     const hasText = Boolean(message.text);
     const hasAttachments = Boolean(message.files?.length);
 
     setShowSuggestions(false)
 
     if (!(hasText || hasAttachments)) {
-      return;
-    }
-
-    if (user.tokens <= 0 && user.trialTokens <= 0) {
-      alert('No more tokens, top up first.')
       return;
     }
 
@@ -158,85 +160,89 @@ const ChatBotDemo = () => {
                 </Message>
               </div>
               {messages.map((message, i, messages) => (
-                <div key={message.id}>
-                  {message.role === 'assistant' && message.parts.filter((part) => part.type === 'source-url').length > 0 && (
-                    <Sources>
-                      <SourcesTrigger
-                        count={
-                          message.parts.filter(
-                            (part) => part.type === 'source-url',
-                          ).length
-                        }
-                      />
-                      {message.parts.filter((part) => part.type === 'source-url').map((part, i) => (
-                        <SourcesContent key={`${message.id}-${i}`}>
-                          <Source
-                            key={`${message.id}-${i}`}
-                            href={part.url}
-                            title={part.url}
-                          />
-                        </SourcesContent>
-                      ))}
-                    </Sources>
-                  )}
-                  {message.parts.map((part, i) => {
-                    switch (part.type) {
-                      case 'text':
-                        return (
-                          <Fragment key={`${message.id}-${i}`}>
-                            <Message from={message.role}>
-                              <MessageContent>
-                                <Response>
-                                  {part.text}
-                                </Response>
-                              </MessageContent>
-                            </Message>
-                            {message.role === 'assistant' && i === messages.length - 1 && (
-                              <Actions className="mt-2">
-                                <Action
-                                  onClick={() => { regenerate() }}
-                                  label="Retry"
-                                >
-                                  <RefreshCcwIcon className="size-3" />
-                                </Action>
-                                <Action
-                                  onClick={() =>
-                                    navigator.clipboard.writeText(part.text)
-                                  }
-                                  label="Copy"
-                                >
-                                  <CopyIcon className="size-3" />
-                                </Action>
-                              </Actions>
-                            )}
-                          </Fragment>
-                        );
-                      case 'reasoning':
-                        return (
-                          <Reasoning
-                            key={`${message.id}-${i}`}
-                            className="w-full"
-                            isStreaming={status === 'streaming' && i === message.parts.length - 1 && message.id === messages.at(-1)?.id}
-                          >
-                            <ReasoningTrigger />
-                            <ReasoningContent>{part.text}</ReasoningContent>
-                          </Reasoning>
-                        );
-                      case 'dynamic-tool':
-                        const content = (part.output as { content: [{ text: string }] })?.content[0]?.text ?? []
-                        return <>
-                          <Tool key={`${message.id}-${i}`} defaultOpen={true}>
-                            <ToolHeader type={'tool-notion'} state={part.state} />
-                            <ToolContent>
-                              <ToolInput input={part.input} />
-                              <ToolOutput output={content} errorText={part.errorText} />
-                            </ToolContent>
-                          </Tool>
-                        </>
-                      default:
-                        return null;
-                    }
-                  })}
+                <div key={message.id} className={messages.length - 1 === i ? "pb-42" : ""} >
+                  {
+                    message.role === 'assistant' && message.parts.filter((part) => part.type === 'source-url').length > 0 && (
+                      <Sources>
+                        <SourcesTrigger
+                          count={
+                            message.parts.filter(
+                              (part) => part.type === 'source-url',
+                            ).length
+                          }
+                        />
+                        {message.parts.filter((part) => part.type === 'source-url').map((part, i) => (
+                          <SourcesContent key={`${message.id}-${i}`}>
+                            <Source
+                              key={`${message.id}-${i}`}
+                              href={part.url}
+                              title={part.url}
+                            />
+                          </SourcesContent>
+                        ))}
+                      </Sources>
+                    )
+                  }
+                  {
+                    message.parts.map((part, i) => {
+                      switch (part.type) {
+                        case 'text':
+                          return (
+                            <Fragment key={`${message.id}-${i}`}>
+                              <Message from={message.role}>
+                                <MessageContent>
+                                  <Response>
+                                    {part.text}
+                                  </Response>
+                                </MessageContent>
+                              </Message>
+                              {message.role === 'assistant' && i === messages.length - 1 && (
+                                <Actions className="mt-2">
+                                  <Action
+                                    onClick={() => { regenerate() }}
+                                    label="Retry"
+                                  >
+                                    <RefreshCcwIcon className="size-3" />
+                                  </Action>
+                                  <Action
+                                    onClick={() =>
+                                      navigator.clipboard.writeText(part.text)
+                                    }
+                                    label="Copy"
+                                  >
+                                    <CopyIcon className="size-3" />
+                                  </Action>
+                                </Actions>
+                              )}
+                            </Fragment>
+                          );
+                        case 'reasoning':
+                          return (
+                            <Reasoning
+                              key={`${message.id}-${i}`}
+                              className="w-full"
+                              isStreaming={status === 'streaming' && i === message.parts.length - 1 && message.id === messages.at(-1)?.id}
+                            >
+                              <ReasoningTrigger />
+                              <ReasoningContent>{part.text}</ReasoningContent>
+                            </Reasoning>
+                          );
+                        case 'dynamic-tool':
+                          const content = (part.output as { content: [{ text: string }] })?.content[0]?.text ?? []
+                          return <>
+                            <Tool key={`${message.id}-${i}`} defaultOpen={false}>
+                              <ToolHeader type={'tool-notion'} state={part.state} />
+                              <ToolContent>
+                                <ToolInput input={part.input} />
+                                <ToolOutput output={content} errorText={part.errorText} />
+                              </ToolContent>
+                            </Tool>
+                          </>
+                        default:
+                          return null;
+                      }
+                    })
+                  }
                 </div>
               ))}
               {status === 'submitted' && <Loader />}
@@ -244,7 +250,7 @@ const ChatBotDemo = () => {
             <ConversationScrollButton />
           </Conversation>
         </div>
-      </div>
+      </div >
 
       <div className="p-6 md:px-72" style={{ position: 'fixed', bottom: 0, left: 0, right: 0 }}>
 
@@ -252,15 +258,16 @@ const ChatBotDemo = () => {
           <Suggestion suggestion={`An error occured: ${error.message}. Regenerate.`} onClick={() => regenerate()} />
         </Suggestions>}
 
-        {user?.isAnonymous && <Authenticated>
-          <Suggestions className='mb-4'>
-            <Suggestion suggestion={`You have only ${user?.trialMessages} messages left. Sign in with google to reset your limits.`} onClick={() => { signIn('google') }} />
-            <Suggestion suggestion={`You have run out of credits. Buy more.`} onClick={() => { checkout() }} />
+        {user?.isAnonymous && messages.length > 0 && <Authenticated>
+          <Suggestions>
+            <Suggestion suggestion={`You have only ${user?.trialMessages} messages left. Sign in to reset your limits.`} onClick={() => { signIn('google') }} />
           </Suggestions>
         </Authenticated>}
-        {showSuggestions && <Suggestions>
-          <Suggestion suggestion={`Sign in with google`} onClick={() => { signIn('google') }} />
+        {user?.trialTokens <= 0 && user.tokens <= 0 && <Suggestions>
           <Suggestion suggestion={`You have run out of credits. Buy more.`} onClick={() => { checkout() }} />
+        </Suggestions>
+        }
+        {showSuggestions && <Suggestions>
           {suggestions.map(suggestion =>
             <Suggestion
               key={suggestion}
