@@ -245,7 +245,7 @@ const ChatBotDemo = () => {
                   }
                 </div>
               ))}
-              {status === 'submitted' && <Loader className='pb-42' />}
+              {status === 'submitted' && <div className="pb-46"><Loader /></div>}
             </ConversationContent>
             <ConversationScrollButton />
           </Conversation>
