@@ -136,112 +136,117 @@ const ChatBotDemo = () => {
   }
 
   return (
-    <div className="max-w-4xl mx-auto p-6 relative size-full h-screen">
-      <div className="flex flex-col h-full">
-        <Conversation className="h-full">
-          <ConversationContent>
-            <div>
-              <Message from="assistant">
-                <MessageContent>
-                  <img src="vlad.png" width={150} />
-                  <Response>
-                    Hello, I am Vlad a software developer.
-                  </Response>
-                  <Response>
-                    You can ask me about my experience, my past projects or my notion templates.
-                  </Response>
-                  <Response>
-                    Also chek out my [shop](https://shop.vlad.chat) or listen to some [music](https://music.vlad.chat).
-                  </Response>
-                </MessageContent>
-              </Message>
-            </div>
-            {messages.map((message, i, messages) => (
-              <div key={message.id}>
-                {message.role === 'assistant' && message.parts.filter((part) => part.type === 'source-url').length > 0 && (
-                  <Sources>
-                    <SourcesTrigger
-                      count={
-                        message.parts.filter(
-                          (part) => part.type === 'source-url',
-                        ).length
-                      }
-                    />
-                    {message.parts.filter((part) => part.type === 'source-url').map((part, i) => (
-                      <SourcesContent key={`${message.id}-${i}`}>
-                        <Source
-                          key={`${message.id}-${i}`}
-                          href={part.url}
-                          title={part.url}
-                        />
-                      </SourcesContent>
-                    ))}
-                  </Sources>
-                )}
-                {message.parts.map((part, i) => {
-                  switch (part.type) {
-                    case 'text':
-                      return (
-                        <Fragment key={`${message.id}-${i}`}>
-                          <Message from={message.role}>
-                            <MessageContent>
-                              <Response>
-                                {part.text}
-                              </Response>
-                            </MessageContent>
-                          </Message>
-                          {message.role === 'assistant' && i === messages.length - 1 && (
-                            <Actions className="mt-2">
-                              <Action
-                                onClick={() => { regenerate() }}
-                                label="Retry"
-                              >
-                                <RefreshCcwIcon className="size-3" />
-                              </Action>
-                              <Action
-                                onClick={() =>
-                                  navigator.clipboard.writeText(part.text)
-                                }
-                                label="Copy"
-                              >
-                                <CopyIcon className="size-3" />
-                              </Action>
-                            </Actions>
-                          )}
-                        </Fragment>
-                      );
-                    case 'reasoning':
-                      return (
-                        <Reasoning
-                          key={`${message.id}-${i}`}
-                          className="w-full"
-                          isStreaming={status === 'streaming' && i === message.parts.length - 1 && message.id === messages.at(-1)?.id}
-                        >
-                          <ReasoningTrigger />
-                          <ReasoningContent>{part.text}</ReasoningContent>
-                        </Reasoning>
-                      );
-                    case 'dynamic-tool':
-                      const content = (part.output as { content: [{ text: string }] })?.content[0]?.text ?? []
-                      return <>
-                        <Tool key={`${message.id}-${i}`} defaultOpen={true}>
-                          <ToolHeader type={'tool-notion'} state={part.state} />
-                          <ToolContent>
-                            <ToolInput input={part.input} />
-                            <ToolOutput output={content} errorText={part.errorText} />
-                          </ToolContent>
-                        </Tool>
-                      </>
-                    default:
-                      return null;
-                  }
-                })}
+    <>
+      <div className="">
+        <div className="md:px-72">
+          <Conversation className="">
+            <ConversationContent>
+              <div>
+                <Message from="assistant">
+                  <MessageContent>
+                    <img src="vlad.png" width={150} />
+                    <Response>
+                      Hello, I am Vlad a software developer.
+                    </Response>
+                    <Response>
+                      You can ask me about my experience, my past projects or my notion templates.
+                    </Response>
+                    <Response>
+                      Also chek out my [shop](https://shop.vlad.chat) or listen to some [music](https://music.vlad.chat).
+                    </Response>
+                  </MessageContent>
+                </Message>
               </div>
-            ))}
-            {status === 'submitted' && <Loader />}
-          </ConversationContent>
-          <ConversationScrollButton />
-        </Conversation>
+              {messages.map((message, i, messages) => (
+                <div key={message.id}>
+                  {message.role === 'assistant' && message.parts.filter((part) => part.type === 'source-url').length > 0 && (
+                    <Sources>
+                      <SourcesTrigger
+                        count={
+                          message.parts.filter(
+                            (part) => part.type === 'source-url',
+                          ).length
+                        }
+                      />
+                      {message.parts.filter((part) => part.type === 'source-url').map((part, i) => (
+                        <SourcesContent key={`${message.id}-${i}`}>
+                          <Source
+                            key={`${message.id}-${i}`}
+                            href={part.url}
+                            title={part.url}
+                          />
+                        </SourcesContent>
+                      ))}
+                    </Sources>
+                  )}
+                  {message.parts.map((part, i) => {
+                    switch (part.type) {
+                      case 'text':
+                        return (
+                          <Fragment key={`${message.id}-${i}`}>
+                            <Message from={message.role}>
+                              <MessageContent>
+                                <Response>
+                                  {part.text}
+                                </Response>
+                              </MessageContent>
+                            </Message>
+                            {message.role === 'assistant' && i === messages.length - 1 && (
+                              <Actions className="mt-2">
+                                <Action
+                                  onClick={() => { regenerate() }}
+                                  label="Retry"
+                                >
+                                  <RefreshCcwIcon className="size-3" />
+                                </Action>
+                                <Action
+                                  onClick={() =>
+                                    navigator.clipboard.writeText(part.text)
+                                  }
+                                  label="Copy"
+                                >
+                                  <CopyIcon className="size-3" />
+                                </Action>
+                              </Actions>
+                            )}
+                          </Fragment>
+                        );
+                      case 'reasoning':
+                        return (
+                          <Reasoning
+                            key={`${message.id}-${i}`}
+                            className="w-full"
+                            isStreaming={status === 'streaming' && i === message.parts.length - 1 && message.id === messages.at(-1)?.id}
+                          >
+                            <ReasoningTrigger />
+                            <ReasoningContent>{part.text}</ReasoningContent>
+                          </Reasoning>
+                        );
+                      case 'dynamic-tool':
+                        const content = (part.output as { content: [{ text: string }] })?.content[0]?.text ?? []
+                        return <>
+                          <Tool key={`${message.id}-${i}`} defaultOpen={true}>
+                            <ToolHeader type={'tool-notion'} state={part.state} />
+                            <ToolContent>
+                              <ToolInput input={part.input} />
+                              <ToolOutput output={content} errorText={part.errorText} />
+                            </ToolContent>
+                          </Tool>
+                        </>
+                      default:
+                        return null;
+                    }
+                  })}
+                </div>
+              ))}
+              {status === 'submitted' && <Loader />}
+            </ConversationContent>
+            <ConversationScrollButton />
+          </Conversation>
+        </div>
+      </div>
+
+      <div className="p-6 md:px-72" style={{ position: 'fixed', bottom: 0, left: 0, right: 0 }}>
 
         {error && <Suggestions>
           <Suggestion suggestion={`An error occured: ${error.message}. Regenerate.`} onClick={() => regenerate()} />
@@ -321,7 +326,7 @@ const ChatBotDemo = () => {
           </PromptInputToolbar>
         </PromptInput>
       </div>
-    </div>
+    </>
   );
 };
 
