@@ -68,9 +68,7 @@ const models = [
 ];
 
 const suggestions = [
-  'Show your CV',
-  'Show me your activity',
-  'Can I hire you?'
+  'Last updates'
 ]
 
 const ChatBotDemo = () => {
