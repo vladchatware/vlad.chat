@@ -68,7 +68,7 @@ const models = [
 ];
 
 const suggestions = [
-  'Last updates'
+  'Latest updates'
 ]
 
 const ChatBotDemo = () => {
