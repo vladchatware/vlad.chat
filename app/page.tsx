@@ -68,7 +68,9 @@ const models = [
 ];
 
 const suggestions = [
-  'Latest updates'
+  'Latest updates',
+  'Roadmap',
+  'Notion Templates',
 ]
 
 const ChatBotDemo = () => {
@@ -94,10 +96,12 @@ const ChatBotDemo = () => {
   useEffect(() => {
     if (input.length) {
       setShowSuggestions(false)
+    } else if (messages.length > 0) {
+      setShowSuggestions(false)
     } else {
       setShowSuggestions(true)
     }
-  }, [input])
+  }, [input, messages.length])
 
   const handleSubmit = async (message: PromptInputMessage) => {
     const hasText = Boolean(message.text);
