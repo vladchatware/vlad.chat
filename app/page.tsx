@@ -250,7 +250,7 @@ const ChatBotDemo = () => {
         </div>
       </div >
 
-      <div className="p-6 md:px-72" style={{ position: 'fixed', bottom: 0, left: 0, right: 0 }}>
+      <div className="p-6 md:px-72" style={{ position: 'fixed', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(255, 255, 255, 0.3)', backdropFilter: 'blur(1px)' }}>
 
         {error && <Suggestions>
           <Suggestion suggestion={`An error occured: ${error.message}. Regenerate.`} onClick={() => regenerate()} />
