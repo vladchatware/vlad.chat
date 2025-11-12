@@ -153,7 +153,7 @@ const ChatBotDemo = () => {
                       Hello, I am Vlad a software developer.
                     </Response>
                     <Response>
-                      You can ask me about my experience, my past projects or my notion templates.
+                      You can ask me about my experience, my past projects or my notion templates or [book a call with me](https://calendly.com/vladchatware/30min).
                     </Response>
                     <Response>
                       Also chek out my [shop](https://shop.vlad.chat) or listen to some [music](https://music.vlad.chat).
