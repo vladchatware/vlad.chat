@@ -1,4 +1,4 @@
-import { streamText, UIMessage, convertToModelMessages, experimental_createMCPClient, stepCountIs, smoothStream } from 'ai';
+import { streamText, UIMessage, convertToModelMessages, experimental_createMCPClient, stepCountIs, smoothStream, createGateway, gateway } from 'ai';
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { system } from '@/lib/ai'
 import { api, internal } from '@/convex/_generated/api';
@@ -6,6 +6,10 @@ import { convexAuthNextjsToken } from '@convex-dev/auth/nextjs/server';
 import { fetchMutation, fetchQuery } from "convex/nextjs"
 import { NextResponse } from 'next/server';
 import { stripe } from '@/lib/stripe';
+import { PostHog } from 'posthog-node';
+import { withTracing } from '@posthog/ai';
+
+const posthog = new PostHog(process.env.NEXT_PUBLIC_POSTHOG_KEY!, { host: process.env.NEXT_PUBLIC_POSTHOG_HOST! });
 
 export async function POST(req: Request) {
   const {
@@ -41,8 +45,10 @@ export async function POST(req: Request) {
 
   const tools = await notion.tools()
 
+  const _model = withTracing(gateway.languageModel(model), posthog, {})
+
   const result = streamText({
-    model: webSearch ? 'perplexity/sonar' : model,
+    model: webSearch ? 'perplexity/sonar' : _model,
     messages: convertToModelMessages(messages),
     tools,
     stopWhen: stepCountIs(5),
