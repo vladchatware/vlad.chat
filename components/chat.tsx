@@ -37,6 +37,7 @@ import {
 } from '@/components/ai-elements/tool';
 import { Fragment, useEffect, useState } from 'react';
 import { useChat } from '@ai-sdk/react';
+import type { ChatStatus } from 'ai';
 import { Response } from '@/components/ai-elements/response';
 import { CopyIcon, GlobeIcon, MessageCircle, RefreshCcwIcon } from 'lucide-react';
 import {
@@ -79,7 +80,7 @@ export interface ChatBotDemoProps {
 }
 
 // Component to wrap PromptInputSubmit with attachment awareness
-const SubmitButton = ({ input, status }: { input: string; status: string | undefined }) => {
+const SubmitButton = ({ input, status }: { input: string; status: ChatStatus | undefined }) => {
   const attachments = usePromptInputAttachments();
   const hasAttachments = attachments.files.length > 0;
   
