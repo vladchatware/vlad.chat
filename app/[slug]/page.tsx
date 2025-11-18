@@ -1,17 +1,16 @@
-'use client';
-
 import { ChatBotDemo } from '@/components/chat';
 
 interface PageProps {
-  params: {
+  params: Promise<{
     slug: string;
-  };
+  }>;
 }
 
-export default function SlugPage({ params }: PageProps) {
+export default async function SlugPage({ params }: PageProps) {
+  const { slug } = await params;
   // Normalize the slug: convert hyphens to spaces
   // e.g., "inner-work" -> "inner work"
-  const normalizedMessage = params.slug.replace(/-/g, ' ');
+  const normalizedMessage = slug.replace(/-/g, ' ');
 
   return <ChatBotDemo autoMessage={normalizedMessage} />;
 }
