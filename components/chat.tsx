@@ -183,8 +183,11 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                   </MessageContent>
                 </Message>
               </div>
-              {messages.map((message, i, messages) => (
-                <div key={message.id} className={messages.length - 1 === i ? "pb-42" : ""} >
+              {messages.map((message, messageIndex) => (
+                <div
+                  key={message.id}
+                  className={messages.length - 1 === messageIndex ? 'pb-42' : ''}
+                >
                   {
                     message.role === 'assistant' && message.parts.filter((part) => part.type === 'source-url').length > 0 && (
                       <Sources>
@@ -208,11 +211,11 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                     )
                   }
                   {
-                    message.parts.map((part, i) => {
+                    message.parts.map((part, partIndex) => {
                       switch (part.type) {
                         case 'text':
                           return (
-                            <Fragment key={`${message.id}-${i}`}>
+                            <Fragment key={`${message.id}-${partIndex}`}>
                               <Message from={message.role}>
                                 <MessageContent>
                                   <Response>
@@ -220,7 +223,9 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                                   </Response>
                                 </MessageContent>
                               </Message>
-                              {message.role === 'assistant' && i === messages.length - 1 && (
+                              {message.role === 'assistant' &&
+                                messageIndex === messages.length - 1 &&
+                                partIndex === message.parts.length - 1 && (
                                 <Actions className="mt-2">
                                   <Action
                                     onClick={() => { regenerate() }}
@@ -243,28 +248,40 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                         case 'reasoning':
                           return (
                             <Reasoning
-                              key={`${message.id}-${i}`}
+                              key={`${message.id}-${partIndex}`}
                               className="w-full"
-                              isStreaming={status === 'streaming' && i === message.parts.length - 1 && message.id === messages.at(-1)?.id}
+                              isStreaming={
+                                status === 'streaming' &&
+                                partIndex === message.parts.length - 1 &&
+                                message.id === messages.at(-1)?.id
+                              }
                             >
                               <ReasoningTrigger />
                               <ReasoningContent>{part.text}</ReasoningContent>
                             </Reasoning>
                           );
-                        case 'dynamic-tool':
-                          const content = (part.output as { content: [{ text: string }] })?.content[0]?.text ?? []
-                          return <>
-                            <Tool key={`${message.id}-${i}`} defaultOpen={false}>
+                        case 'dynamic-tool': {
+                          const content =
+                            (part.output as { content: [{ text: string }] })?.content[0]
+                              ?.text ?? [];
+
+                          return (
+                            <Tool key={`${message.id}-${partIndex}`} defaultOpen={false}>
                               <ToolHeader type={'tool-notion'} state={part.state} />
                               <ToolContent>
                                 <ToolInput input={part.input} />
                                 <ToolOutput output={content} errorText={part.errorText} />
                               </ToolContent>
                             </Tool>
-                          </>
+                          );
+                        }
                         default:
                           return null;
                       }
+                    })
+                  }
+                </div>
+              ))}
                     })
                   }
                 </div>
