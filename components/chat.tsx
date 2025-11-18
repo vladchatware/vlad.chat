@@ -8,14 +8,7 @@ import {
 import { Message, MessageContent } from '@/components/ai-elements/message';
 import {
   PromptInput,
-  PromptInputActionAddAttachments,
-  PromptInputActionMenu,
-  PromptInputActionMenuContent,
-  PromptInputActionMenuTrigger,
-  PromptInputAttachment,
-  PromptInputAttachments,
   PromptInputBody,
-  PromptInputButton,
   type PromptInputMessage,
   PromptInputModelSelect,
   PromptInputModelSelectContent,
@@ -26,7 +19,6 @@ import {
   PromptInputTextarea,
   PromptInputToolbar,
   PromptInputTools,
-  usePromptInputAttachments,
 } from '@/components/ai-elements/prompt-input'
 import {
   Tool,
@@ -37,9 +29,8 @@ import {
 } from '@/components/ai-elements/tool';
 import { Fragment, useEffect, useState } from 'react';
 import { useChat } from '@ai-sdk/react';
-import type { ChatStatus } from 'ai';
 import { Response } from '@/components/ai-elements/response';
-import { CopyIcon, GlobeIcon, MessageCircle, RefreshCcwIcon } from 'lucide-react';
+import { CopyIcon, RefreshCcwIcon } from 'lucide-react';
 import {
   Source,
   Sources,
@@ -79,15 +70,6 @@ export interface ChatBotDemoProps {
   autoMessage?: string;
 }
 
-// Component to wrap PromptInputSubmit with attachment awareness
-const SubmitButton = ({ input, status }: { input: string; status: ChatStatus | undefined }) => {
-  const attachments = usePromptInputAttachments();
-  const hasAttachments = attachments.files.length > 0;
-  
-  return (
-    <PromptInputSubmit disabled={!input && !hasAttachments && !status} status={status} />
-  );
-};
 
 export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
   const isAuthenticated = useQuery(api.auth.isAuthenticated)
@@ -96,7 +78,6 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
   const [showSuggestions, setShowSuggestions] = useState(true)
   const [input, setInput] = useState('');
   const [model, setModel] = useState<string>(models[0].value);
-  const [webSearch, setWebSearch] = useState(false);
   const [autoMessageSent, setAutoMessageSent] = useState(false);
   const { messages, sendMessage, status, error, regenerate } = useChat({
     onError: error => {
@@ -120,12 +101,11 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
         {
           body: {
             model: model,
-            webSearch: webSearch,
           },
         },
       );
     }
-  }, [autoMessage, autoMessageSent, isAuthenticated, messages.length, status, sendMessage, model, webSearch])
+  }, [autoMessage, autoMessageSent, isAuthenticated, messages.length, status, sendMessage, model])
 
   useEffect(() => {
     if (input.length) {
@@ -139,23 +119,20 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
 
   const handleSubmit = async (message: PromptInputMessage) => {
     const hasText = Boolean(message.text);
-    const hasAttachments = Boolean(message.files?.length);
 
     setShowSuggestions(false)
 
-    if (!(hasText || hasAttachments)) {
+    if (!hasText) {
       return;
     }
 
     sendMessage(
       {
-        text: message.text || 'Sent with attachments',
-        files: message.files
+        text: message.text,
       },
       {
         body: {
           model: model,
-          webSearch: webSearch,
         },
       },
     );
@@ -343,7 +320,6 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                   {
                     body: {
                       model: model,
-                      webSearch: webSearch,
                     },
                   },
                 );
@@ -351,11 +327,8 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
           )}
         </Suggestions>}
 
-        <PromptInput onSubmit={handleSubmit} className="mt-4" globalDrop multiple>
+        <PromptInput onSubmit={handleSubmit} className="mt-4">
           <PromptInputBody>
-            <PromptInputAttachments>
-              {(attachment) => <PromptInputAttachment data={attachment} />}
-            </PromptInputAttachments>
             <PromptInputTextarea
               onChange={(e) => setInput(e.target.value)}
               value={input}
@@ -363,19 +336,6 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
           </PromptInputBody>
           <PromptInputToolbar>
             <PromptInputTools>
-              <PromptInputActionMenu>
-                <PromptInputActionMenuTrigger />
-                <PromptInputActionMenuContent>
-                  <PromptInputActionAddAttachments />
-                </PromptInputActionMenuContent>
-              </PromptInputActionMenu>
-              <PromptInputButton
-                variant={webSearch ? 'default' : 'ghost'}
-                onClick={() => setWebSearch(!webSearch)}
-              >
-                <GlobeIcon size={16} />
-                <span>Search</span>
-              </PromptInputButton>
               <PromptInputModelSelect
                 onValueChange={(value) => {
                   setModel(value);
@@ -394,7 +354,7 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                 </PromptInputModelSelectContent>
               </PromptInputModelSelect>
             </PromptInputTools>
-            <SubmitButton input={input} status={status} />
+            <PromptInputSubmit disabled={!input && !status} status={status} />
           </PromptInputToolbar>
         </PromptInput>
       </div>
