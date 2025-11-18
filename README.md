@@ -6,12 +6,10 @@ A personal AI chatbot application built with Next.js, featuring an intelligent c
 
 - 🤖 **AI-Powered Chat**: Interactive conversations using OpenAI GPT-5 models
 - 📚 **Notion Integration**: Access to knowledge base stored in Notion pages
-- 🔍 **Web Search**: Optional web search capability for real-time information
 - 💳 **Payment Processing**: Stripe integration for credit-based usage
 - 📊 **Analytics**: PostHog integration for usage tracking
 - 🔐 **Authentication**: Anonymous and Google OAuth authentication via Convex Auth
 - 🎨 **Modern UI**: Beautiful, responsive interface built with Radix UI and Tailwind CSS
-- 📎 **File Attachments**: Support for file uploads in conversations
 - 🔄 **Streaming Responses**: Real-time streaming of AI responses
 - 🧠 **Reasoning Display**: Optional reasoning chain visualization
 
@@ -250,8 +248,6 @@ You can modify the available models in `app/page.tsx`.
 
 - **Chat Interface**: Built with `@ai-sdk/react` for streaming responses
 - **Authentication**: Uses `@convex-dev/auth` for anonymous and OAuth auth
-- **File Attachments**: Supports drag-and-drop file uploads
-- **Web Search**: Toggleable web search using AI SDK tools
 - **Credit System**: Token-based usage tracking with trial limits
 
 ## License

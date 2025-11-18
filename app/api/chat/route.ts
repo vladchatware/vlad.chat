@@ -15,8 +15,7 @@ export async function POST(req: Request) {
   const {
     messages,
     model,
-    webSearch,
-  }: { messages: UIMessage[]; model: string; webSearch: boolean } = await req.json();
+  }: { messages: UIMessage[]; model: string } = await req.json();
   const user = await fetchQuery(api.users.viewer, {}, { token: await convexAuthNextjsToken() })
 
   if (!user) return new NextResponse('no user present in session', { status: 403 })
@@ -48,7 +47,7 @@ export async function POST(req: Request) {
   const _model = withTracing(gateway.languageModel(model), posthog, {})
 
   const result = streamText({
-    model: webSearch ? 'perplexity/sonar' : _model,
+    model: _model,
     messages: convertToModelMessages(messages),
     tools,
     stopWhen: stepCountIs(5),
