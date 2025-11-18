@@ -26,6 +26,7 @@ import {
   PromptInputTextarea,
   PromptInputToolbar,
   PromptInputTools,
+  usePromptInputAttachments,
 } from '@/components/ai-elements/prompt-input'
 import {
   Tool,
@@ -76,6 +77,16 @@ const suggestions = [
 export interface ChatBotDemoProps {
   autoMessage?: string;
 }
+
+// Component to wrap PromptInputSubmit with attachment awareness
+const SubmitButton = ({ input, status }: { input: string; status: string | undefined }) => {
+  const attachments = usePromptInputAttachments();
+  const hasAttachments = attachments.files.length > 0;
+  
+  return (
+    <PromptInputSubmit disabled={!input && !hasAttachments && !status} status={status} />
+  );
+};
 
 export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
   const isAuthenticated = useQuery(api.auth.isAuthenticated)
@@ -382,7 +393,7 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                 </PromptInputModelSelectContent>
               </PromptInputModelSelect>
             </PromptInputTools>
-            <PromptInputSubmit disabled={!input && !status} status={status} />
+            <SubmitButton input={input} status={status} />
           </PromptInputToolbar>
         </PromptInput>
       </div>
