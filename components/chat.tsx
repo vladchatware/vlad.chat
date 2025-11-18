@@ -282,10 +282,6 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                   }
                 </div>
               ))}
-                    })
-                  }
-                </div>
-              ))}
               {status === 'submitted' && <div className="pb-46"><Loader /></div>}
             </ConversationContent>
             <ConversationScrollButton />
@@ -304,7 +300,7 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
             <Suggestion suggestion={`You have only ${user?.trialMessages} messages left. Sign in to reset your limits.`} onClick={() => { signIn('google') }} />
           </Suggestions>
         </Authenticated>}
-        {user?.trialTokens <= 0 && user.tokens <= 0 && <Suggestions>
+        {user && user.trialTokens <= 0 && user.tokens <= 0 && <Suggestions>
           <Suggestion suggestion={`You have run out of credits. Buy more.`} onClick={() => { checkout() }} />
         </Suggestions>
         }
