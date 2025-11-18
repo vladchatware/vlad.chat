@@ -151,14 +151,30 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
   };
 
   const checkout = async () => {
-    const res = await fetch(`/api/checkout_session`, {
-      method: 'POST',
-      body: JSON.stringify({
-        price: 5
+    try {
+      const res = await fetch(`/api/checkout_session`, {
+        method: 'POST',
+        body: JSON.stringify({
+          price: 5
+        })
       })
-    })
-    const session = await res.json()
-    window.open(session.url, '_blank')
+      
+      if (!res.ok) {
+        console.error('Checkout failed:', res.statusText);
+        return;
+      }
+      
+      const session = await res.json()
+      
+      if (!session.url) {
+        console.error('Checkout session missing URL');
+        return;
+      }
+      
+      window.open(session.url, '_blank')
+    } catch (error) {
+      console.error('Checkout error:', error);
+    }
   }
 
   return (
