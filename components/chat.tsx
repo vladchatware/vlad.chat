@@ -93,10 +93,10 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
   });
 
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (isAuthenticated === false) {
       signIn('anonymous')
     }
-  }, [])
+  }, [isAuthenticated, signIn])
 
   // Auto-send message when page is ready and autoMessage is provided
   useEffect(() => {
