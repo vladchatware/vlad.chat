@@ -2,7 +2,14 @@ import { z } from "zod"
 import notion from "@/lib/notion"
 import { convertBlocksToMarkdown } from "@/lib/notion-markdown"
 import { createMcpHandler } from "mcp-handler"
-import { DataSourceObjectResponse, PageObjectResponse } from "@notionhq/client";
+import {
+  PageObjectResponse,
+  DatabaseObjectResponse,
+  PartialPageObjectResponse,
+  PartialDatabaseObjectResponse,
+  DataSourceObjectResponse,
+  PartialDataSourceObjectResponse
+} from "@notionhq/client";
 
 const handler = createMcpHandler(
   (server) => {
@@ -10,54 +17,72 @@ const handler = createMcpHandler(
       'notion-search',
       `Searches all parent or child pages and databases that have been shared with an integration.
 
-Returns all pages or databases, excluding duplicated linked databases, that have titles that include the query param. If no query param is provided, then the response contains all pages or databases that have been shared with the integration. The results adhere to any limitations related to an integration's capabilities.
+Returns all pages or databases, excluding duplicated linked databases, that have titles that include the query param.If no query param is provided, then the response contains all pages or databases that have been shared with the integration.The results adhere to any limitations related to an integration's capabilities.
 
 To limit the request to search only pages or to search only databases, use the filter param.`,
       {
         sort: z.object({
-          timestamp: z.any().describe('The name of the timestamp to sort against. Possible values include last_edited_time.'),
-          direction: z.enum(["ascending", "descending"]).describe('The direction to sort. Possible values include ascending and descending.')
-        }).default({ direction: 'ascending' }).describe('A set of criteria, direction and timestamp keys, that orders the results. The only supported timestamp value is "last_edited_time". Supported direction values are "ascending" and "descending". If sort is not provided, then the most recently edited results are returned first.'),
+          timestamp: z.enum(['last_edited_time']).default('last_edited_time').describe('The name of the timestamp to sort against. Possible values include last_edited_time.'),
+          direction: z.enum(["ascending", "descending"]).default('descending').describe('The direction to sort. Possible values include ascending and descending.')
+        }).default({}).describe('A set of criteria, direction and timestamp keys, that orders the results. The only supported timestamp value is "last_edited_time". Supported direction values are "ascending" and "descending". If sort is not provided, then the most recently edited results are returned first.'),
         query: z.string().describe('Semantic search query over your entire Notion workspace and connected sources. For best results, dont provide more than one question per tool call.'),
         start_cursor: z.string().optional().describe('A cursor value returned in a previous response that If supplied, limits the response to results starting after the cursor. If not supplied, then the first page of results is returned.'),
         page_size: z.number().default(3).describe('The number of items from the full list to include in the response. Maximum: 100.'),
         filter: z.object({
-          property: z.string().optional().describe('The name of the property to filter by. Currently the only property you can filter by is the object type. Possible values include object. Limitation: Currently the only filter allowed is object which will filter by type of object (either page or database)'),
-          value: z.string().optional().describe('The value of the property to filter the results by. Possible values for object type include page or database. Limitation: Currently the only filter allowed is object which will filter by type of object (either page or database)')
+          property: z.enum(['object']).optional().describe('The name of the property to filter by. Currently the only property you can filter by is the object type. Possible values include object. Limitation: Currently the only filter allowed is object which will filter by type of object (either page or database)'),
+          value: z.enum(['page', 'database']).optional().describe('The value of the property to filter the results by. Possible values for object type include page or database. Limitation: Currently the only filter allowed is object which will filter by type of object (either page or database)')
         }).default({})
       },
       async ({ query, sort, filter, page_size, start_cursor }) => {
-        const res = await notion.search({
+        const searchParams: Parameters<typeof notion.search>[0] = {
           query,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          sort: sort as any,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          filter: filter as any,
+          sort: {
+            timestamp: sort.timestamp,
+            direction: sort.direction
+          },
           page_size,
           start_cursor
-        })
+        };
 
-        const payload = res.results.map(result => {
+        if (filter.property && filter.value) {
+          searchParams.filter = {
+            property: 'object',
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            value: filter.value as any
+          };
+        }
+
+        const res = await notion.search(searchParams)
+
+        const payload = res.results.map((result: PageObjectResponse | DatabaseObjectResponse | PartialPageObjectResponse | PartialDatabaseObjectResponse | DataSourceObjectResponse | PartialDataSourceObjectResponse) => {
           const common = {
             object: result.object,
             id: result.id,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            url: (result as any).url,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            created_time: (result as any).created_time,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            last_edited_time: (result as any).last_edited_time,
+            url: 'url' in result ? result.url : undefined,
+            created_time: 'created_time' in result ? result.created_time : undefined,
+            last_edited_time: 'last_edited_time' in result ? result.last_edited_time : undefined,
           }
 
           if ('properties' in result) {
+            // It's a Page or DataSource with properties
+            // DataSourceObjectResponse might not have title in properties in the same way, but let's check
+            const props = result.properties;
+            const titleProperty = Object.values(props).find((prop: any) => prop.type === 'title');
+            const title = titleProperty && titleProperty.type === 'title'
+              ? titleProperty.title.map((t: any) => t.plain_text).join('')
+              : "Untitled";
+
             return {
               ...common,
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              title: (result as any).properties.title?.title?.[0]?.plain_text ||
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                (result as any).properties.Name?.title?.[0]?.plain_text ||
-                "Untitled",
-              properties: (result as PageObjectResponse | DataSourceObjectResponse).properties
+              title,
+              properties: props
+            }
+          } else if ('title' in result) {
+            // It's a Database
+            const title = result.title.map(t => t.plain_text).join('');
+            return {
+              ...common,
+              title,
             }
           }
 
@@ -90,7 +115,7 @@ To limit the request to search only pages or to search only databases, use the f
             )
             if (titleProperty && titleProperty.type === 'title') {
               const title = titleProperty.title.map(rt => rt.plain_text).join('')
-              markdown += `# ${title}\n\n`
+              markdown += `# ${title} \n\n`
             }
           }
 
@@ -103,7 +128,7 @@ To limit the request to search only pages or to search only databases, use the f
           }
         } catch (error) {
           return {
-            content: [{ type: 'text', text: `Error converting page to markdown: ${error instanceof Error ? error.message : 'Unknown error'}` }]
+            content: [{ type: 'text', text: `Error converting page to markdown: ${error instanceof Error ? error.message : 'Unknown error'} ` }]
           }
         }
       }
