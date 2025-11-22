@@ -27,11 +27,11 @@ To limit the request to search only pages or to search only databases, use the f
         }).default({}).describe('A set of criteria, direction and timestamp keys, that orders the results. The only supported timestamp value is "last_edited_time". Supported direction values are "ascending" and "descending". If sort is not provided, then the most recently edited results are returned first.'),
         query: z.string().describe('Semantic search query over your entire Notion workspace and connected sources. For best results, dont provide more than one question per tool call.'),
         start_cursor: z.string().optional().describe('A cursor value returned in a previous response that If supplied, limits the response to results starting after the cursor. If not supplied, then the first page of results is returned.'),
-        page_size: z.number().default(1).describe('The number of items from the full list to include in the response. Maximum: 100.'),
+        page_size: z.number().default(1).describe('The number of items from the full list to include in the response. Maximum: 100. Recommended to keep low (1) as the most relevant result is usually first.'),
         filter: z.object({
-          property: z.enum(['object']).optional().describe('The name of the property to filter by. Currently the only property you can filter by is the object type. Possible values include object. Limitation: Currently the only filter allowed is object which will filter by type of object (either page or database)'),
-          value: z.enum(['page', 'database']).optional().describe('The value of the property to filter the results by. Possible values for object type include page or database. Limitation: Currently the only filter allowed is object which will filter by type of object (either page or database)')
-        }).default({})
+          property: z.enum(['object']).default('object').describe('The name of the property to filter by. Currently the only property you can filter by is the object type. Possible values include object. Limitation: Currently the only filter allowed is object which will filter by type of object (either page or database)'),
+          value: z.enum(['page', 'database']).default('page').describe('The value of the property to filter the results by. Possible values for object type include page or database. Limitation: Currently the only filter allowed is object which will filter by type of object (either page or database)')
+        }).default({ property: 'object', value: 'page' })
       },
       async ({ query, sort, filter, page_size, start_cursor }) => {
         const searchParams: Parameters<typeof notion.search>[0] = {
@@ -41,16 +41,13 @@ To limit the request to search only pages or to search only databases, use the f
             direction: sort.direction
           },
           page_size,
-          start_cursor
-        };
-
-        if (filter.property && filter.value) {
-          searchParams.filter = {
+          start_cursor,
+          filter: {
             property: 'object',
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            value: filter.value as any
-          };
-        }
+            value: (filter.value || 'page') as any
+          }
+        };
 
         const res = await notion.search(searchParams)
 
