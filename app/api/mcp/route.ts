@@ -1,109 +1,8 @@
 import { z } from "zod"
 import notion from "@/lib/notion"
+import { convertBlocksToMarkdown } from "@/lib/notion-markdown"
 import { createMcpHandler } from "mcp-handler"
 import { DataSourceObjectResponse, PageObjectResponse } from "@notionhq/client";
-
-// Helper function to convert Notion blocks to markdown
-async function convertBlocksToMarkdown(blockId: string, depth = 0): Promise<string> {
-  const blocks = await notion.blocks.children.list({ block_id: blockId })
-  let markdown = ''
-
-  for (const block of blocks.results) {
-    if (!('type' in block)) continue
-
-    const indent = '  '.repeat(depth)
-
-    switch (block.type) {
-      case 'paragraph':
-        if (block.paragraph.rich_text.length > 0) {
-          const text = block.paragraph.rich_text.map(rt => rt.plain_text).join('')
-          markdown += `${indent}${text}\n\n`
-        } else {
-          markdown += `${indent}\n\n`
-        }
-        break
-
-      case 'heading_1':
-        const h1Text = block.heading_1.rich_text.map(rt => rt.plain_text).join('')
-        markdown += `${indent}# ${h1Text}\n\n`
-        break
-
-      case 'heading_2':
-        const h2Text = block.heading_2.rich_text.map(rt => rt.plain_text).join('')
-        markdown += `${indent}## ${h2Text}\n\n`
-        break
-
-      case 'heading_3':
-        const h3Text = block.heading_3.rich_text.map(rt => rt.plain_text).join('')
-        markdown += `${indent}### ${h3Text}\n\n`
-        break
-
-      case 'bulleted_list_item':
-        const bulletText = block.bulleted_list_item.rich_text.map(rt => rt.plain_text).join('')
-        markdown += `${indent}- ${bulletText}\n`
-        break
-
-      case 'numbered_list_item':
-        const numberText = block.numbered_list_item.rich_text.map(rt => rt.plain_text).join('')
-        markdown += `${indent}1. ${numberText}\n`
-        break
-
-      case 'to_do':
-        const todoText = block.to_do.rich_text.map(rt => rt.plain_text).join('')
-        const checkbox = block.to_do.checked ? '[x]' : '[ ]'
-        markdown += `${indent}${checkbox} ${todoText}\n`
-        break
-
-      case 'toggle':
-        const toggleText = block.toggle.rich_text.map(rt => rt.plain_text).join('')
-        markdown += `${indent}<details>\n${indent}<summary>${toggleText}</summary>\n`
-        break
-
-      case 'code':
-        const codeText = block.code.rich_text.map(rt => rt.plain_text).join('')
-        const language = block.code.language
-        markdown += `${indent}\`\`\`${language}\n${codeText}\n${indent}\`\`\`\n\n`
-        break
-
-      case 'quote':
-        const quoteText = block.quote.rich_text.map(rt => rt.plain_text).join('')
-        markdown += `${indent}> ${quoteText}\n\n`
-        break
-
-      case 'callout':
-        const calloutText = block.callout.rich_text.map(rt => rt.plain_text).join('')
-        const icon = block.callout.icon?.type === 'emoji' ? block.callout.icon.emoji : '💡'
-        markdown += `${indent}> ${icon} ${calloutText}\n\n`
-        break
-
-      case 'divider':
-        markdown += `${indent}---\n\n`
-        break
-
-      case 'table':
-        // For tables, we'll need to handle them specially
-        markdown += `${indent}[Table content - not fully supported in markdown conversion]\n\n`
-        break
-
-      default:
-        // For unsupported block types, try to extract any text content
-        if ('rich_text' in block && Array.isArray(block.rich_text)) {
-          const text = block.rich_text.map(rt => rt.plain_text).join('')
-          if (text) {
-            markdown += `${indent}${text}\n\n`
-          }
-        }
-    }
-
-    // Recursively process child blocks
-    if (block.has_children) {
-      const childMarkdown = await convertBlocksToMarkdown(block.id, depth + 1)
-      markdown += childMarkdown
-    }
-  }
-
-  return markdown
-}
 
 const handler = createMcpHandler(
   (server) => {
@@ -127,15 +26,44 @@ To limit the request to search only pages or to search only databases, use the f
           value: z.string().optional().describe('The value of the property to filter the results by. Possible values for object type include page or database. Limitation: Currently the only filter allowed is object which will filter by type of object (either page or database)')
         }).default({})
       },
-      async ({ query, start_cursor }) => {
-        const res = await notion.search({ query, start_cursor, page_size: 1 })
+      async ({ query, sort, filter, page_size, start_cursor }) => {
+        const res = await notion.search({
+          query,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          sort: sort as any,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          filter: filter as any,
+          page_size,
+          start_cursor
+        })
+
         const payload = res.results.map(result => {
-          return {
+          const common = {
             object: result.object,
             id: result.id,
-            properties: (result as PageObjectResponse | DataSourceObjectResponse).properties
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            url: (result as any).url,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            created_time: (result as any).created_time,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            last_edited_time: (result as any).last_edited_time,
           }
+
+          if ('properties' in result) {
+            return {
+              ...common,
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              title: (result as any).properties.title?.title?.[0]?.plain_text ||
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                (result as any).properties.Name?.title?.[0]?.plain_text ||
+                "Untitled",
+              properties: (result as PageObjectResponse | DataSourceObjectResponse).properties
+            }
+          }
+
+          return common
         })
+
         const text = JSON.stringify(payload, null, 2)
         return {
           content: [{ type: 'text', text }]
@@ -152,7 +80,6 @@ To limit the request to search only pages or to search only databases, use the f
         try {
           // First, get the page to extract the title
           const page = await notion.pages.retrieve({ page_id })
-          console.log('got page')
 
           let markdown = ''
 
@@ -165,14 +92,12 @@ To limit the request to search only pages or to search only databases, use the f
               const title = titleProperty.title.map(rt => rt.plain_text).join('')
               markdown += `# ${title}\n\n`
             }
-            console.log('got title')
           }
 
           // Convert all blocks to markdown
           const contentMarkdown = await convertBlocksToMarkdown(page_id)
           markdown += contentMarkdown
 
-          console.log('got content')
           return {
             content: [{ type: 'text', text: markdown }]
           }

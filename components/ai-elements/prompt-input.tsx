@@ -90,6 +90,7 @@ export function PromptInputAttachment({
       {...props}
     >
       {data.mediaType?.startsWith("image/") && data.url ? (
+        // eslint-disable-next-line @next/next/no-img-element
         <img
           alt={data.filename || "attachment"}
           className="size-full rounded-md object-cover"
@@ -420,7 +421,7 @@ export const PromptInput = ({
 
     // Convert blob URLs to data URLs asynchronously
     Promise.all(
-      items.map(async ({ id, ...item }) => {
+      items.map(async ({ id: _id, ...item }) => {
         if (item.url && item.url.startsWith("blob:")) {
           return {
             ...item,

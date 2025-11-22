@@ -46,7 +46,7 @@ import { Loader } from '@/components/ai-elements/loader';
 import { Suggestion, Suggestions } from '@/components/ai-elements/suggestion';
 import { Action, Actions } from '@/components/ai-elements/actions';
 import { useAuthActions } from "@convex-dev/auth/react"
-import { Authenticated, Unauthenticated, useQuery } from 'convex/react';
+import { Authenticated, useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 
 const models = [
@@ -74,7 +74,7 @@ export interface ChatBotDemoProps {
 export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
   const isAuthenticated = useQuery(api.auth.isAuthenticated)
   const user = useQuery(api.users.viewer)
-  const { signIn, signOut } = useAuthActions()
+  const { signIn } = useAuthActions()
   const [showSuggestions, setShowSuggestions] = useState(true)
   const [input, setInput] = useState('');
   const [model, setModel] = useState<string>(models[0].value);
@@ -147,19 +147,19 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
           price: 5
         })
       })
-      
+
       if (!res.ok) {
         console.error('Checkout failed:', res.statusText);
         return;
       }
-      
+
       const session = await res.json()
-      
+
       if (!session.url) {
         console.error('Checkout session missing URL');
         return;
       }
-      
+
       window.open(session.url, '_blank')
     } catch (error) {
       console.error('Checkout error:', error);
@@ -175,7 +175,8 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
               <div>
                 <Message from="assistant">
                   <MessageContent>
-                    <img src="vlad.png" width={150} />
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src="vlad.png" width={150} alt="Vlad" />
                     <Response>
                       Hello, I am Vlad a software developer.
                     </Response>
@@ -231,23 +232,23 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                               {message.role === 'assistant' &&
                                 messageIndex === messages.length - 1 &&
                                 partIndex === message.parts.length - 1 && (
-                                <Actions className="mt-2">
-                                  <Action
-                                    onClick={() => { regenerate() }}
-                                    label="Retry"
-                                  >
-                                    <RefreshCcwIcon className="size-3" />
-                                  </Action>
-                                  <Action
-                                    onClick={() =>
-                                      navigator.clipboard.writeText(part.text)
-                                    }
-                                    label="Copy"
-                                  >
-                                    <CopyIcon className="size-3" />
-                                  </Action>
-                                </Actions>
-                              )}
+                                  <Actions className="mt-2">
+                                    <Action
+                                      onClick={() => { regenerate() }}
+                                      label="Retry"
+                                    >
+                                      <RefreshCcwIcon className="size-3" />
+                                    </Action>
+                                    <Action
+                                      onClick={() =>
+                                        navigator.clipboard.writeText(part.text)
+                                      }
+                                      label="Copy"
+                                    >
+                                      <CopyIcon className="size-3" />
+                                    </Action>
+                                  </Actions>
+                                )}
                             </Fragment>
                           );
                         case 'reasoning':
