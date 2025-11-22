@@ -67,9 +67,15 @@ To limit the request to search only pages or to search only databases, use the f
             // It's a Page or DataSource with properties
             // DataSourceObjectResponse might not have title in properties in the same way, but let's check
             const props = result.properties;
-            const titleProperty = Object.values(props).find((prop: any) => prop.type === 'title');
-            const title = titleProperty && titleProperty.type === 'title'
-              ? titleProperty.title.map((t: any) => t.plain_text).join('')
+            const titleProperty = Object.values(props).find((prop) =>
+              typeof prop === 'object' &&
+              prop !== null &&
+              'type' in prop &&
+              (prop as Record<string, unknown>).type === 'title'
+            ) as { title: Array<{ plain_text: string }> } | undefined;
+
+            const title = titleProperty
+              ? titleProperty.title.map((t) => t.plain_text).join('')
               : "Untitled";
 
             return {
