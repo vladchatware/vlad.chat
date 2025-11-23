@@ -1,6 +1,7 @@
 import { z } from "zod"
 import notion from "@/lib/notion"
 import { convertBlocksToMarkdown } from "@/lib/notion-markdown"
+import { getRelativeTime } from "@/lib/utils"
 import { createMcpHandler } from "mcp-handler"
 import {
   PageObjectResponse,
@@ -51,18 +52,10 @@ To limit the request to search only pages or to search only databases, use the f
 
         const res = await notion.search(searchParams)
 
-        const payload = res.results.map((result: PageObjectResponse | DatabaseObjectResponse | PartialPageObjectResponse | PartialDatabaseObjectResponse | DataSourceObjectResponse | PartialDataSourceObjectResponse) => {
-          const common = {
-            object: result.object,
-            id: result.id,
-            url: 'url' in result ? result.url : undefined,
-            created_time: 'created_time' in result ? result.created_time : undefined,
-            last_edited_time: 'last_edited_time' in result ? result.last_edited_time : undefined,
-          }
+        const text = res.results.map((result: PageObjectResponse | DatabaseObjectResponse | PartialPageObjectResponse | PartialDatabaseObjectResponse | DataSourceObjectResponse | PartialDataSourceObjectResponse) => {
+          let title = "Untitled";
 
           if ('properties' in result) {
-            // It's a Page or DataSource with properties
-            // DataSourceObjectResponse might not have title in properties in the same way, but let's check
             const props = result.properties;
             const titleProperty = Object.values(props).find((prop) =>
               typeof prop === 'object' &&
@@ -71,28 +64,19 @@ To limit the request to search only pages or to search only databases, use the f
               (prop as Record<string, unknown>).type === 'title'
             ) as { title: Array<{ plain_text: string }> } | undefined;
 
-            const title = titleProperty
-              ? titleProperty.title.map((t) => t.plain_text).join('')
-              : "Untitled";
-
-            return {
-              ...common,
-              title,
-              properties: props
+            if (titleProperty) {
+              title = titleProperty.title.map((t) => t.plain_text).join('');
             }
           } else if ('title' in result) {
-            // It's a Database
-            const title = result.title.map(t => t.plain_text).join('');
-            return {
-              ...common,
-              title,
-            }
+            title = result.title.map(t => t.plain_text).join('');
           }
 
-          return common
-        })
+          const lastEditedTime = 'last_edited_time' in result ? result.last_edited_time : undefined;
+          const timeAgo = lastEditedTime ? getRelativeTime(new Date(lastEditedTime)) : '';
 
-        const text = JSON.stringify(payload, null, 2)
+          return `${result.id} ${title} ${timeAgo}`
+        }).join('\n');
+
         return {
           content: [{ type: 'text', text }]
         }
