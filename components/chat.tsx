@@ -192,7 +192,7 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
               {messages.map((message, messageIndex) => (
                 <div
                   key={message.id}
-                  className={messages.length - 1 === messageIndex ? 'pb-46' : ''}
+                  className={messages.length - 1 === messageIndex && status !== 'submitted' ? 'pb-46' : ''}
                 >
                   {
                     message.role === 'assistant' && message.parts.filter((part) => part.type === 'source-url').length > 0 && (
@@ -232,7 +232,7 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                               {message.role === 'assistant' &&
                                 messageIndex === messages.length - 1 &&
                                 partIndex === message.parts.length - 1 && (
-                                  <Actions className="mt-2">
+                                  <Actions className="-mt-3">
                                     <Action
                                       onClick={() => { regenerate({ body: { model } }) }}
                                       label="Retry"
@@ -288,7 +288,7 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                   }
                 </div>
               ))}
-              {status === 'submitted' && <div className="pb-46 pl-2"><Loader /></div>}
+              {status === 'submitted' && <div className="pb-46 flex justify-center"><Loader /></div>}
             </ConversationContent>
             <ConversationScrollButton />
           </Conversation>
