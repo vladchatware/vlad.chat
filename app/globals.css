@@ -120,3 +120,8 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Style links in markdown responses */
+.response-content a {
+  @apply underline underline-offset-2 decoration-foreground/40 hover:decoration-foreground transition-colors;
+}
