@@ -4,7 +4,7 @@ import { useQuery, useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useAuthActions } from "@convex-dev/auth/react"
-import { SendIcon, SunriseIcon, UsersIcon } from 'lucide-react';
+import { SendIcon, SunriseIcon, UsersIcon, ChevronDownIcon } from 'lucide-react';
 import Link from 'next/link';
 
 function formatTime(timestamp: number) {
@@ -56,6 +56,7 @@ export function LoungeChat() {
   const [authState, setAuthState] = useState<'idle' | 'signing-in' | 'done'>('idle');
   const [timeUntilReset, setTimeUntilReset] = useState(getTimeUntilReset());
   const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
+  const [hasNewMessages, setHasNewMessages] = useState(false);
   
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -92,21 +93,31 @@ export function LoungeChat() {
 
   // Check if user is near bottom of scroll (using window)
   const isNearBottom = useCallback(() => {
-    const threshold = 150;
+    // Account for the spacer at the bottom (14rem ≈ 224px)
+    // User is "at bottom" only if they can see the very end of messages
+    const spacerHeight = 224;
+    const threshold = spacerHeight + 50;
     const scrollTop = window.scrollY;
     const windowHeight = window.innerHeight;
     const documentHeight = document.documentElement.scrollHeight;
-    return documentHeight - scrollTop - windowHeight < threshold;
+    const distanceFromBottom = documentHeight - scrollTop - windowHeight;
+    return distanceFromBottom < threshold;
   }, []);
 
   // Handle scroll events (on window)
   const handleScroll = useCallback(() => {
-    setShouldAutoScroll(isNearBottom());
+    const nearBottom = isNearBottom();
+    setShouldAutoScroll(nearBottom);
+    if (nearBottom) {
+      setHasNewMessages(false);
+    }
   }, [isNearBottom]);
 
   // Add window scroll listener
   useEffect(() => {
-    window.addEventListener('scroll', handleScroll);
+    // Check initial scroll position
+    handleScroll();
+    window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
   }, [handleScroll]);
 
@@ -203,6 +214,9 @@ export function LoungeChat() {
     if (currentCount > prevMessageCount.current) {
       if (shouldAutoScroll) {
         scrollToBottom();
+      } else {
+        // User is scrolled up, show the new messages indicator
+        setHasNewMessages(true);
       }
     }
     prevMessageCount.current = currentCount;
@@ -409,6 +423,25 @@ export function LoungeChat() {
           </div>
         </div>
       </div>
+
+      {/* Scroll to bottom button - only shows when scrolled up AND new messages arrived */}
+      {hasNewMessages && !shouldAutoScroll && (
+        <button
+          onClick={() => {
+            scrollToBottom();
+            setHasNewMessages(false);
+            setShouldAutoScroll(true);
+          }}
+          className="fixed left-1/2 -translate-x-1/2 flex items-center gap-2 px-4 py-2.5 rounded-full bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium shadow-xl shadow-black/40 transition-all duration-200 hover:scale-105 animate-bounce"
+          style={{ 
+            bottom: 'calc(11rem + env(safe-area-inset-bottom, 0px))',
+            zIndex: 60 
+          }}
+        >
+          <ChevronDownIcon className="w-4 h-4" />
+          New messages
+        </button>
+      )}
 
       {/* Input area - Fixed at bottom */}
       <div className="fixed bottom-0 left-0 right-0 z-50">
