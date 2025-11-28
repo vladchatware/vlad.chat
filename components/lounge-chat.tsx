@@ -1,10 +1,10 @@
 'use client';
 
-import { useQuery, useMutation } from 'convex/react';
+import { useQuery, usePaginatedQuery, useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useAuthActions } from "@convex-dev/auth/react"
-import { SendIcon, SunriseIcon, UsersIcon, ChevronDownIcon } from 'lucide-react';
+import { SendIcon, SunriseIcon, UsersIcon, ChevronDownIcon, ChevronUpIcon } from 'lucide-react';
 import Link from 'next/link';
 
 function formatTime(timestamp: number) {
@@ -45,9 +45,22 @@ function getAvatarColor(name: string) {
 export function LoungeChat() {
   const isAuthenticated = useQuery(api.auth.isAuthenticated);
   const user = useQuery(api.users.viewer);
-  const messages = useQuery(api.lounge.getMessages);
+  const { results: paginatedMessages, status, loadMore } = usePaginatedQuery(
+    api.lounge.getMessagesPaginated,
+    {},
+    { initialNumItems: 30 }
+  );
   const sendMessage = useMutation(api.lounge.sendMessage);
   const { signIn } = useAuthActions();
+  
+  // Reverse paginated messages to display in chronological order (oldest first)
+  const messages = useMemo(() => {
+    if (!paginatedMessages) return undefined;
+    return [...paginatedMessages].reverse();
+  }, [paginatedMessages]);
+  
+  const canLoadMore = status === 'CanLoadMore';
+  const isLoadingMore = status === 'LoadingMore';
   
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
@@ -93,8 +106,6 @@ export function LoungeChat() {
 
   // Check if user is near bottom of scroll (using window)
   const isNearBottom = useCallback(() => {
-    // Account for the spacer at the bottom (14rem ≈ 224px)
-    // User is "at bottom" only if they can see the very end of messages
     const spacerHeight = 224;
     const threshold = spacerHeight + 50;
     const scrollTop = window.scrollY;
@@ -115,15 +126,20 @@ export function LoungeChat() {
 
   // Add window scroll listener
   useEffect(() => {
-    // Check initial scroll position
     handleScroll();
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
   }, [handleScroll]);
 
+  // Manual load more handler (button click only - no auto-scroll loading)
+  const handleLoadMore = useCallback(() => {
+    if (canLoadMore && !isLoadingMore) {
+      loadMore(30);
+    }
+  }, [canLoadMore, isLoadingMore, loadMore]);
+
   // Trigger Vlad's AI response with streaming
   const triggerVladResponse = async () => {
-    // Skip if anonymous user is out of @vlad mentions
     if (user?.isAnonymous && user.trialMessages <= 0) {
       return;
     }
@@ -132,7 +148,6 @@ export function LoungeChat() {
     setVladStreamingText('');
     setShouldAutoScroll(true);
     
-    // Scroll to show thinking state
     setTimeout(() => scrollToBottom(), 150);
     
     try {
@@ -143,7 +158,6 @@ export function LoungeChat() {
       });
 
       if (response.status === 403) {
-        // User ran out of @vlad mentions
         console.log('No @vlad mentions remaining');
         return;
       }
@@ -163,7 +177,6 @@ export function LoungeChat() {
           fullText += chunk;
           setVladStreamingText(fullText);
           
-          // Auto-scroll while streaming
           if (shouldAutoScroll) {
             scrollToBottom('auto');
           }
@@ -177,7 +190,7 @@ export function LoungeChat() {
     }
   };
 
-  // Auto sign in anonymous users - only attempt once
+  // Auto sign in anonymous users
   useEffect(() => {
     if (isAuthenticated === false && !hasAttemptedSignIn.current && authState === 'idle') {
       hasAttemptedSignIn.current = true;
@@ -190,7 +203,6 @@ export function LoungeChat() {
     }
   }, [isAuthenticated, signIn, authState]);
 
-  // Once authenticated, mark as done
   useEffect(() => {
     if (isAuthenticated === true) {
       setAuthState('done');
@@ -200,7 +212,6 @@ export function LoungeChat() {
   const isReady = isAuthenticated === true && user !== undefined;
   const isLoading = isAuthenticated === undefined || (authState === 'signing-in' && isAuthenticated !== true);
 
-  // Update countdown every minute
   useEffect(() => {
     const interval = setInterval(() => {
       setTimeUntilReset(getTimeUntilReset());
@@ -215,17 +226,14 @@ export function LoungeChat() {
       if (shouldAutoScroll) {
         scrollToBottom();
       } else {
-        // User is scrolled up, show the new messages indicator
         setHasNewMessages(true);
       }
     }
     prevMessageCount.current = currentCount;
   }, [messages?.length, shouldAutoScroll, scrollToBottom]);
 
-  // Scroll when thinking state appears
   useEffect(() => {
     if (vladThinking && shouldAutoScroll) {
-      // Small delay to ensure DOM is updated
       setTimeout(() => scrollToBottom(), 100);
     }
   }, [vladThinking, shouldAutoScroll, scrollToBottom]);
@@ -249,7 +257,6 @@ export function LoungeChat() {
       await sendMessage({ content: messageText });
       setInput('');
       
-      // If message mentions @vlad, trigger AI response
       if (mentionsVlad(messageText)) {
         setTimeout(() => triggerVladResponse(), 500);
       }
@@ -268,7 +275,6 @@ export function LoungeChat() {
     }
   };
 
-  // Count unique human users who posted today (excluding bot)
   const uniqueUsers = new Set(messages?.filter(m => !m.isBot && m.userId).map(m => m.userId)).size || 0;
 
   return (
@@ -334,6 +340,20 @@ export function LoungeChat() {
 
           {/* Messages */}
           <div className="space-y-4">
+            {/* Load more button at top */}
+            {canLoadMore && (
+              <div className="flex justify-center py-4">
+                <button
+                  onClick={handleLoadMore}
+                  disabled={isLoadingMore}
+                  className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-slate-400 hover:text-white text-sm transition-colors disabled:opacity-50"
+                >
+                  <ChevronUpIcon className="w-4 h-4" />
+                  {isLoadingMore ? 'Loading...' : 'Load older messages'}
+                </button>
+              </div>
+            )}
+            
             {messages?.length === 0 && (
               <div className="text-center py-16">
                 <div className="text-6xl mb-4">💬</div>
@@ -425,7 +445,7 @@ export function LoungeChat() {
         </div>
       </div>
 
-      {/* Scroll to bottom button - only shows when scrolled up AND new messages arrived */}
+      {/* Scroll to bottom button */}
       {hasNewMessages && !shouldAutoScroll && (
         <button
           onClick={() => {
@@ -446,19 +466,15 @@ export function LoungeChat() {
 
       {/* Input area - Fixed at bottom */}
       <div className="fixed bottom-0 left-0 right-0 z-50">
-        {/* Blur layer - only covers solid area */}
         <div className="absolute inset-0 -bottom-20 backdrop-blur-xl" />
-        {/* Gradient overlay for fade effect */}
         <div className="absolute inset-0 -top-16 -bottom-20 bg-gradient-to-t from-slate-900 via-slate-900/90 via-70% to-transparent" />
         <div className="relative max-w-3xl mx-auto px-4 pt-4 pb-4" style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom, 1rem))' }}>
-          {/* Loading state */}
           {isLoading && (
             <div className="mb-4 text-center">
               <p className="text-slate-400 text-sm">Connecting...</p>
             </div>
           )}
           
-          {/* Not authenticated after loading - show join button */}
           {!isLoading && !isReady && (
             <div className="mb-4 text-center">
               <button
@@ -475,7 +491,6 @@ export function LoungeChat() {
             </div>
           )}
 
-          {/* Signed in as anonymous - show @vlad limit and upgrade option */}
           {isReady && user?.isAnonymous && (
             <div className="mb-3 flex items-center justify-center gap-2 flex-wrap">
               {user.trialMessages > 0 ? (

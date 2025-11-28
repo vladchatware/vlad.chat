@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { internalMutation, mutation, query } from "./_generated/server";
+import { paginationOptsValidator } from "convex/server";
 import { getAuthUserId } from "@convex-dev/auth/server";
 
 // Get today's date in YYYY-MM-DD format
@@ -7,7 +8,7 @@ function getTodayDate(): string {
   return new Date().toISOString().split("T")[0];
 }
 
-// Query to get all messages for today
+// Query to get all messages for today (legacy - kept for compatibility)
 export const getMessages = query({
   args: {},
   handler: async (ctx) => {
@@ -19,6 +20,23 @@ export const getMessages = query({
       .collect();
 
     return messages;
+  },
+});
+
+// Paginated query to get messages for today (newest first, for loading older messages on scroll up)
+export const getMessagesPaginated = query({
+  args: { paginationOpts: paginationOptsValidator },
+  handler: async (ctx, { paginationOpts }) => {
+    const today = getTodayDate();
+    // Fetch in descending order (newest first) for pagination
+    // The client will reverse these to display in chronological order
+    const result = await ctx.db
+      .query("loungeMessages")
+      .withIndex("byDate", (q) => q.eq("date", today))
+      .order("desc")
+      .paginate(paginationOpts);
+
+    return result;
   },
 });
 
