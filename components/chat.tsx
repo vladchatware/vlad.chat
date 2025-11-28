@@ -173,7 +173,7 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
         href="/lounge"
         className="fixed top-4 right-4 z-50 flex items-center gap-0 md:gap-2 p-2 md:px-4 md:py-2 rounded-full bg-gradient-to-r from-violet-600/90 to-fuchsia-600/90 hover:from-violet-500 hover:to-fuchsia-500 text-white text-sm font-medium shadow-lg shadow-violet-500/25 transition-all hover:scale-105">
         <MessageCircleIcon className='w-4 h-4' />
-        <span>The Lounge</span>
+        <span className="hidden md:inline">The Lounge</span>
       </Link>
       <div className="">
         <div className="md:px-72">
