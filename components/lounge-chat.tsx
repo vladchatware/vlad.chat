@@ -63,6 +63,20 @@ export function LoungeChat() {
   const hasAttemptedSignIn = useRef(false);
   const prevMessageCount = useRef(0);
 
+  // Set dark background for iOS Safari safe areas
+  useEffect(() => {
+    const originalHtmlBg = document.documentElement.style.backgroundColor;
+    const originalBodyBg = document.body.style.backgroundColor;
+    
+    document.documentElement.style.backgroundColor = '#020617'; // slate-950
+    document.body.style.backgroundColor = '#020617'; // slate-950
+    
+    return () => {
+      document.documentElement.style.backgroundColor = originalHtmlBg;
+      document.body.style.backgroundColor = originalBodyBg;
+    };
+  }, []);
+
   // Check if message mentions @vlad
   const mentionsVlad = (text: string) => {
     return /@vlad/i.test(text);
@@ -247,7 +261,9 @@ export function LoungeChat() {
   const uniqueUsers = new Set(messages?.filter(m => !m.isBot && m.userId).map(m => m.userId)).size || 0;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
+    <div className="min-h-screen bg-slate-950">
+      {/* Full background coverage including safe areas */}
+      <div className="fixed inset-0 -top-20 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950" />
       {/* Animated background elements */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-violet-500/10 rounded-full blur-3xl animate-pulse" />
@@ -456,7 +472,7 @@ export function LoungeChat() {
                 placeholder={isReady ? "Say something... (tag @vlad and he responds)" : "Join to start chatting..."}
                 disabled={!isReady}
                 rows={2}
-                className="flex-1 bg-transparent px-4 py-3 pr-2 text-white placeholder-slate-500 resize-none focus:outline-none text-[15px] disabled:opacity-50 disabled:cursor-not-allowed leading-relaxed"
+                className="flex-1 bg-transparent px-4 py-3 pr-2 text-white placeholder-slate-500 resize-none focus:outline-none text-base disabled:opacity-50 disabled:cursor-not-allowed leading-relaxed"
                 style={{ minHeight: '60px', maxHeight: '200px' }}
               />
               <button
