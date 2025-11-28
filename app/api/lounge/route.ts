@@ -4,6 +4,10 @@ import { api } from '@/convex/_generated/api';
 import { convexAuthNextjsToken } from '@convex-dev/auth/nextjs/server';
 import { fetchMutation, fetchQuery } from "convex/nextjs"
 import { loungeSystem } from '@/lib/ai';
+import { PostHog } from 'posthog-node';
+import { withTracing } from '@posthog/ai';
+
+const posthog = new PostHog(process.env.NEXT_PUBLIC_POSTHOG_KEY!, { host: process.env.NEXT_PUBLIC_POSTHOG_HOST! });
 
 export async function POST(req: Request) {
   try {
@@ -47,14 +51,17 @@ export async function POST(req: Request) {
     });
     const tools = await notion.tools();
 
+    const model = 'openai/gpt-5-mini';
+    const _model = withTracing(gateway.languageModel(model), posthog, {});
+
     // Stream the response
     const result = streamText({
-      model: gateway.languageModel('openai/gpt-5-mini'),
+      model: _model,
       system: loungeSystem,
       prompt: `Here's the recent conversation in The Lounge:\n\n${conversationContext}\n\nRespond to the latest message naturally.`,
       tools,
       stopWhen: stepCountIs(5),
-      onFinish: async ({ text }) => {
+      onFinish: async ({ text, usage, providerMetadata }) => {
         // Save Vlad's complete response to the lounge
         if (text) {
           await fetchMutation(
@@ -63,6 +70,12 @@ export async function POST(req: Request) {
             { token: await convexAuthNextjsToken() }
           );
         }
+        // Track usage
+        await fetchMutation(
+          api.users.usage,
+          { usage, model, provider: 'AI Gateway', providerMetadata },
+          { token: await convexAuthNextjsToken() }
+        );
       },
     });
 
