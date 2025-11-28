@@ -1,0 +1,91 @@
+import { streamText, experimental_createMCPClient, gateway } from 'ai';
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { api } from '@/convex/_generated/api';
+import { convexAuthNextjsToken } from '@convex-dev/auth/nextjs/server';
+import { fetchMutation, fetchQuery } from "convex/nextjs"
+
+const loungeSystem = `
+You are Vlad, a software developer, responding in a group chat called "The Lounge".
+This is a casual daily chat room where people hang out and chat.
+
+Your tone is casual and friendly - this is a relaxed group chat, not a formal Q&A.
+Keep responses SHORT and conversational (1-3 sentences usually).
+You can use light humor and be personable.
+
+If someone asks a technical question, you can give a brief answer or offer to help more.
+If someone just says hi or makes small talk, respond naturally.
+
+You have access to your Notion knowledge base if you need to look something up.
+
+IMPORTANT: Skip formal greetings. Don't say "Hey!" or "Hi there!" at the start of every message.
+Just respond naturally to what was said.
+`;
+
+export async function POST(req: Request) {
+  try {
+    const token = await convexAuthNextjsToken();
+
+    // Check if user can trigger @vlad
+    const canTrigger = await fetchQuery(
+      api.lounge.canTriggerVlad,
+      {},
+      { token }
+    );
+
+    if (!canTrigger) {
+      return new Response('No @vlad triggers remaining. Sign in to continue!', { status: 403 });
+    }
+
+    // Decrement trial messages for anonymous users
+    await fetchMutation(
+      api.lounge.useVladTrigger,
+      {},
+      { token }
+    );
+
+    // Get recent lounge messages for context
+    const recentMessages = await fetchQuery(
+      api.lounge.getRecentMessages, 
+      { limit: 15 },
+      { token }
+    );
+
+    // Build conversation context from lounge messages
+    const conversationContext = recentMessages
+      .map(m => `${m.userName}: ${m.content}`)
+      .join('\n');
+
+    // Set up MCP client for Notion tools
+    const transport = new StreamableHTTPClientTransport(new URL('https://vlad.chat/api/mcp'));
+    const notion = await experimental_createMCPClient({
+      // @ts-expect-error Experimental 
+      transport
+    });
+    const tools = await notion.tools();
+
+    // Stream the response
+    const result = streamText({
+      model: gateway.languageModel('openai/gpt-5-mini'),
+      system: loungeSystem,
+      prompt: `Here's the recent conversation in The Lounge:\n\n${conversationContext}\n\nRespond to the latest message naturally.`,
+      tools,
+      maxSteps: 3,
+      onFinish: async ({ text }) => {
+        // Save Vlad's complete response to the lounge
+        if (text) {
+          await fetchMutation(
+            api.lounge.saveBotMessage,
+            { content: text },
+            { token: await convexAuthNextjsToken() }
+          );
+        }
+      },
+    });
+
+    // Return streaming response as plain text
+    return result.toTextStreamResponse();
+  } catch (error) {
+    console.error('Lounge AI error:', error);
+    return new Response('Failed to generate response', { status: 500 });
+  }
+}

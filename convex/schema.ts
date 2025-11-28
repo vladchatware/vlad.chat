@@ -32,5 +32,15 @@ export default defineSchema({
       cachedInputTokens: v.optional(v.number()),
     }),
     providerMetadata: v.optional(vProviderMetadata),
+  }),
+  // Daily ephemeral group chat - cleared every day
+  loungeMessages: defineTable({
+    userId: v.optional(v.id("users")), // Optional for bot messages
+    userName: v.string(),
+    userImage: v.optional(v.string()),
+    content: v.string(),
+    date: v.string(), // YYYY-MM-DD format for daily grouping
+    isBot: v.optional(v.boolean()), // True for Vlad's responses
   })
+    .index("byDate", ["date"])
 });
