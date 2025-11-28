@@ -1,4 +1,4 @@
-import { streamText, experimental_createMCPClient, gateway } from 'ai';
+import { streamText, experimental_createMCPClient, gateway, stepCountIs } from 'ai';
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { api } from '@/convex/_generated/api';
 import { convexAuthNextjsToken } from '@convex-dev/auth/nextjs/server';
@@ -69,7 +69,7 @@ export async function POST(req: Request) {
       system: loungeSystem,
       prompt: `Here's the recent conversation in The Lounge:\n\n${conversationContext}\n\nRespond to the latest message naturally.`,
       tools,
-      maxSteps: 3,
+      stopWhen: stepCountIs(5),
       onFinish: async ({ text }) => {
         // Save Vlad's complete response to the lounge
         if (text) {
