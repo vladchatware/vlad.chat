@@ -84,13 +84,10 @@ export function LoungeChat() {
 
   // Scroll to bottom
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ 
-        behavior,
-        block: 'end',
-        inline: 'nearest'
-      });
-    }
+    window.scrollTo({
+      top: document.documentElement.scrollHeight,
+      behavior
+    });
   }, []);
 
   // Check if user is near bottom of scroll (using window)
@@ -381,7 +378,7 @@ export function LoungeChat() {
             
             {/* Vlad streaming/thinking indicator */}
             {(vladThinking || vladStreamingText) && (
-              <div className="flex gap-3 pb-46">
+              <div className="flex gap-3">
                 <div className="flex-shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-medium bg-gradient-to-br from-violet-500 to-fuchsia-500 ring-2 ring-violet-400/30">
                   V
                 </div>
@@ -407,7 +404,8 @@ export function LoungeChat() {
               </div>
             )}
             
-            <div ref={messagesEndRef} className={!(vladThinking || vladStreamingText) ? 'pb-46' : ''} />
+            <div ref={messagesEndRef} />
+            <div style={{ height: 'calc(14rem + env(safe-area-inset-bottom, 0px))' }} aria-hidden="true" />
           </div>
         </div>
       </div>
