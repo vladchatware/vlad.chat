@@ -1,24 +1,11 @@
 import { ReactNode } from 'react';
+import './lounge.css';
 
 export default function LoungeLayout({
   children,
 }: {
   children: ReactNode;
 }) {
-  return (
-    <>
-      <style dangerouslySetInnerHTML={{
-        __html: `
-          html {
-            background-color: #020617 !important;
-          }
-          body {
-            background-color: #020617 !important;
-          }
-        `
-      }} />
-      {children}
-    </>
-  );
+  return children;
 }
 
