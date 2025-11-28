@@ -301,6 +301,7 @@ export function LoungeChat() {
               <div className="flex items-center gap-1 md:gap-2 text-sm text-amber-400/80">
                 <SunriseIcon className="w-4 h-4" />
                 <span className="hidden md:inline">Resets in {timeUntilReset}</span>
+                <span className="md:hidden">{timeUntilReset}</span>
               </div>
             </div>
           </div>
