@@ -37,7 +37,7 @@ export async function POST(req: Request) {
     if (user.trialMessages! <= 0) return new NextResponse('no more messages left', { status: 429 })
   }
 
-  const transport = new StreamableHTTPClientTransport(new URL('https://vlad.chat/api/mcp'))
+  const transport = new StreamableHTTPClientTransport(new URL(`${process.env.NEXT_PUBLIC_MCP_URL}/api/mcp`))
   const notion = await experimental_createMCPClient({
     // @ts-expect-error Experimental 
     transport
