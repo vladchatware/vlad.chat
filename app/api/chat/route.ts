@@ -1,4 +1,5 @@
-import { streamText, UIMessage, convertToModelMessages, experimental_createMCPClient, stepCountIs, smoothStream, gateway } from 'ai';
+import { streamText, UIMessage, convertToModelMessages, stepCountIs, smoothStream, gateway } from 'ai';
+import { experimental_createMCPClient } from '@ai-sdk/mcp';
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { system } from '@/lib/ai'
 import { api } from '@/convex/_generated/api';
@@ -49,7 +50,7 @@ export async function POST(req: Request) {
   const result = streamText({
     model: _model,
     messages: convertToModelMessages(messages),
-    tools,
+    tools: tools as Parameters<typeof streamText>[0]['tools'],
     stopWhen: stepCountIs(5),
     system,
     experimental_transform: smoothStream(),
