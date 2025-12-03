@@ -211,6 +211,202 @@ export default function StyleguidePage() {
           </div>
         </section>
 
+        {/* Markdown Features */}
+        <section className="mb-12">
+          <h2 className="text-2xl font-semibold mb-4">Markdown Features</h2>
+          <div className="space-y-4 border rounded-lg p-4 bg-muted/20">
+            <Message from="assistant">
+              <MessageContent>
+                <Response>
+                  {`# Headers
+
+You can use headers with # symbols:
+
+# H1 Header
+## H2 Header
+### H3 Header
+#### H4 Header
+
+---
+
+## Lists
+
+### Unordered Lists
+- Item one
+- Item two
+  - Nested item
+  - Another nested item
+- Item three
+
+### Ordered Lists
+1. First item
+2. Second item
+3. Third item
+   1. Nested numbered item
+   2. Another nested item
+
+---
+
+## Text Formatting
+
+- **Bold text**
+- *Italic text*
+- ***Bold and italic***
+- ~~Strikethrough~~
+- \`Inline code\`
+- [Links](https://example.com)
+
+---
+
+## Blockquotes
+
+> This is a blockquote. It can span multiple lines.
+> 
+> You can nest blockquotes too:
+> > Nested quote
+> > Another line
+
+---
+
+## Code Blocks
+
+\`\`\`javascript
+function greet(name) {
+  return \`Hello, \${name}!\`;
+}
+\`\`\`
+
+\`\`\`python
+def greet(name):
+    return f"Hello, {name}!"
+\`\`\`
+
+---
+
+## Tables
+
+| Feature | Supported | Notes |
+|---------|-----------|-------|
+| Headers | Yes | # ## ### |
+| Lists | Yes | Ordered and unordered |
+| Tables | Yes | GitHub Flavored Markdown |
+| Code | Yes | Inline and blocks |
+| Images | Yes | Standard markdown syntax |
+
+---
+
+## Task Lists
+
+- [x] Completed task
+- [x] Another completed task
+- [ ] Incomplete task
+- [ ] Another incomplete task
+
+---
+
+## Math (LaTeX)
+
+Inline math: $E = mc^2$
+
+Block math:
+
+$$
+\\sum_{i=1}^{n} x_i = x_1 + x_2 + \\cdots + x_n
+$$`}
+                </Response>
+              </MessageContent>
+            </Message>
+          </div>
+        </section>
+
+        {/* Images in Responses */}
+        <section className="mb-12">
+          <h2 className="text-2xl font-semibold mb-4">Images in Responses</h2>
+          <div className="space-y-4 border rounded-lg p-4 bg-muted/20">
+            <Message from="assistant">
+              <MessageContent>
+                <Response>
+                  Images can be included in markdown responses using standard markdown syntax:
+                  
+                  ![Random Nature Image](https://picsum.photos/800/400?random=1)
+                  
+                  The Response component uses Streamdown which supports standard markdown image syntax.
+                </Response>
+              </MessageContent>
+            </Message>
+            <Message from="assistant">
+              <MessageContent>
+                <Response>
+                  You can also include images with regular HTML img tags directly in MessageContent:
+                </Response>
+              </MessageContent>
+            </Message>
+            <Message from="assistant">
+              <MessageContent variant="flat">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img 
+                  src="https://picsum.photos/600/300?random=2" 
+                  alt="Random image example" 
+                  className="rounded-md my-2 max-w-full"
+                />
+              </MessageContent>
+            </Message>
+            <Message from="assistant">
+              <MessageContent>
+                <Response>
+                  This approach gives you more control over styling and attributes.
+                </Response>
+              </MessageContent>
+            </Message>
+            <Message from="assistant">
+              <MessageContent>
+                <Response>
+                  Multiple images can be displayed together:
+                </Response>
+              </MessageContent>
+            </Message>
+            <Message from="assistant">
+              <MessageContent variant="flat">
+                <div className="grid grid-cols-2 gap-2 my-2">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img 
+                    src="https://picsum.photos/400/300?random=3" 
+                    alt="Random image 1" 
+                    className="rounded-md w-full"
+                  />
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img 
+                    src="https://picsum.photos/400/300?random=4" 
+                    alt="Random image 2" 
+                    className="rounded-md w-full"
+                  />
+                </div>
+              </MessageContent>
+            </Message>
+            <Message from="assistant">
+              <MessageContent>
+                <Response>
+                  Images can be arranged in grids or other layouts.
+                </Response>
+              </MessageContent>
+            </Message>
+            <Message from="assistant">
+              <MessageContent>
+                <Response>
+                  For AI-generated images (base64 from Experimental_GeneratedImage), use the Image component from ai-elements. The Image component automatically converts base64 data to data URIs. It&apos;s specifically designed for images generated by AI models that return Experimental_GeneratedImage objects from the AI SDK.
+                </Response>
+                <Response>
+                  {`Example usage:
+
+\`\`\`tsx
+<Image base64={image.base64} mediaType={image.mediaType} alt="Generated image" />
+\`\`\``}
+                </Response>
+              </MessageContent>
+            </Message>
+          </div>
+        </section>
+
         {/* Sources */}
         <section className="mb-12">
           <h2 className="text-2xl font-semibold mb-4">Sources Component</h2>
