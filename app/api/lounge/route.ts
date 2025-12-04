@@ -1,5 +1,5 @@
-import { streamText, experimental_createMCPClient, gateway, stepCountIs } from 'ai';
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { streamText, gateway, stepCountIs } from 'ai';
+import { experimental_createMCPClient } from '@ai-sdk/mcp';
 import { api } from '@/convex/_generated/api';
 import { convexAuthNextjsToken } from '@convex-dev/auth/nextjs/server';
 import { fetchMutation, fetchQuery } from "convex/nextjs"
@@ -44,10 +44,11 @@ export async function POST(req: Request) {
       .join('\n');
 
     // Set up MCP client for Notion tools
-    const transport = new StreamableHTTPClientTransport(new URL('https://vlad.chat/api/mcp'));
     const notion = await experimental_createMCPClient({
-      // @ts-expect-error Experimental 
-      transport
+      transport: {
+        type: 'http',
+        url: `${process.env.NEXT_PUBLIC_SITE_URL}/api/mcp`
+      }
     });
     const tools = await notion.tools();
 
@@ -59,7 +60,7 @@ export async function POST(req: Request) {
       model: _model,
       system: loungeSystem,
       prompt: `Here's the recent conversation in The Lounge:\n\n${conversationContext}\n\nRespond to the latest message naturally.`,
-      tools,
+      tools: tools as Parameters<typeof streamText>[0]['tools'],
       stopWhen: stepCountIs(5),
       onFinish: async ({ text, usage, providerMetadata }) => {
         // Save Vlad's complete response to the lounge

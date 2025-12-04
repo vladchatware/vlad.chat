@@ -1,6 +1,5 @@
 import { streamText, UIMessage, convertToModelMessages, stepCountIs, smoothStream, gateway } from 'ai';
 import { experimental_createMCPClient } from '@ai-sdk/mcp';
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { system } from '@/lib/ai'
 import { api } from '@/convex/_generated/api';
 import { convexAuthNextjsToken } from '@convex-dev/auth/nextjs/server';
@@ -37,10 +36,11 @@ export async function POST(req: Request) {
     if (user.trialMessages! <= 0) return new NextResponse('no more messages left', { status: 429 })
   }
 
-  const transport = new StreamableHTTPClientTransport(new URL(`${process.env.NEXT_PUBLIC_MCP_URL}/api/mcp`))
   const notion = await experimental_createMCPClient({
-    // @ts-expect-error Experimental 
-    transport
+    transport: {
+      type: 'http',
+      url: `${process.env.NEXT_PUBLIC_SITE_URL}/api/mcp`
+    }
   })
 
   const tools = await notion.tools()
