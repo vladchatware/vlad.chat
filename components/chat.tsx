@@ -304,9 +304,9 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
 
       <div className="px-4 py-6 md:px-72" style={{ position: 'fixed', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(255, 255, 255, 0.3)', backdropFilter: 'blur(1px)' }}>
 
-        {error && <Suggestions>
+        {/* {error && <Suggestions>
           <Suggestion suggestion={`An error occurred: ${error.message}. Regenerate.`} onClick={() => regenerate({ body: { model } })} />
-        </Suggestions>}
+        </Suggestions>} */}
 
         {user?.isAnonymous && messages.length > 0 && <Authenticated>
           <Suggestions>
