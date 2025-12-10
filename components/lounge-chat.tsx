@@ -6,6 +6,8 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useAuthActions } from "@convex-dev/auth/react"
 import { SendIcon, SunriseIcon, UsersIcon, ChevronDownIcon, ChevronUpIcon } from 'lucide-react';
 import Link from 'next/link';
+import { Shimmer } from '@/components/ai-elements/shimmer';
+import { Loader } from '@/components/ai-elements/loader';
 
 function formatTime(timestamp: number) {
   return new Date(timestamp).toLocaleTimeString('en-US', {
@@ -151,9 +153,10 @@ export function LoungeChat() {
 
   // Trigger Vlad's AI response with streaming
   const triggerVladResponse = async () => {
-    if (user?.isAnonymous && user.trialMessages <= 0) {
-      return;
-    }
+    // Temporarily bypass for testing
+    // if (user?.isAnonymous && user.trialMessages <= 0) {
+    //   return;
+    // }
 
     setVladThinking(true);
     setVladStreamingText('');
@@ -406,10 +409,10 @@ export function LoungeChat() {
                     )}
                     <div
                       className={`px-4 py-2.5 rounded-2xl ${isOwnMessage
-                          ? 'bg-gradient-to-r from-violet-600 to-violet-500 text-white'
-                          : isBot
-                            ? 'bg-gradient-to-r from-violet-500/10 to-fuchsia-500/10 text-slate-200 border border-violet-500/20'
-                            : 'bg-white/5 text-slate-200 border border-white/5'
+                        ? 'bg-gradient-to-r from-violet-600 to-violet-500 text-white'
+                        : isBot
+                          ? 'bg-gradient-to-r from-violet-500/10 to-fuchsia-500/10 text-slate-200 border border-violet-500/20'
+                          : 'bg-white/5 text-slate-200 border border-white/5'
                         }`}
                     >
                       <p className="whitespace-pre-wrap break-words text-[15px] leading-relaxed">
@@ -438,11 +441,9 @@ export function LoungeChat() {
                         <span className="inline-block w-2 h-4 bg-violet-400 ml-1 animate-pulse" />
                       </p>
                     ) : (
-                      <div className="flex items-center gap-1 text-slate-400">
-                        <span className="animate-pulse">●</span>
-                        <span className="animate-pulse" style={{ animationDelay: '0.2s' }}>●</span>
-                        <span className="animate-pulse" style={{ animationDelay: '0.4s' }}>●</span>
-                      </div>
+                      <Shimmer as="span" duration={1.5} spread={1.5} className="text-sm">
+                        Thinking...
+                      </Shimmer>
                     )}
                   </div>
                 </div>
