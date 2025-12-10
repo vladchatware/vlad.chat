@@ -19,9 +19,15 @@ function formatTime(timestamp: number) {
 
 function getTimeUntilReset() {
   const now = new Date();
-  const tomorrow = new Date(now);
-  tomorrow.setUTCHours(24, 0, 0, 0);
-  const diff = tomorrow.getTime() - now.getTime();
+  const nextReset = new Date(now);
+
+  nextReset.setUTCHours(3, 0, 0, 0);
+
+  if (now.getUTCHours() >= 3) {
+    nextReset.setUTCDate(nextReset.getUTCDate() + 1);
+  }
+
+  const diff = nextReset.getTime() - now.getTime();
 
   const hours = Math.floor(diff / (1000 * 60 * 60));
   const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
@@ -347,7 +353,7 @@ export function LoungeChat() {
               Daily Group Chat
             </h1>
             <p className="text-slate-400 max-w-md mx-auto">
-              An ephemeral space for conversation. Every message disappears at midnight UTC.
+              An ephemeral space for conversation. Every message disappears at 3 AM UTC.
               No history, no pressure—just talk. Mention <span className="text-violet-400 font-mono">@vlad</span> to get a response!
             </p>
           </div>
@@ -544,7 +550,7 @@ export function LoungeChat() {
           </form>
 
           <p className="text-center text-xs text-slate-600 mt-3">
-            Messages are ephemeral and cleared daily at midnight UTC
+            Messages are ephemeral and cleared daily at 3 AM UTC.
           </p>
         </div>
       </div>

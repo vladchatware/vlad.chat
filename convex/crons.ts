@@ -17,10 +17,10 @@ crons.weekly(
   {}
 )
 
-// Clear old lounge messages daily at midnight UTC
+// Clear old lounge messages daily at 3 AM UTC
 crons.daily(
   "Clear lounge messages",
-  { hourUTC: 0, minuteUTC: 0 },
+  { hourUTC: 3, minuteUTC: 0 },
   internal.lounge.clearOldMessages,
   {}
 )
