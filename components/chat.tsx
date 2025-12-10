@@ -309,9 +309,23 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
         </Suggestions>} */}
 
         {user?.isAnonymous && messages.length > 0 && <Authenticated>
-          <Suggestions>
-            <Suggestion suggestion={`You have only ${user?.trialMessages} messages left. Sign in to reset your limits.`} onClick={() => { signIn('google') }} />
-          </Suggestions>
+          <div className="mb-3 flex items-center justify-center gap-2 flex-wrap text-sm">
+            <span className="text-muted-foreground">
+              {user.trialMessages > 0 ? (
+                <>{user.trialMessages} {user.trialMessages === 1 ? 'message' : 'messages'} left</>
+              ) : (
+                <>No messages left</>
+              )}
+            </span>
+            <span className="text-muted-foreground/50">•</span>
+            <button
+              onClick={() => signIn('google')}
+              className="text-muted-foreground hover:text-foreground transition-colors underline underline-offset-2"
+            >
+              Sign in with Google
+            </button>
+            <span className="text-muted-foreground/50">for unlimited</span>
+          </div>
         </Authenticated>}
         {user && user.trialTokens <= 0 && user.tokens <= 0 && <Suggestions>
           <Suggestion suggestion={`You have run out of credits. Buy more.`} onClick={() => { checkout() }} />
