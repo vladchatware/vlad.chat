@@ -1,5 +1,4 @@
 import { ReactNode } from 'react';
-import './lounge.css';
 
 export default function LoungeLayout({
   children,
@@ -8,4 +7,3 @@ export default function LoungeLayout({
 }) {
   return children;
 }
-

@@ -125,3 +125,26 @@
 .response-content a {
   @apply underline underline-offset-2 decoration-foreground/40 hover:decoration-foreground transition-colors;
 }
+
+/* Style lists in markdown responses */
+.response-content ul,
+.response-content ol {
+  @apply pl-6 my-2;
+}
+
+.response-content ul {
+  @apply list-disc;
+}
+
+.response-content ol {
+  @apply list-decimal;
+}
+
+.response-content li {
+  @apply my-1;
+}
+
+.response-content li > ul,
+.response-content li > ol {
+  @apply my-1;
+}

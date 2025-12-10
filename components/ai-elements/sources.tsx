@@ -7,7 +7,13 @@ import {
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 import { BookIcon, ChevronDownIcon } from "lucide-react";
+import { motion } from "motion/react";
 import type { ComponentProps } from "react";
+import { useState } from "react";
+
+// Create motion versions of Lucide icons
+const MotionBookIcon = motion.create(BookIcon);
+const MotionChevronDownIcon = motion.create(ChevronDownIcon);
 
 export type SourcesProps = ComponentProps<"div">;
 
@@ -27,19 +33,28 @@ export const SourcesTrigger = ({
   count,
   children,
   ...props
-}: SourcesTriggerProps) => (
-  <CollapsibleTrigger
-    className={cn("flex items-center gap-2", className)}
-    {...props}
-  >
-    {children ?? (
-      <>
-        <p className="font-medium">Used {count} sources</p>
-        <ChevronDownIcon className="h-4 w-4" />
-      </>
-    )}
-  </CollapsibleTrigger>
-);
+}: SourcesTriggerProps) => {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <CollapsibleTrigger
+      className={cn("flex items-center gap-2", className)}
+      onClick={() => setIsOpen(!isOpen)}
+      {...props}
+    >
+      {children ?? (
+        <>
+          <p className="font-medium">Used {count} sources</p>
+          <MotionChevronDownIcon
+            className="h-4 w-4"
+            animate={{ rotate: isOpen ? 180 : 0 }}
+            transition={{ type: "spring", stiffness: 300, damping: 20 }}
+          />
+        </>
+      )}
+    </CollapsibleTrigger>
+  );
+};
 
 export type SourcesContentProps = ComponentProps<typeof CollapsibleContent>;
 
@@ -57,21 +72,34 @@ export const SourcesContent = ({
   />
 );
 
-export type SourceProps = ComponentProps<"a">;
+export type SourceProps = {
+  href?: string;
+  title?: string;
+  children?: React.ReactNode;
+  className?: string;
+};
 
-export const Source = ({ href, title, children, ...props }: SourceProps) => (
-  <a
-    className="flex items-center gap-2"
-    href={href}
-    rel="noreferrer"
-    target="_blank"
-    {...props}
+export const Source = ({ href, title, children, className }: SourceProps) => (
+  <motion.div
+    whileHover={{ x: 4 }}
+    transition={{ type: "spring", stiffness: 400, damping: 25 }}
   >
-    {children ?? (
-      <>
-        <BookIcon className="h-4 w-4" />
-        <span className="block font-medium">{title}</span>
-      </>
-    )}
-  </a>
+    <a
+      className={cn("flex items-center gap-2", className)}
+      href={href}
+      rel="noreferrer"
+      target="_blank"
+    >
+      {children ?? (
+        <>
+          <MotionBookIcon
+            className="h-4 w-4"
+            whileHover={{ scale: 1.1, rotate: -5 }}
+            transition={{ type: "spring", stiffness: 400, damping: 17 }}
+          />
+          <span className="block font-medium">{title}</span>
+        </>
+      )}
+    </a>
+  </motion.div>
 );

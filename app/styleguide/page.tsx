@@ -327,9 +327,9 @@ $$`}
               <MessageContent>
                 <Response>
                   Images can be included in markdown responses using standard markdown syntax:
-                  
+
                   ![Random Nature Image](https://picsum.photos/800/400?random=1)
-                  
+
                   The Response component uses Streamdown which supports standard markdown image syntax.
                 </Response>
               </MessageContent>
@@ -344,9 +344,9 @@ $$`}
             <Message from="assistant">
               <MessageContent variant="flat">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img 
-                  src="https://picsum.photos/600/300?random=2" 
-                  alt="Random image example" 
+                <img
+                  src="https://picsum.photos/600/300?random=2"
+                  alt="Random image example"
                   className="rounded-md my-2 max-w-full"
                 />
               </MessageContent>
@@ -369,15 +369,15 @@ $$`}
               <MessageContent variant="flat">
                 <div className="grid grid-cols-2 gap-2 my-2">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img 
-                    src="https://picsum.photos/400/300?random=3" 
-                    alt="Random image 1" 
+                  <img
+                    src="https://picsum.photos/400/300?random=3"
+                    alt="Random image 1"
                     className="rounded-md w-full"
                   />
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img 
-                    src="https://picsum.photos/400/300?random=4" 
-                    alt="Random image 2" 
+                  <img
+                    src="https://picsum.photos/400/300?random=4"
+                    alt="Random image 2"
                     className="rounded-md w-full"
                   />
                 </div>
@@ -518,14 +518,14 @@ $$`}
             </Message>
             <Actions>
               <Action
-                onClick={() => {}}
+                onClick={() => { }}
                 label="Retry"
                 tooltip="Regenerate response"
               >
                 <RefreshCcwIcon className="size-3" />
               </Action>
               <Action
-                onClick={() => {}}
+                onClick={() => { }}
                 label="Copy"
                 tooltip="Copy to clipboard"
               >
@@ -542,7 +542,7 @@ $$`}
             <div className="flex justify-center">
               <Loader />
             </div>
-              <p className="text-sm text-muted-foreground text-center">
+            <p className="text-sm text-muted-foreground text-center">
               Loader shown when status is &apos;submitted&apos;
             </p>
           </div>
@@ -557,14 +557,14 @@ $$`}
                 <Suggestion
                   key={suggestion}
                   suggestion={suggestion}
-                  onClick={() => {}}
+                  onClick={() => { }}
                 />
               ))}
             </Suggestions>
             <Suggestions>
               <Suggestion
                 suggestion="Error suggestion - click to regenerate"
-                onClick={() => {}}
+                onClick={() => { }}
               />
             </Suggestions>
           </div>
@@ -775,7 +775,7 @@ $$`}
             <div className="space-y-4 text-sm">
               <div>
                 <strong>Message parts from useChat:</strong>
-                <ul className="list-disc list-inside mt-2 space-y-1 text-muted-foreground">
+                <ul className="list-disc list-inside mt-2 pl-5 space-y-1 text-muted-foreground">
                   <li><code>text</code> - Text content from the message</li>
                   <li><code>reasoning</code> - AI reasoning/thinking process</li>
                   <li><code>dynamic-tool</code> - Tool execution results</li>
@@ -784,14 +784,14 @@ $$`}
               </div>
               <div>
                 <strong>Message roles:</strong>
-                <ul className="list-disc list-inside mt-2 space-y-1 text-muted-foreground">
+                <ul className="list-disc list-inside mt-2 pl-5 space-y-1 text-muted-foreground">
                   <li><code>user</code> - User messages</li>
                   <li><code>assistant</code> - Assistant/AI messages</li>
                 </ul>
               </div>
               <div>
                 <strong>Tool states:</strong>
-                <ul className="list-disc list-inside mt-2 space-y-1 text-muted-foreground">
+                <ul className="list-disc list-inside mt-2 pl-5 space-y-1 text-muted-foreground">
                   <li><code>input-streaming</code> - Tool input is being streamed</li>
                   <li><code>input-available</code> - Tool is running</li>
                   <li><code>output-available</code> - Tool completed successfully</li>

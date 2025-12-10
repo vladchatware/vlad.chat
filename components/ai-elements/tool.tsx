@@ -16,8 +16,17 @@ import {
   WrenchIcon,
   XCircleIcon,
 } from "lucide-react";
+import { motion } from "motion/react";
 import type { ComponentProps, ReactNode } from "react";
 import { CodeBlock } from "./code-block";
+
+// Create motion versions of Lucide icons
+const MotionWrenchIcon = motion.create(WrenchIcon);
+const MotionCircleIcon = motion.create(CircleIcon);
+const MotionClockIcon = motion.create(ClockIcon);
+const MotionCheckCircleIcon = motion.create(CheckCircleIcon);
+const MotionXCircleIcon = motion.create(XCircleIcon);
+const MotionChevronDownIcon = motion.create(ChevronDownIcon);
 
 export type ToolProps = ComponentProps<typeof Collapsible>;
 
@@ -44,10 +53,36 @@ const getStatusBadge = (status: ToolUIPart["state"]) => {
   } as const;
 
   const icons = {
-    "input-streaming": <CircleIcon className="size-4" />,
-    "input-available": <ClockIcon className="size-4 animate-pulse" />,
-    "output-available": <CheckCircleIcon className="size-4 text-green-600" />,
-    "output-error": <XCircleIcon className="size-4 text-red-600" />,
+    "input-streaming": (
+      <MotionCircleIcon
+        className="size-4"
+        animate={{ opacity: [0.4, 1, 0.4] }}
+        transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
+      />
+    ),
+    "input-available": (
+      <MotionClockIcon
+        className="size-4"
+        animate={{ rotate: 360 }}
+        transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+      />
+    ),
+    "output-available": (
+      <MotionCheckCircleIcon
+        className="size-4 text-green-600"
+        initial={{ scale: 0, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ type: "spring", stiffness: 500, damping: 25 }}
+      />
+    ),
+    "output-error": (
+      <MotionXCircleIcon
+        className="size-4 text-red-600"
+        initial={{ scale: 0, rotate: -180 }}
+        animate={{ scale: 1, rotate: 0 }}
+        transition={{ type: "spring", stiffness: 400, damping: 20 }}
+      />
+    ),
   } as const;
 
   return (
@@ -67,19 +102,32 @@ export const ToolHeader = ({
 }: ToolHeaderProps) => (
   <CollapsibleTrigger
     className={cn(
-      "flex w-full items-center justify-between gap-4 p-3",
+      "group flex w-full items-center justify-between gap-4 p-3",
       className
     )}
     {...props}
   >
     <div className="flex items-center gap-2">
-      <WrenchIcon className="size-4 text-muted-foreground" />
+      <MotionWrenchIcon
+        className="size-4 text-muted-foreground"
+        whileHover={{ rotate: -15, scale: 1.1 }}
+        transition={{ type: "spring", stiffness: 400, damping: 17 }}
+      />
       <span className="font-medium text-sm">
         {title ?? type.split("-").slice(1).join("-")}
       </span>
       {getStatusBadge(state)}
     </div>
-    <ChevronDownIcon className="size-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+    <MotionChevronDownIcon
+      className="size-4 text-muted-foreground"
+      initial={false}
+      animate={{ rotate: 0 }}
+      variants={{
+        open: { rotate: 180 },
+        closed: { rotate: 0 },
+      }}
+      transition={{ duration: 0.2, ease: "easeInOut" }}
+    />
   </CollapsibleTrigger>
 );
 

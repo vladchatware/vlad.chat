@@ -8,9 +8,14 @@ import {
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 import { BrainIcon, ChevronDownIcon } from "lucide-react";
+import { motion } from "motion/react";
 import type { ComponentProps } from "react";
 import { createContext, memo, useContext, useEffect, useState } from "react";
 import { Response } from "./response";
+
+// Create motion versions of Lucide icons
+const MotionBrainIcon = motion.create(BrainIcon);
+const MotionChevronDownIcon = motion.create(ChevronDownIcon);
 
 type ReasoningContextValue = {
   isStreaming: boolean;
@@ -136,13 +141,20 @@ export const ReasoningTrigger = memo(
       >
         {children ?? (
           <>
-            <BrainIcon className="size-4" />
+            <MotionBrainIcon
+              className="size-4"
+              animate={isStreaming ? { scale: [1, 1.15, 1] } : { scale: 1 }}
+              transition={
+                isStreaming
+                  ? { duration: 1.2, repeat: Infinity, ease: "easeInOut" }
+                  : { duration: 0.2 }
+              }
+            />
             {getThinkingMessage(isStreaming, duration)}
-            <ChevronDownIcon
-              className={cn(
-                "size-4 transition-transform",
-                isOpen ? "rotate-180" : "rotate-0"
-              )}
+            <MotionChevronDownIcon
+              className="size-4"
+              animate={{ rotate: isOpen ? 180 : 0 }}
+              transition={{ type: "spring", stiffness: 300, damping: 20 }}
             />
           </>
         )}

@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { motion } from "motion/react";
 import type { HTMLAttributes } from "react";
 
 type LoaderIconProps = {
@@ -79,18 +80,21 @@ const LoaderIcon = ({ size = 16 }: LoaderIconProps) => (
   </svg>
 );
 
-export type LoaderProps = HTMLAttributes<HTMLDivElement> & {
+export type LoaderProps = {
+  className?: string;
   size?: number;
 };
 
-export const Loader = ({ className, size = 16, ...props }: LoaderProps) => (
-  <div
-    className={cn(
-      "inline-flex animate-spin items-center justify-center",
-      className
-    )}
-    {...props}
+export const Loader = ({ className, size = 16 }: LoaderProps) => (
+  <motion.div
+    className={cn("inline-flex items-center justify-center", className)}
+    animate={{ rotate: 360 }}
+    transition={{
+      duration: 1,
+      repeat: Infinity,
+      ease: "linear",
+    }}
   >
     <LoaderIcon size={size} />
-  </div>
+  </motion.div>
 );

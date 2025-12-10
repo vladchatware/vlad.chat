@@ -20,17 +20,17 @@ function getTimeUntilReset() {
   const tomorrow = new Date(now);
   tomorrow.setUTCHours(24, 0, 0, 0);
   const diff = tomorrow.getTime() - now.getTime();
-  
+
   const hours = Math.floor(diff / (1000 * 60 * 60));
   const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-  
+
   return `${hours}h ${minutes}m`;
 }
 
 function getAvatarColor(name: string) {
   const colors = [
     'bg-rose-500',
-    'bg-amber-500', 
+    'bg-amber-500',
     'bg-emerald-500',
     'bg-cyan-500',
     'bg-violet-500',
@@ -52,16 +52,16 @@ export function LoungeChat() {
   );
   const sendMessage = useMutation(api.lounge.sendMessage);
   const { signIn } = useAuthActions();
-  
+
   // Reverse paginated messages to display in chronological order (oldest first)
   const messages = useMemo(() => {
     if (!paginatedMessages) return undefined;
     return [...paginatedMessages].reverse();
   }, [paginatedMessages]);
-  
+
   const canLoadMore = status === 'CanLoadMore';
   const isLoadingMore = status === 'LoadingMore';
-  
+
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [vladThinking, setVladThinking] = useState(false);
@@ -70,24 +70,35 @@ export function LoungeChat() {
   const [timeUntilReset, setTimeUntilReset] = useState(getTimeUntilReset());
   const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
   const [hasNewMessages, setHasNewMessages] = useState(false);
-  
+
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const hasAttemptedSignIn = useRef(false);
   const prevMessageCount = useRef(0);
 
-  // Set dark background for iOS Safari safe areas
+  // Set dark background for iOS Safari safe areas and force dark theme
   useEffect(() => {
-    const originalHtmlBg = document.documentElement.style.backgroundColor;
-    const originalBodyBg = document.body.style.backgroundColor;
-    
-    document.documentElement.style.backgroundColor = '#020617'; // slate-950
-    document.body.style.backgroundColor = '#020617'; // slate-950
-    
+    const html = document.documentElement;
+    const body = document.body;
+
+    // Store original values
+    const originalHtmlBg = html.style.backgroundColor;
+    const originalBodyBg = body.style.backgroundColor;
+    const hadDarkClass = html.classList.contains('dark');
+
+    // Apply lounge dark styles
+    html.style.backgroundColor = '#020617'; // slate-950
+    body.style.backgroundColor = '#020617'; // slate-950
+    html.classList.add('dark');
+
     return () => {
-      document.documentElement.style.backgroundColor = originalHtmlBg;
-      document.body.style.backgroundColor = originalBodyBg;
+      // Restore original values
+      html.style.backgroundColor = originalHtmlBg;
+      body.style.backgroundColor = originalBodyBg;
+      if (!hadDarkClass) {
+        html.classList.remove('dark');
+      }
     };
   }, []);
 
@@ -147,9 +158,9 @@ export function LoungeChat() {
     setVladThinking(true);
     setVladStreamingText('');
     setShouldAutoScroll(true);
-    
+
     setTimeout(() => scrollToBottom(), 150);
-    
+
     try {
       const response = await fetch('/api/lounge', {
         method: 'POST',
@@ -172,11 +183,11 @@ export function LoungeChat() {
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-          
+
           const chunk = decoder.decode(value);
           fullText += chunk;
           setVladStreamingText(fullText);
-          
+
           if (shouldAutoScroll) {
             scrollToBottom('auto');
           }
@@ -199,7 +210,7 @@ export function LoungeChat() {
         .catch(() => {
           hasAttemptedSignIn.current = false;
           setAuthState('idle');
-        }); 
+        });
     }
   }, [isAuthenticated, signIn, authState]);
 
@@ -208,7 +219,7 @@ export function LoungeChat() {
       setAuthState('done');
     }
   }, [isAuthenticated]);
-  
+
   const isReady = isAuthenticated === true && user !== undefined;
   const isLoading = isAuthenticated === undefined || (authState === 'signing-in' && isAuthenticated !== true);
 
@@ -252,11 +263,11 @@ export function LoungeChat() {
     const messageText = input;
     setSending(true);
     setShouldAutoScroll(true);
-    
+
     try {
       await sendMessage({ content: messageText });
       setInput('');
-      
+
       if (mentionsVlad(messageText)) {
         setTimeout(() => triggerVladResponse(), 500);
       }
@@ -313,12 +324,12 @@ export function LoungeChat() {
           </div>
         </div>
       </header>
-      
+
       {/* Spacer for fixed header */}
       <div className="h-16" />
 
       {/* Messages Area */}
-      <div 
+      <div
         ref={messagesContainerRef}
         className="relative z-10"
       >
@@ -333,7 +344,7 @@ export function LoungeChat() {
               Daily Group Chat
             </h1>
             <p className="text-slate-400 max-w-md mx-auto">
-              An ephemeral space for conversation. Every message disappears at midnight UTC. 
+              An ephemeral space for conversation. Every message disappears at midnight UTC.
               No history, no pressure—just talk. Mention <span className="text-violet-400 font-mono">@vlad</span> to get a response!
             </p>
           </div>
@@ -353,7 +364,7 @@ export function LoungeChat() {
                 </button>
               </div>
             )}
-            
+
             {messages?.length === 0 && (
               <div className="text-center py-16">
                 <div className="text-6xl mb-4">💬</div>
@@ -365,7 +376,7 @@ export function LoungeChat() {
               const isOwnMessage = user && message.userId === user._id;
               const isBot = message.isBot;
               const showAvatar = idx === 0 || messages[idx - 1].userId !== message.userId || messages[idx - 1].isBot !== message.isBot;
-              
+
               return (
                 <div
                   key={message._id}
@@ -381,7 +392,7 @@ export function LoungeChat() {
                       )}
                     </div>
                   )}
-                  
+
                   <div className={`flex flex-col ${isOwnMessage ? 'items-end' : 'items-start'} max-w-[75%]`}>
                     {showAvatar && (
                       <div className="flex items-center gap-2 mb-1">
@@ -394,13 +405,12 @@ export function LoungeChat() {
                       </div>
                     )}
                     <div
-                      className={`px-4 py-2.5 rounded-2xl ${
-                        isOwnMessage
+                      className={`px-4 py-2.5 rounded-2xl ${isOwnMessage
                           ? 'bg-gradient-to-r from-violet-600 to-violet-500 text-white'
-                          : isBot 
+                          : isBot
                             ? 'bg-gradient-to-r from-violet-500/10 to-fuchsia-500/10 text-slate-200 border border-violet-500/20'
                             : 'bg-white/5 text-slate-200 border border-white/5'
-                      }`}
+                        }`}
                     >
                       <p className="whitespace-pre-wrap break-words text-[15px] leading-relaxed">
                         {message.content}
@@ -410,7 +420,7 @@ export function LoungeChat() {
                 </div>
               );
             })}
-            
+
             {/* Vlad streaming/thinking indicator */}
             {(vladThinking || vladStreamingText) && (
               <div className="flex gap-3">
@@ -438,7 +448,7 @@ export function LoungeChat() {
                 </div>
               </div>
             )}
-            
+
             <div ref={messagesEndRef} />
             <div style={{ height: 'calc(14rem + env(safe-area-inset-bottom, 0px))' }} aria-hidden="true" />
           </div>
@@ -454,9 +464,9 @@ export function LoungeChat() {
             setShouldAutoScroll(true);
           }}
           className="fixed left-1/2 -translate-x-1/2 flex items-center gap-2 px-4 py-2.5 rounded-full bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium shadow-xl shadow-black/40 transition-all duration-200 hover:scale-105 animate-bounce"
-          style={{ 
+          style={{
             bottom: 'calc(11rem + env(safe-area-inset-bottom, 0px))',
-            zIndex: 60 
+            zIndex: 60
           }}
         >
           <ChevronDownIcon className="w-4 h-4" />
@@ -474,7 +484,7 @@ export function LoungeChat() {
               <p className="text-slate-400 text-sm">Connecting...</p>
             </div>
           )}
-          
+
           {!isLoading && !isReady && (
             <div className="mb-4 text-center">
               <button
@@ -508,7 +518,7 @@ export function LoungeChat() {
               <span className="text-slate-600">for unlimited</span>
             </div>
           )}
-          
+
           <form onSubmit={handleSubmit} className="relative">
             <div className="relative rounded-2xl bg-white/10 border border-white/10 backdrop-blur-xl overflow-hidden focus-within:border-violet-500/50 focus-within:ring-2 focus-within:ring-violet-500/20 transition-all flex items-end shadow-lg shadow-black/20">
               <textarea
@@ -531,7 +541,7 @@ export function LoungeChat() {
               </button>
             </div>
           </form>
-          
+
           <p className="text-center text-xs text-slate-600 mt-3">
             Messages are ephemeral and cleared daily at midnight UTC
           </p>
