@@ -8,6 +8,7 @@ import { SendIcon, SunriseIcon, UsersIcon, ChevronDownIcon, ChevronUpIcon } from
 import Link from 'next/link';
 import { Shimmer } from '@/components/ai-elements/shimmer';
 import { Loader } from '@/components/ai-elements/loader';
+import { motion, AnimatePresence } from 'motion/react';
 
 function formatTime(timestamp: number) {
   return new Date(timestamp).toLocaleTimeString('en-US', {
@@ -303,18 +304,64 @@ export function LoungeChat() {
       <div className="fixed inset-0 -top-20 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950" />
       {/* Animated background elements */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-violet-500/10 rounded-full blur-3xl animate-pulse" />
-        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
-        <div className="absolute top-1/2 left-1/2 w-64 h-64 bg-fuchsia-500/5 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '2s' }} />
+        <motion.div
+          className="absolute top-1/4 left-1/4 w-96 h-96 bg-violet-500/10 rounded-full blur-3xl"
+          animate={{
+            scale: [1, 1.1, 1],
+            opacity: [0.1, 0.15, 0.1]
+          }}
+          transition={{
+            duration: 8,
+            repeat: Infinity,
+            ease: "easeInOut"
+          }}
+        />
+        <motion.div
+          className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl"
+          animate={{
+            scale: [1, 1.15, 1],
+            opacity: [0.1, 0.15, 0.1]
+          }}
+          transition={{
+            duration: 10,
+            repeat: Infinity,
+            ease: "easeInOut",
+            delay: 2
+          }}
+        />
+        <motion.div
+          className="absolute top-1/2 left-1/2 w-64 h-64 bg-fuchsia-500/5 rounded-full blur-3xl"
+          animate={{
+            scale: [1, 1.2, 1],
+            opacity: [0.05, 0.1, 0.05]
+          }}
+          transition={{
+            duration: 12,
+            repeat: Infinity,
+            ease: "easeInOut",
+            delay: 4
+          }}
+        />
       </div>
 
       {/* Header - Fixed at top */}
-      <header className="fixed top-0 left-0 right-0 z-50 backdrop-blur-xl bg-slate-900/80 border-b border-white/5">
+      <motion.header
+        className="fixed top-0 left-0 right-0 z-50 backdrop-blur-xl bg-slate-900/80 border-b border-white/5"
+        initial={{ y: -100, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ type: "spring", stiffness: 100, damping: 20, delay: 0.1 }}
+      >
         <div className="max-w-3xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <Link href="/" className="text-slate-400 hover:text-white transition-colors text-sm flex items-center gap-1">
-                <span>←</span>
+              <Link href="/" className="text-slate-400 hover:text-white transition-colors text-sm flex items-center gap-1 group">
+                <motion.span
+                  animate={{ x: 0 }}
+                  whileHover={{ x: -3 }}
+                  transition={{ type: "spring", stiffness: 400, damping: 25 }}
+                >
+                  ←
+                </motion.span>
                 <span className="hidden md:inline">Back to Chat</span>
               </Link>
             </div>
@@ -332,7 +379,7 @@ export function LoungeChat() {
             </div>
           </div>
         </div>
-      </header>
+      </motion.header>
 
       {/* Spacer for fixed header */}
       <div className="h-16" />
@@ -363,14 +410,22 @@ export function LoungeChat() {
             {/* Load more button at top */}
             {canLoadMore && (
               <div className="flex justify-center py-4">
-                <button
+                <motion.button
                   onClick={handleLoadMore}
                   disabled={isLoadingMore}
                   className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-slate-400 hover:text-white text-sm transition-colors disabled:opacity-50"
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  transition={{ type: "spring", stiffness: 400, damping: 25 }}
                 >
-                  <ChevronUpIcon className="w-4 h-4" />
+                  <motion.div
+                    animate={isLoadingMore ? { rotate: 360 } : {}}
+                    transition={isLoadingMore ? { duration: 1, repeat: Infinity, ease: "linear" } : {}}
+                  >
+                    <ChevronUpIcon className="w-4 h-4" />
+                  </motion.div>
                   {isLoadingMore ? 'Loading...' : 'Load older messages'}
-                </button>
+                </motion.button>
               </div>
             )}
 
@@ -387,19 +442,37 @@ export function LoungeChat() {
               const showAvatar = idx === 0 || messages[idx - 1].userId !== message.userId || messages[idx - 1].isBot !== message.isBot;
 
               return (
-                <div
+                <motion.div
                   key={message._id}
                   className={`flex gap-3 ${isOwnMessage ? 'flex-row-reverse' : ''} ${!showAvatar ? 'pl-12' : ''}`}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{
+                    type: "spring",
+                    stiffness: 300,
+                    damping: 30,
+                    delay: idx * 0.03
+                  }}
                 >
                   {showAvatar && (
-                    <div className={`flex-shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-medium ${isBot ? 'bg-gradient-to-br from-violet-500 to-fuchsia-500' : getAvatarColor(message.userName)} ring-2 ${isBot ? 'ring-violet-400/30' : 'ring-white/10'}`}>
+                    <motion.div
+                      className={`flex-shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-medium ${isBot ? 'bg-gradient-to-br from-violet-500 to-fuchsia-500' : getAvatarColor(message.userName)} ring-2 ${isBot ? 'ring-violet-400/30' : 'ring-white/10'}`}
+                      initial={{ scale: 0, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      transition={{
+                        type: "spring",
+                        stiffness: 400,
+                        damping: 20,
+                        delay: idx * 0.03 + 0.1
+                      }}
+                    >
                       {message.userImage ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img src={message.userImage} alt="" className="w-full h-full rounded-full object-cover" />
                       ) : (
                         message.userName.charAt(0).toUpperCase()
                       )}
-                    </div>
+                    </motion.div>
                   )}
 
                   <div className={`flex flex-col ${isOwnMessage ? 'items-end' : 'items-start'} max-w-[75%]`}>
@@ -413,29 +486,50 @@ export function LoungeChat() {
                         </span>
                       </div>
                     )}
-                    <div
+                    <motion.div
                       className={`px-4 py-2.5 rounded-2xl ${isOwnMessage
                         ? 'bg-gradient-to-r from-violet-600 to-violet-500 text-white'
                         : isBot
                           ? 'bg-gradient-to-r from-violet-500/10 to-fuchsia-500/10 text-slate-200 border border-violet-500/20'
                           : 'bg-white/5 text-slate-200 border border-white/5'
                         }`}
+                      whileHover={{ scale: 1.01 }}
+                      transition={{ type: "spring", stiffness: 400, damping: 25 }}
                     >
                       <p className="whitespace-pre-wrap break-words text-[15px] leading-relaxed">
                         {message.content}
                       </p>
-                    </div>
+                    </motion.div>
                   </div>
-                </div>
+                </motion.div>
               );
             })}
 
             {/* Vlad streaming/thinking indicator */}
             {(vladThinking || vladStreamingText) && (
-              <div className="flex gap-3">
-                <div className="flex-shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-medium bg-gradient-to-br from-violet-500 to-fuchsia-500 ring-2 ring-violet-400/30">
+              <motion.div
+                className="flex gap-3"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ type: "spring", stiffness: 300, damping: 30 }}
+              >
+                <motion.div
+                  className="flex-shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-medium bg-gradient-to-br from-violet-500 to-fuchsia-500 ring-2 ring-violet-400/30"
+                  animate={vladThinking ? {
+                    boxShadow: [
+                      '0 0 0 0 rgba(139, 92, 246, 0.4)',
+                      '0 0 0 8px rgba(139, 92, 246, 0)',
+                      '0 0 0 0 rgba(139, 92, 246, 0)'
+                    ]
+                  } : {}}
+                  transition={{
+                    duration: 1.5,
+                    repeat: Infinity,
+                    ease: "easeInOut"
+                  }}
+                >
                   V
-                </div>
+                </motion.div>
                 <div className="flex flex-col items-start max-w-[75%]">
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-sm font-medium text-slate-300">Vlad</span>
@@ -444,7 +538,11 @@ export function LoungeChat() {
                     {vladStreamingText ? (
                       <p className="whitespace-pre-wrap break-words text-[15px] leading-relaxed">
                         {vladStreamingText}
-                        <span className="inline-block w-2 h-4 bg-violet-400 ml-1 animate-pulse" />
+                        <motion.span
+                          className="inline-block w-2 h-4 bg-violet-400 ml-1"
+                          animate={{ opacity: [1, 0.3, 1] }}
+                          transition={{ duration: 0.8, repeat: Infinity, ease: "easeInOut" }}
+                        />
                       </p>
                     ) : (
                       <Shimmer as="span" duration={1.5} spread={1.5} className="text-sm">
@@ -453,7 +551,7 @@ export function LoungeChat() {
                     )}
                   </div>
                 </div>
-              </div>
+              </motion.div>
             )}
 
             <div ref={messagesEndRef} />
@@ -463,23 +561,40 @@ export function LoungeChat() {
       </div>
 
       {/* Scroll to bottom button */}
-      {hasNewMessages && !shouldAutoScroll && (
-        <button
-          onClick={() => {
-            scrollToBottom();
-            setHasNewMessages(false);
-            setShouldAutoScroll(true);
-          }}
-          className="fixed left-1/2 -translate-x-1/2 flex items-center gap-2 px-4 py-2.5 rounded-full bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium shadow-xl shadow-black/40 transition-all duration-200 hover:scale-105 animate-bounce"
-          style={{
-            bottom: 'calc(11rem + env(safe-area-inset-bottom, 0px))',
-            zIndex: 60
-          }}
-        >
-          <ChevronDownIcon className="w-4 h-4" />
-          New messages
-        </button>
-      )}
+      <AnimatePresence>
+        {hasNewMessages && !shouldAutoScroll && (
+          <motion.button
+            onClick={() => {
+              scrollToBottom();
+              setHasNewMessages(false);
+              setShouldAutoScroll(true);
+            }}
+            className="fixed left-1/2 -translate-x-1/2 flex items-center gap-2 px-4 py-2.5 rounded-full bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium shadow-xl shadow-black/40 transition-colors"
+            style={{
+              bottom: 'calc(11rem + env(safe-area-inset-bottom, 0px))',
+              zIndex: 60
+            }}
+            initial={{ opacity: 0, y: 20, scale: 0.9 }}
+            animate={{
+              opacity: 1,
+              y: 0,
+              scale: 1
+            }}
+            exit={{ opacity: 0, y: 20, scale: 0.9 }}
+            transition={{ type: "spring", stiffness: 300, damping: 25 }}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+          >
+            <motion.div
+              animate={{ y: [0, 3, 0] }}
+              transition={{ duration: 1, repeat: Infinity, ease: "easeInOut" }}
+            >
+              <ChevronDownIcon className="w-4 h-4" />
+            </motion.div>
+            New messages
+          </motion.button>
+        )}
+      </AnimatePresence>
 
       {/* Input area - Fixed at bottom */}
       <div className="fixed bottom-0 left-0 right-0 z-50">
