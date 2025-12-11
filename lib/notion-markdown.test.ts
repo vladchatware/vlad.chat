@@ -167,26 +167,13 @@ describe('convertBlocksToMarkdown', () => {
                 }
             ]
         })
-
-        // Second call returns child block
-        mockList.mockResolvedValueOnce({
-            results: [
-                {
-                    type: 'bulleted_list_item',
-                    bulleted_list_item: { rich_text: [{ plain_text: 'Child item' }] },
-                    has_children: false
-                }
-            ]
-        })
-
         const markdown = await convertBlocksToMarkdown('root-id')
 
-        // Verify recursive call
-        expect(mockList).toHaveBeenCalledTimes(2)
+        // Per updated spec: nested child blocks are not fetched recursively
+        expect(mockList).toHaveBeenCalledTimes(1)
         expect(mockList).toHaveBeenNthCalledWith(1, { block_id: 'root-id' })
-        expect(mockList).toHaveBeenNthCalledWith(2, { block_id: 'parent-block' })
 
-        expect(markdown).toBe('- Parent item\n  - Child item\n')
+        expect(markdown).toBe('- Parent item\n')
     })
 
     it('should ignore unknown block types', async () => {
