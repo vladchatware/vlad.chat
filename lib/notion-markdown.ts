@@ -94,10 +94,10 @@ export async function convertBlocksToMarkdown(blockId: string, depth = 0): Promi
         }
 
         // Recursively process child blocks
-        // if (block.has_children) {
-        //     const childMarkdown = await convertBlocksToMarkdown(block.id, depth + 1)
-        //     markdown += childMarkdown
-        // }
+        if (block.has_children) {
+            const childMarkdown = await convertBlocksToMarkdown(block.id, depth + 1)
+            markdown += childMarkdown
+        }
     }
 
     return markdown
