@@ -33,7 +33,7 @@ export async function POST(req: Request) {
 
     // Get recent lounge messages for context
     const recentMessages = await fetchQuery(
-      api.lounge.getRecentMessages, 
+      api.lounge.getRecentMessages,
       { limit: 15 },
       { token }
     );
@@ -52,7 +52,7 @@ export async function POST(req: Request) {
     });
     const tools = await notion.tools();
 
-    const model = 'openai/gpt-5-mini';
+    const model = 'openai/gpt-5.2-chat';
     const _model = withTracing(gateway.languageModel(model), posthog, {});
 
     // Stream the response

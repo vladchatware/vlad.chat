@@ -52,12 +52,8 @@ import { api } from '@/convex/_generated/api';
 
 const models = [
   {
-    name: 'GPT 5 mini',
-    value: 'openai/gpt-5-mini',
-  },
-  {
-    name: 'GPT 5',
-    value: 'openai/gpt-5'
+    name: 'GPT 5.2',
+    value: 'openai/gpt-5.2',
   }
 ];
 
