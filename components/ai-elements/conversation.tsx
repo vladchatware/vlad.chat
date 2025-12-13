@@ -37,9 +37,12 @@ export const Conversation = ({
   const [isAtBottom, setIsAtBottom] = useState(true);
   const userScrolledUp = useRef(false);
   const contentRef = useRef<HTMLDivElement>(null);
+  const mutationScrollRafRef = useRef<number | null>(null);
 
   const checkIfAtBottom = useCallback(() => {
-    const threshold = 150; // Increased threshold for better detection
+    // Keep this tight: if the user scrolls up even a bit during streaming,
+    // we should stop auto-scrolling immediately.
+    const threshold = 20;
     const scrollTop = window.scrollY;
     const windowHeight = window.innerHeight;
     const documentHeight = document.documentElement.scrollHeight;
@@ -60,13 +63,21 @@ export const Conversation = ({
 
     const handleScroll = () => {
       const currentScrollTop = window.scrollY;
+      const documentHeight = document.documentElement.scrollHeight;
+      const windowHeight = window.innerHeight;
       const atBottom = checkIfAtBottom();
+      const distanceFromBottom = documentHeight - (currentScrollTop + windowHeight);
       const scrollingDown = currentScrollTop > lastScrollTop;
       const scrollingUp = currentScrollTop < lastScrollTop;
 
       // User scrolled up - disable auto-scroll
-      if (scrollingUp && !atBottom) {
+      if (scrollingUp && distanceFromBottom > 5) {
         userScrolledUp.current = true;
+        // Cancel any pending mutation-driven scroll that could "snap back" after user scroll.
+        if (mutationScrollRafRef.current != null) {
+          window.cancelAnimationFrame(mutationScrollRafRef.current);
+          mutationScrollRafRef.current = null;
+        }
       }
 
       // User scrolled back to bottom - re-enable auto-scroll
@@ -92,11 +103,22 @@ export const Conversation = ({
     if (!contentRef.current) return;
 
     const observer = new MutationObserver(() => {
-      if (!userScrolledUp.current) {
-        window.scrollTo({
-          top: document.documentElement.scrollHeight,
-          behavior: "smooth",
-        });
+      const atBottomNow = checkIfAtBottom();
+      if (!userScrolledUp.current && atBottomNow) {
+        // Throttle programmatic scrolling to once per frame and avoid smooth scrolling.
+        // Smooth scrolling during streaming causes a "tug-of-war" when the user scrolls up.
+        if (mutationScrollRafRef.current == null) {
+          mutationScrollRafRef.current = window.requestAnimationFrame(() => {
+            mutationScrollRafRef.current = null;
+            if (userScrolledUp.current) {
+              return;
+            }
+            window.scrollTo({
+              top: document.documentElement.scrollHeight,
+              behavior: "auto",
+            });
+          });
+        }
       }
     });
 
@@ -107,7 +129,7 @@ export const Conversation = ({
     });
 
     return () => observer.disconnect();
-  }, []);
+  }, [checkIfAtBottom]);
 
   return (
     <ScrollContext.Provider value={{ isAtBottom, scrollToBottom }}>
