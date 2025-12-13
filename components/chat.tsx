@@ -59,7 +59,6 @@ const models = [
 
 const suggestions = [
   'Latest updates',
-  'Roadmap',
   'Notion Templates',
 ]
 
