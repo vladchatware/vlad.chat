@@ -54,6 +54,14 @@ const models = [
   {
     name: 'GPT 5.2',
     value: 'openai/gpt-5.2',
+  },
+  {
+    name: 'Kimi K2',
+    value: 'moonshotai/kimi-k2'
+  },
+  {
+    name: 'Grok 4',
+    value: 'xai/grok-4-fast-reasoning'
   }
 ];
 
