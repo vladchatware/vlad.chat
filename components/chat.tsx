@@ -62,6 +62,10 @@ const models = [
   {
     name: 'Grok 4',
     value: 'xai/grok-4-fast-reasoning'
+  },
+  {
+    name: 'DeepSeek 3.2',
+    value: 'deepseek/deepseek-v3.2'
   }
 ];
 
