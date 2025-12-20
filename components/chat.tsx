@@ -52,12 +52,12 @@ import { api } from '@/convex/_generated/api';
 
 const models = [
   {
-    name: 'GPT 5.2',
-    value: 'openai/gpt-5.2',
-  },
-  {
     name: 'Kimi K2',
     value: 'moonshotai/kimi-k2'
+  },
+  {
+    name: 'GPT 5.2',
+    value: 'openai/gpt-5.2',
   },
   {
     name: 'Grok 4',
