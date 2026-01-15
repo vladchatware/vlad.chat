@@ -28,6 +28,7 @@ import {
   ToolInput,
 } from '@/components/ai-elements/tool';
 import { Fragment, useEffect, useState } from 'react';
+import { motion } from 'motion/react';
 import { useChat } from '@ai-sdk/react';
 import { Response } from '@/components/ai-elements/response';
 import { CopyIcon, MessageCircleIcon, RefreshCcwIcon } from 'lucide-react';
@@ -56,8 +57,8 @@ const models = [
     value: 'moonshotai/kimi-k2'
   },
   {
-    name: 'GPT 5.2',
-    value: 'openai/gpt-5.2',
+    name: 'GPT 5.2 Codex',
+    value: 'openai/gpt-5.2-codex',
   },
   {
     name: 'Grok 4',
@@ -204,9 +205,17 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                 </Message>
               </div>
               {messages.map((message, messageIndex) => (
-                <div
+                <motion.div
                   key={message.id}
                   className={messages.length - 1 === messageIndex && status !== 'submitted' ? 'pb-46' : ''}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{
+                    type: "spring",
+                    stiffness: 300,
+                    damping: 30,
+                    delay: 0.05
+                  }}
                 >
                   {
                     message.role === 'assistant' && message.parts.filter((part) => part.type === 'source-url').length > 0 && (
@@ -300,7 +309,7 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                       }
                     })
                   }
-                </div>
+                </motion.div>
               ))}
               {status === 'submitted' && <div className="pb-46 flex justify-center"><Loader /></div>}
             </ConversationContent>
@@ -309,14 +318,14 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
         </div>
       </div >
 
-      <div className="px-4 py-6 md:px-72 fixed bottom-0 left-0 right-0 bg-background/30 backdrop-blur-sm">
+      <div className="px-4 py-2 md:px-72 fixed bottom-0 left-0 right-0 bg-background/30 backdrop-blur-sm">
 
         {/* {error && <Suggestions>
           <Suggestion suggestion={`An error occurred: ${error.message}. Regenerate.`} onClick={() => regenerate({ body: { model } })} />
         </Suggestions>} */}
 
         {user?.isAnonymous && messages.length > 0 && <Authenticated>
-          <div className="mb-3 flex items-center justify-center gap-2 flex-wrap text-sm">
+          <div className="mb-2 flex items-center justify-center gap-2 flex-wrap text-sm">
             <span className="text-muted-foreground">
               {user.trialMessages > 0 ? (
                 <>{user.trialMessages} {user.trialMessages === 1 ? 'message' : 'messages'} left</>
@@ -356,7 +365,7 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
           )}
         </Suggestions>}
 
-        <PromptInput onSubmit={handleSubmit} className="mt-4">
+        <PromptInput onSubmit={handleSubmit} className="mt-2">
           <PromptInputBody>
             <PromptInputTextarea
               onChange={(e) => setInput(e.target.value)}
