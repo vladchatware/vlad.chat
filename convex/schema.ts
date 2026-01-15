@@ -16,10 +16,12 @@ export default defineSchema({
     stripeId: v.optional(v.string()),
     trialMessages: v.optional((v.number())),
     trialTokens: v.optional(v.number()),
-    tokens: v.optional(v.number())
+    tokens: v.optional(v.number()),
+    apiKey: v.optional(v.string())
   })
     .index("email", ["email"])
-    .index('stripeId', ['stripeId']),
+    .index('stripeId', ['stripeId'])
+    .index('apiKey', ['apiKey']),
   usage: defineTable({
     userId: v.string(),
     model: v.string(),

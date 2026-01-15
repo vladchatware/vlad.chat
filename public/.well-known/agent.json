@@ -1,0 +1,31 @@
+{
+    "name": "Vlad",
+    "description": "Vlad is an AI agent for vlad.chat",
+    "url": "https://vlad.chat/api/a2a",
+    "protocolVersion": "1.0",
+    "version": "1.0.0",
+    "defaultInputModes": [
+        "text/plain"
+    ],
+    "defaultOutputModes": [
+        "text/plain"
+    ],
+    "provider": {
+        "organization": "vlad.chat",
+        "url": "https://vlad.chat"
+    },
+    "capabilities": {
+        "streaming": true
+    },
+    "skills": [
+        {
+            "id": "chat",
+            "name": "Chat",
+            "description": "General purpose chat",
+            "tags": [
+                "chat",
+                "general"
+            ]
+        }
+    ]
+}
