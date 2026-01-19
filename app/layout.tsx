@@ -16,8 +16,32 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Chat with Vlad",
-  description: "Hello, I am Vlad, a software developer with over decade of experience. I am here to assist you with any technical questions.",
+  title: {
+    default: "Chat with Vlad - Expert Developer",
+    template: "%s | Vlad.chat",
+  },
+  description: "Chat with Vlad, a software developer with over a decade of experience. Get expert answers, technical insights, and personalized assistance for your coding questions. Start your conversation today.",
+  openGraph: {
+    type: "website",
+    locale: "en_US",
+    siteName: "Vlad.chat",
+    title: "Chat with Vlad - Expert Developer",
+    description: "Chat with Vlad, a software developer with over a decade of experience. Get expert answers, technical insights, and personalized assistance for your coding questions. Start your conversation today.",
+    images: [
+      {
+        url: "/opengraph-image",
+        width: 1200,
+        height: 630,
+        alt: "Chat with Vlad - Expert Developer",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Chat with Vlad - Expert Developer",
+    description: "Chat with Vlad, a software developer with over a decade of experience. Get expert answers, technical insights, and personalized assistance for your coding questions. Start your conversation today.",
+    images: ["/opengraph-image"],
+  },
 };
 
 export default function RootLayout({
