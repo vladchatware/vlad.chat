@@ -107,7 +107,7 @@ If database_id is provided, queries that database with arbitrary filters. Otherw
 For database queries, first use notion-get-database to discover available properties, then construct filters matching the Notion API filter structure.`,
       {
         database_id: z.string().optional().describe('Optional database ID. If provided, queries this database instead of searching the workspace.'),
-        query: z.string().optional().describe('Semantic search query over your entire Notion workspace. Only used when database_id is not provided.'),
+        query: z.string().optional().describe('Search query to match against page titles. Note: Notion search only matches page titles, not page content. Only used when database_id is not provided.'),
         filters: z.unknown().optional().describe('Arbitrary filter object matching Notion API filter structure. Only used when database_id is provided. Supports property filters, timestamp filters, and compound filters (and/or). Example: { property: "Status", select: { equals: "Done" } } or { timestamp: "created_time", created_time: { past_week: {} } }'),
         sorts: z.array(z.unknown()).optional().describe('Array of sort criteria. Only used when database_id is provided. Each sort can be { property: "PropertyName", direction: "ascending"|"descending" } or { timestamp: "created_time"|"last_edited_time", direction: "ascending"|"descending" }'),
         filter_properties: z.array(z.string()).optional().describe('Optional array of property names to include in response. Only used when database_id is provided. Reduces payload size.'),
@@ -116,7 +116,7 @@ For database queries, first use notion-get-database to discover available proper
           direction: z.enum(["ascending", "descending"]).default('descending').describe('The direction to sort. Only used when database_id is not provided.')
         }).default({}).describe('A set of criteria, direction and timestamp keys, that orders the results. Only used when database_id is not provided.'),
         start_cursor: z.string().optional().describe('A cursor value returned in a previous response. If supplied, limits the response to results starting after the cursor.'),
-        page_size: z.number().default(1).describe('The number of items from the full list to include in the response. Maximum: 100.'),
+        page_size: z.number().optional().describe('The number of items from the full list to include in the response. Maximum: 100. Defaults to 20 when a query is provided (to better find subpages), 1 otherwise.'),
         filter: z.object({
           property: z.enum(['object']).default('object').describe('The name of the property to filter by. Only used when database_id is not provided.'),
           value: z.enum(['page', 'database']).default('page').describe('The value of the property to filter the results by. Only used when database_id is not provided.')
@@ -231,21 +231,75 @@ For database queries, first use notion-get-database to discover available proper
         }
 
         // Otherwise, perform regular search
+        // Use a higher default page_size when query is provided to show more relevant results
+        // Increased to 20 to better find subpages and nested content
+        // When a query is provided, use at least 20 results to improve chances of finding the right page
+        // Use nullish coalescing to only apply default when page_size is undefined
+        const effectivePageSize = query 
+          ? Math.max(page_size ?? 20, 20)  // At least 20 when query is provided
+          : (page_size ?? 1)  // Default to 1 when no query
+        
         const searchParams: Parameters<typeof notion.search>[0] = {
-          query: query || '',
-          sort: {
-            timestamp: sort.timestamp,
-            direction: sort.direction
-          },
-          page_size,
+          page_size: effectivePageSize,
           start_cursor,
           filter: {
             property: 'object',
             value: (filter.value === 'database' ? 'data_source' : (filter.value || 'page')) as 'page' | 'data_source'
           }
-        };
+        }
+
+        // Only include query if it's provided and non-empty
+        if (query && query.trim()) {
+          searchParams.query = query.trim()
+        } else {
+          // Only apply sort when there's no query - let Notion's relevance ranking work when query is provided
+          searchParams.sort = {
+            timestamp: sort.timestamp,
+            direction: sort.direction
+          }
+        }
 
         const res = await notion.search(searchParams)
+
+        // Collect unique parent page IDs to fetch their titles
+        const parentPageIds = new Set<string>()
+        res.results.forEach((result) => {
+          if ('parent' in result && result.parent && result.parent.type === 'page_id') {
+            parentPageIds.add(result.parent.page_id)
+          }
+        })
+
+        // Fetch parent page titles in parallel
+        const parentTitles = new Map<string, string>()
+        if (parentPageIds.size > 0) {
+          const parentFetchPromises = Array.from(parentPageIds).map(async (parentId) => {
+            try {
+              const parentPage = await notion.pages.retrieve({ page_id: parentId })
+              let parentTitle = 'Untitled'
+              
+              if ('properties' in parentPage) {
+                const titleProperty = Object.values(parentPage.properties).find((prop) =>
+                  'type' in prop && prop.type === 'title'
+                ) as PageObjectResponse['properties'][string] | undefined
+                if (titleProperty && 'type' in titleProperty && titleProperty.type === 'title') {
+                  parentTitle = titleProperty.title.map((t) => t.plain_text).join('')
+                }
+              } else if ('title' in parentPage && Array.isArray(parentPage.title)) {
+                parentTitle = parentPage.title.map(t => t.plain_text).join('')
+              }
+              
+              return { parentId, parentTitle }
+            } catch (error) {
+              console.error(`Error fetching parent page ${parentId}:`, error)
+              return { parentId, parentTitle: 'Unknown' }
+            }
+          })
+          
+          const parentResults = await Promise.all(parentFetchPromises)
+          parentResults.forEach(({ parentId, parentTitle }) => {
+            parentTitles.set(parentId, parentTitle)
+          })
+        }
 
         const text = res.results.map((result: PageObjectResponse | DatabaseObjectResponse | PartialPageObjectResponse | PartialDatabaseObjectResponse | DataSourceObjectResponse | PartialDataSourceObjectResponse) => {
           let title = "Untitled";
@@ -269,7 +323,21 @@ For database queries, first use notion-get-database to discover available proper
           const lastEditedTime = 'last_edited_time' in result ? result.last_edited_time : undefined;
           const timeAgo = lastEditedTime ? getRelativeTime(new Date(lastEditedTime)) : '';
 
-          return `${result.id} ${title} ${timeAgo}`
+          // Show parent page title for subpages
+          let parentInfo = ''
+          if ('parent' in result && result.parent) {
+            if (result.parent.type === 'page_id') {
+              const parentTitle = parentTitles.get(result.parent.page_id)
+              if (parentTitle) {
+                parentInfo = ` (in ${parentTitle})`
+              }
+            } else if (result.parent.type === 'database_id') {
+              // For database parents, we could fetch the database title, but that's less common
+              // Skip showing database_id to avoid polluting context
+            }
+          }
+
+          return `${result.id} ${title}${parentInfo} ${timeAgo}`
         }).join('\n');
 
         return {
