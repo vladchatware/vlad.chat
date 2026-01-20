@@ -167,13 +167,94 @@ describe('convertBlocksToMarkdown', () => {
                 }
             ]
         })
+        // Second call returns child blocks
+        mockList.mockResolvedValueOnce({
+            results: [
+                {
+                    id: 'child-block',
+                    type: 'paragraph',
+                    paragraph: { rich_text: [{ plain_text: 'Child content' }] },
+                    has_children: false
+                }
+            ]
+        })
+
         const markdown = await convertBlocksToMarkdown('root-id')
 
-        // Per updated spec: nested child blocks are not fetched recursively
-        expect(mockList).toHaveBeenCalledTimes(1)
+        expect(mockList).toHaveBeenCalledTimes(2)
         expect(mockList).toHaveBeenNthCalledWith(1, { block_id: 'root-id' })
+        expect(mockList).toHaveBeenNthCalledWith(2, { block_id: 'parent-block' })
 
-        expect(markdown).toBe('- Parent item\n')
+        expect(markdown).toBe('- Parent item\n  Child content\n\n')
+    })
+
+    it('should parallelize fetching children for multiple blocks at same level', async () => {
+        // Root level: 3 blocks, all with children
+        mockList.mockResolvedValueOnce({
+            results: [
+                {
+                    id: 'block-1',
+                    type: 'heading_1',
+                    heading_1: { rich_text: [{ plain_text: 'Section 1' }] },
+                    has_children: true
+                },
+                {
+                    id: 'block-2',
+                    type: 'heading_1',
+                    heading_1: { rich_text: [{ plain_text: 'Section 2' }] },
+                    has_children: true
+                },
+                {
+                    id: 'block-3',
+                    type: 'heading_1',
+                    heading_1: { rich_text: [{ plain_text: 'Section 3' }] },
+                    has_children: true
+                }
+            ]
+        })
+
+        // All child fetches should happen (parallelized)
+        mockList.mockResolvedValueOnce({
+            results: [
+                {
+                    id: 'child-1',
+                    type: 'paragraph',
+                    paragraph: { rich_text: [{ plain_text: 'Content 1' }] },
+                    has_children: false
+                }
+            ]
+        })
+        mockList.mockResolvedValueOnce({
+            results: [
+                {
+                    id: 'child-2',
+                    type: 'paragraph',
+                    paragraph: { rich_text: [{ plain_text: 'Content 2' }] },
+                    has_children: false
+                }
+            ]
+        })
+        mockList.mockResolvedValueOnce({
+            results: [
+                {
+                    id: 'child-3',
+                    type: 'paragraph',
+                    paragraph: { rich_text: [{ plain_text: 'Content 3' }] },
+                    has_children: false
+                }
+            ]
+        })
+
+        const markdown = await convertBlocksToMarkdown('root-id')
+
+        // Should have 1 call for root + 3 calls for children (all parallelized)
+        expect(mockList).toHaveBeenCalledTimes(4)
+        expect(markdown).toContain('# Section 1')
+        expect(markdown).toContain('# Section 2')
+        expect(markdown).toContain('# Section 3')
+        expect(markdown).toContain('Content 1')
+        expect(markdown).toContain('Content 2')
+        expect(markdown).toContain('Content 3')
     })
 
     it('should ignore unknown block types', async () => {
