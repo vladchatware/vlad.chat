@@ -153,15 +153,10 @@ export function OpenCodeSetupPrompt({ className }: { className?: string }) {
     >
       <Terminal className="w-4 h-4 text-muted-foreground shrink-0" />
       <span className="text-muted-foreground">
-        Want Vlad to work on your code?{' '}
-        <a
-          href="https://opencode.ai/docs/server/"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-primary hover:underline"
-        >
-          Connect OpenCode
-        </a>
+        Want Vlad to work on your code? Run{' '}
+        <code className="bg-muted/80 px-1.5 py-0.5 rounded font-mono text-[11px] text-primary select-all">
+          opencode serve --cors https://vlad.chat
+        </code>
       </span>
     </div>
   )

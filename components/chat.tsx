@@ -53,9 +53,8 @@ import { Authenticated, useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { useOpenCodeSafe } from '@/lib/opencode-context';
 import { OpenCodeStatus } from '@/components/ai-elements/opencode-status';
-import { DelegationProgress } from '@/components/ai-elements/delegation';
+import { DelegationProgress, DelegationStatus } from '@/components/ai-elements/delegation';
 import { OpenCodeSetupPrompt } from '@/components/ai-elements/opencode-setup';
-import { DelegationCard } from '@/components/ai-elements/delegation-card';
 
 const models = [
   {
@@ -109,17 +108,17 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
   // Determine delegation status based on events
   const getDelegationStatus = useCallback((): 'pending' | 'running' | 'completed' | 'error' => {
     if (openCodeEvents.length === 0) return 'pending';
-    
+
     const hasRunning = openCodeEvents.some(
       e => e.type === 'session.status' && e.properties.status === 'running'
     );
     if (hasRunning) return 'running';
-    
+
     const hasError = openCodeEvents.some(
       e => e.type === 'session.status' && e.properties.status === 'error'
     );
     if (hasError) return 'error';
-    
+
     return 'completed';
   }, [openCodeEvents]);
 
@@ -160,7 +159,7 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
     const textParts = lastMessage.parts.filter(p => p.type === 'text');
     for (const part of textParts) {
       if (part.type !== 'text') continue;
-      
+
       const delegation = parseDelegation(part.text);
       if (delegation && !delegationExecuted.has(lastMessage.id)) {
         console.log('Executing delegation:', delegation);
@@ -257,13 +256,13 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
 
   return (
     <>
-      <div className="fixed top-4 right-4 z-50 flex items-center gap-3">
+      <div className="fixed top-3 right-3 md:top-4 md:right-4 z-50 flex flex-col items-end gap-1.5 md:gap-2">
         {/* OpenCode connection status */}
-        <OpenCodeStatus compact className="hidden md:flex" />
-        
+        <OpenCodeStatus compact />
+
         <Link
           href="/lounge"
-          className="flex items-center gap-0 md:gap-2 p-2 md:px-4 md:py-2 rounded-full bg-gradient-to-r from-violet-600/90 to-fuchsia-600/90 hover:from-violet-500 hover:to-fuchsia-500 text-white text-sm font-medium shadow-lg shadow-violet-500/25 transition-all hover:scale-105">
+          className="flex items-center gap-0 md:gap-2 p-2.5 md:px-4 md:py-2 rounded-full bg-gradient-to-r from-violet-600/90 to-fuchsia-600/90 hover:from-violet-500 hover:to-fuchsia-500 text-white text-sm font-medium shadow-lg shadow-violet-500/25 transition-all hover:scale-105">
           <MessageCircleIcon className='w-4 h-4' />
           <span className="hidden md:inline">The Lounge</span>
         </Link>
@@ -326,37 +325,29 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                       switch (part.type) {
                         case 'text': {
                           // Check if this is a delegation message
-                          const delegation = message.role === 'assistant' 
-                            ? parseDelegation(part.text) 
+                          const delegation = message.role === 'assistant'
+                            ? parseDelegation(part.text)
                             : null;
 
                           if (delegation) {
-                            // Render delegation card instead of raw JSON
-                            const delegationStatus = delegationExecuted.has(message.id)
-                              ? getDelegationStatus()
-                              : 'pending';
-
-                            return (
-                              <Fragment key={`${message.id}-${partIndex}`}>
-                                <DelegationCard
-                                  task={delegation.task}
-                                  context={delegation.context}
-                                  status={delegationStatus}
-                                  className="max-w-lg mx-auto"
+                            // Render DelegationProgress inline instead of the JSON
+                            if (openCodeEvents.length > 0) {
+                              return (
+                                <DelegationProgress
+                                  key={`${message.id}-${partIndex}`}
+                                  events={openCodeEvents}
+                                  hideHeader
                                 />
-                                {message.role === 'assistant' &&
-                                  messageIndex === messages.length - 1 &&
-                                  partIndex === message.parts.length - 1 && (
-                                    <Actions className="mt-2">
-                                      <Action
-                                        onClick={() => { regenerate({ body: { model } }) }}
-                                        label="Retry"
-                                      >
-                                        <RefreshCcwIcon className="size-3" />
-                                      </Action>
-                                    </Actions>
-                                  )}
-                              </Fragment>
+                              );
+                            }
+                            // If no events yet, show a simple pending indicator
+                            return (
+                              <div key={`${message.id}-${partIndex}`} className="flex items-center gap-2 py-2">
+                                <Loader className="w-4 h-4" />
+                                <span className="text-sm text-muted-foreground">
+                                  Delegating to OpenCode...
+                                </span>
+                              </div>
                             );
                           }
 
@@ -431,17 +422,6 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                 </motion.div>
               ))}
               {status === 'submitted' && <div className="pb-46 flex justify-center"><Loader /></div>}
-              
-              {/* OpenCode delegation progress */}
-              {openCodeEvents.length > 0 && (
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="pb-46"
-                >
-                  <DelegationProgress events={openCodeEvents} />
-                </motion.div>
-              )}
             </ConversationContent>
             <ConversationScrollButton />
           </Conversation>
@@ -454,25 +434,36 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
           <Suggestion suggestion={`An error occurred: ${error.message}. Regenerate.`} onClick={() => regenerate({ body: { model } })} />
         </Suggestions>} */}
 
-        {user?.isAnonymous && messages.length > 0 && <Authenticated>
-          <div className="mb-2 flex items-center justify-center gap-2 flex-wrap text-sm">
-            <span className="text-muted-foreground">
-              {user.trialMessages > 0 ? (
-                <>{user.trialMessages} {user.trialMessages === 1 ? 'message' : 'messages'} left</>
-              ) : (
-                <>No messages left</>
-              )}
-            </span>
-            <span className="text-muted-foreground/50">•</span>
-            <button
-              onClick={() => signIn('google')}
-              className="text-muted-foreground hover:text-foreground transition-colors underline underline-offset-2"
-            >
-              Sign in with Google
-            </button>
-            <span className="text-muted-foreground/50">for unlimited</span>
+        {messages.length > 0 && (
+          <div className="mb-2 flex items-center justify-center gap-3 flex-wrap text-sm">
+            <DelegationStatus events={openCodeEvents} />
+
+            {user?.isAnonymous && (
+              <Authenticated>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {openCodeEvents.length > 0 && (
+                    <span className="text-muted-foreground/50">•</span>
+                  )}
+                  <span className="text-muted-foreground">
+                    {user.trialMessages > 0 ? (
+                      <>{user.trialMessages} {user.trialMessages === 1 ? 'message' : 'messages'} left</>
+                    ) : (
+                      <>No messages left</>
+                    )}
+                  </span>
+                  <span className="text-muted-foreground/50">•</span>
+                  <button
+                    onClick={() => signIn('google')}
+                    className="text-muted-foreground hover:text-foreground transition-colors underline underline-offset-2"
+                  >
+                    Sign in with Google
+                  </button>
+                  <span className="text-muted-foreground/50">for unlimited</span>
+                </div>
+              </Authenticated>
+            )}
           </div>
-        </Authenticated>}
+        )}
         {user && user.trialTokens <= 0 && user.tokens <= 0 && <Suggestions>
           <Suggestion suggestion={`You have run out of credits. Buy more.`} onClick={() => { checkout() }} />
         </Suggestions>

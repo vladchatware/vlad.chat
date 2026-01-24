@@ -141,6 +141,19 @@ export interface MessagePartToolInvocationEvent extends OpenCodeEvent {
   }
 }
 
+export interface MessagePartToolResultEvent extends OpenCodeEvent {
+  type: 'message.part.tool-result'
+  properties: {
+    sessionID: string
+    messageID: string
+    toolResult: {
+      id: string
+      result: unknown
+      isError?: boolean
+    }
+  }
+}
+
 export interface FileChangedEvent extends OpenCodeEvent {
   type: 'file.changed'
   properties: {

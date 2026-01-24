@@ -21,20 +21,26 @@ export async function POST(req: Request) {
 
   if (!user) return new NextResponse('no user present in session', { status: 403 })
 
-  if (!user.isAnonymous) {
-    if (!user.stripeId) {
-      const customer = await stripe.customers.create(({
-        email: user.email
-      }))
-      await fetchMutation(api.users.connect, { stripeId: customer.id }, { token: await convexAuthNextjsToken() })
-      user.stripeId = customer.id
-    }
+  // Bypass quota for local development
+  const isLocalDev = process.env.NODE_ENV === 'development' ||
+    req.headers.get('host')?.includes('localhost')
 
-    if (user.trialTokens <= 0 && user.tokens <= 0) {
-      return new NextResponse('out of tokens', { status: 429 })
+  if (!isLocalDev) {
+    if (!user.isAnonymous) {
+      if (!user.stripeId) {
+        const customer = await stripe.customers.create(({
+          email: user.email
+        }))
+        await fetchMutation(api.users.connect, { stripeId: customer.id }, { token: await convexAuthNextjsToken() })
+        user.stripeId = customer.id
+      }
+
+      if (user.trialTokens <= 0 && user.tokens <= 0) {
+        return new NextResponse('out of tokens', { status: 429 })
+      }
+    } else {
+      if (user.trialMessages! <= 0) return new NextResponse('no more messages left', { status: 429 })
     }
-  } else {
-    if (user.trialMessages! <= 0) return new NextResponse('no more messages left', { status: 429 })
   }
 
   const notion = await experimental_createMCPClient({
@@ -51,7 +57,7 @@ export async function POST(req: Request) {
   // Add OpenCode connection status to system prompt
   const openCodeContext = openCodeConnected
     ? '\n\n[OPENCODE STATUS: CONNECTED] The user has OpenCode running locally. You CAN delegate coding tasks by responding with a delegation JSON. The user will see your delegation and OpenCode will execute it on their machine.'
-    : '\n\n[OPENCODE STATUS: NOT CONNECTED] The user does not have OpenCode running. Do NOT attempt to delegate tasks. Instead, provide code examples inline or suggest they run "opencode serve" to enable local coding capabilities.'
+    : '\n\n[OPENCODE STATUS: NOT CONNECTED] The user does not have OpenCode running. Do NOT attempt to delegate tasks. Instead, provide code examples inline or suggest they run "opencode serve --cors https://vlad.chat" to enable local coding capabilities.'
 
   const result = streamText({
     model: _model,
