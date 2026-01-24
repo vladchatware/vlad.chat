@@ -15,7 +15,8 @@ export async function POST(req: Request) {
   const {
     messages,
     model,
-  }: { messages: UIMessage[]; model: string } = await req.json();
+    openCodeConnected,
+  }: { messages: UIMessage[]; model: string; openCodeConnected?: boolean } = await req.json();
   const user = await fetchQuery(api.users.viewer, {}, { token: await convexAuthNextjsToken() })
 
   if (!user) return new NextResponse('no user present in session', { status: 403 })
@@ -47,12 +48,17 @@ export async function POST(req: Request) {
 
   const _model = withTracing(gateway.languageModel(model), posthog, {})
 
+  // Add OpenCode connection status to system prompt
+  const openCodeContext = openCodeConnected
+    ? '\n\n[OPENCODE STATUS: CONNECTED] The user has OpenCode running locally. You CAN delegate coding tasks by responding with a delegation JSON. The user will see your delegation and OpenCode will execute it on their machine.'
+    : '\n\n[OPENCODE STATUS: NOT CONNECTED] The user does not have OpenCode running. Do NOT attempt to delegate tasks. Instead, provide code examples inline or suggest they run "opencode serve" to enable local coding capabilities.'
+
   const result = streamText({
     model: _model,
     messages: convertToModelMessages(messages),
     tools: tools as Parameters<typeof streamText>[0]['tools'],
     stopWhen: stepCountIs(5),
-    system,
+    system: system + openCodeContext,
     experimental_transform: smoothStream(),
     onFinish: async ({ usage, providerMetadata }) => {
       if (user.isAnonymous) {

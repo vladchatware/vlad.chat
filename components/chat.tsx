@@ -27,7 +27,8 @@ import {
   ToolOutput,
   ToolInput,
 } from '@/components/ai-elements/tool';
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, useEffect, useState, useCallback } from 'react';
+import type { DelegationMessage } from '@/lib/opencode-types';
 import { motion } from 'motion/react';
 import { useChat } from '@ai-sdk/react';
 import { Response } from '@/components/ai-elements/response';
@@ -50,6 +51,11 @@ import { Action, Actions } from '@/components/ai-elements/actions';
 import { useAuthActions } from "@convex-dev/auth/react"
 import { Authenticated, useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
+import { useOpenCodeSafe } from '@/lib/opencode-context';
+import { OpenCodeStatus } from '@/components/ai-elements/opencode-status';
+import { DelegationProgress } from '@/components/ai-elements/delegation';
+import { OpenCodeSetupPrompt } from '@/components/ai-elements/opencode-setup';
+import { DelegationCard } from '@/components/ai-elements/delegation-card';
 
 const models = [
   {
@@ -94,6 +100,78 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
     }
   });
 
+  // OpenCode integration
+  const opencode = useOpenCodeSafe();
+  const isOpenCodeConnected = opencode?.isConnected ?? false;
+  const openCodeEvents = opencode?.events ?? [];
+  const [delegationExecuted, setDelegationExecuted] = useState<Set<string>>(new Set());
+
+  // Determine delegation status based on events
+  const getDelegationStatus = useCallback((): 'pending' | 'running' | 'completed' | 'error' => {
+    if (openCodeEvents.length === 0) return 'pending';
+    
+    const hasRunning = openCodeEvents.some(
+      e => e.type === 'session.status' && e.properties.status === 'running'
+    );
+    if (hasRunning) return 'running';
+    
+    const hasError = openCodeEvents.some(
+      e => e.type === 'session.status' && e.properties.status === 'error'
+    );
+    if (hasError) return 'error';
+    
+    return 'completed';
+  }, [openCodeEvents]);
+
+  // Parse delegation JSON from text message
+  const parseDelegation = useCallback((text: string): DelegationMessage | null => {
+    try {
+      // Try to parse as JSON directly
+      const parsed = JSON.parse(text.trim());
+      if (parsed.type === 'delegation' && parsed.task) {
+        return parsed as DelegationMessage;
+      }
+    } catch {
+      // Try to extract JSON from text (might have surrounding text)
+      const jsonMatch = text.match(/\{[\s\S]*"type":\s*"delegation"[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          const parsed = JSON.parse(jsonMatch[0]);
+          if (parsed.type === 'delegation' && parsed.task) {
+            return parsed as DelegationMessage;
+          }
+        } catch {
+          // Not valid JSON
+        }
+      }
+    }
+    return null;
+  }, []);
+
+  // Execute delegation when detected in messages
+  useEffect(() => {
+    if (!isOpenCodeConnected || !opencode || status === 'streaming') return;
+
+    // Check the last assistant message for delegation
+    const lastMessage = messages[messages.length - 1];
+    if (!lastMessage || lastMessage.role !== 'assistant') return;
+
+    // Get text parts from the message
+    const textParts = lastMessage.parts.filter(p => p.type === 'text');
+    for (const part of textParts) {
+      if (part.type !== 'text') continue;
+      
+      const delegation = parseDelegation(part.text);
+      if (delegation && !delegationExecuted.has(lastMessage.id)) {
+        console.log('Executing delegation:', delegation);
+        setDelegationExecuted(prev => new Set(prev).add(lastMessage.id));
+        opencode.sendTask(delegation.task).catch(err => {
+          console.error('Delegation failed:', err);
+        });
+      }
+    }
+  }, [messages, isOpenCodeConnected, opencode, status, parseDelegation, delegationExecuted]);
+
   useEffect(() => {
     if (isAuthenticated === false) {
       signIn('anonymous')
@@ -110,6 +188,7 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
         {
           body: {
             model: model,
+            openCodeConnected: isOpenCodeConnected,
           },
         },
       );
@@ -142,6 +221,7 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
       {
         body: {
           model: model,
+          openCodeConnected: isOpenCodeConnected,
         },
       },
     );
@@ -177,12 +257,17 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
 
   return (
     <>
-      <Link
-        href="/lounge"
-        className="fixed top-4 right-4 z-50 flex items-center gap-0 md:gap-2 p-2 md:px-4 md:py-2 rounded-full bg-gradient-to-r from-violet-600/90 to-fuchsia-600/90 hover:from-violet-500 hover:to-fuchsia-500 text-white text-sm font-medium shadow-lg shadow-violet-500/25 transition-all hover:scale-105">
-        <MessageCircleIcon className='w-4 h-4' />
-        <span className="hidden md:inline">The Lounge</span>
-      </Link>
+      <div className="fixed top-4 right-4 z-50 flex items-center gap-3">
+        {/* OpenCode connection status */}
+        <OpenCodeStatus compact className="hidden md:flex" />
+        
+        <Link
+          href="/lounge"
+          className="flex items-center gap-0 md:gap-2 p-2 md:px-4 md:py-2 rounded-full bg-gradient-to-r from-violet-600/90 to-fuchsia-600/90 hover:from-violet-500 hover:to-fuchsia-500 text-white text-sm font-medium shadow-lg shadow-violet-500/25 transition-all hover:scale-105">
+          <MessageCircleIcon className='w-4 h-4' />
+          <span className="hidden md:inline">The Lounge</span>
+        </Link>
+      </div>
       <div className="">
         <div className="md:px-72">
           <Conversation className="">
@@ -239,7 +324,43 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                   {
                     message.parts.map((part, partIndex) => {
                       switch (part.type) {
-                        case 'text':
+                        case 'text': {
+                          // Check if this is a delegation message
+                          const delegation = message.role === 'assistant' 
+                            ? parseDelegation(part.text) 
+                            : null;
+
+                          if (delegation) {
+                            // Render delegation card instead of raw JSON
+                            const delegationStatus = delegationExecuted.has(message.id)
+                              ? getDelegationStatus()
+                              : 'pending';
+
+                            return (
+                              <Fragment key={`${message.id}-${partIndex}`}>
+                                <DelegationCard
+                                  task={delegation.task}
+                                  context={delegation.context}
+                                  status={delegationStatus}
+                                  className="max-w-lg mx-auto"
+                                />
+                                {message.role === 'assistant' &&
+                                  messageIndex === messages.length - 1 &&
+                                  partIndex === message.parts.length - 1 && (
+                                    <Actions className="mt-2">
+                                      <Action
+                                        onClick={() => { regenerate({ body: { model } }) }}
+                                        label="Retry"
+                                      >
+                                        <RefreshCcwIcon className="size-3" />
+                                      </Action>
+                                    </Actions>
+                                  )}
+                              </Fragment>
+                            );
+                          }
+
+                          // Regular text message
                           return (
                             <Fragment key={`${message.id}-${partIndex}`}>
                               <Message from={message.role}>
@@ -271,6 +392,7 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                                 )}
                             </Fragment>
                           );
+                        }
                         case 'reasoning':
                           return (
                             <Reasoning
@@ -309,6 +431,17 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                 </motion.div>
               ))}
               {status === 'submitted' && <div className="pb-46 flex justify-center"><Loader /></div>}
+              
+              {/* OpenCode delegation progress */}
+              {openCodeEvents.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="pb-46"
+                >
+                  <DelegationProgress events={openCodeEvents} />
+                </motion.div>
+              )}
             </ConversationContent>
             <ConversationScrollButton />
           </Conversation>
@@ -344,23 +477,30 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
           <Suggestion suggestion={`You have run out of credits. Buy more.`} onClick={() => { checkout() }} />
         </Suggestions>
         }
-        {showSuggestions && <Suggestions>
-          {suggestions.map(suggestion =>
-            <Suggestion
-              key={suggestion}
-              onClick={(suggestion) => {
-                setShowSuggestions(false)
-                sendMessage(
-                  { text: suggestion },
-                  {
-                    body: {
-                      model: model,
-                    },
-                  },
-                );
-              }} suggestion={suggestion} />
-          )}
-        </Suggestions>}
+        {showSuggestions && (
+          <>
+            <Suggestions>
+              {suggestions.map(suggestion =>
+                <Suggestion
+                  key={suggestion}
+                  onClick={(suggestion) => {
+                    setShowSuggestions(false)
+                    sendMessage(
+                      { text: suggestion },
+                      {
+                        body: {
+                          model: model,
+                          openCodeConnected: isOpenCodeConnected,
+                        },
+                      },
+                    );
+                  }} suggestion={suggestion} />
+              )}
+            </Suggestions>
+            {/* Show OpenCode setup prompt when not connected */}
+            {!isOpenCodeConnected && <OpenCodeSetupPrompt className="mt-2" />}
+          </>
+        )}
 
         <PromptInput onSubmit={handleSubmit} className="mt-2">
           <PromptInputBody>
