@@ -357,7 +357,7 @@ export function LoungeChat() {
               <Link href="/" className="text-slate-400 hover:text-white transition-colors text-sm flex items-center gap-1 group">
                 <motion.span
                   animate={{ x: 0 }}
-                  whileHover={{ x: -2 }}
+                  whileHover={{ x: -3 }}
                   transition={{ type: "spring", stiffness: 400, damping: 25 }}
                 >
                   ←
