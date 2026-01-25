@@ -33,6 +33,7 @@
     "@radix-ui/react-use-controllable-state": "^1.2.2",
     "@stripe/stripe-js": "^8.0.0",
     "ai": "^6.0.0",
+    "ai-sdk-provider-opencode-sdk": "^1.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "convex": "^1.27.3",

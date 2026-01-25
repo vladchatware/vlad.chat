@@ -30,6 +30,8 @@ import {
 import { Fragment, useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { useChat } from '@ai-sdk/react';
+import { useOpenCodeStatus } from '@/hooks/use-opencode-status';
+import { extractOpenCodeContent, extractToolContent, formatToolCalls } from '@/lib/tool-utils';
 import { Response } from '@/components/ai-elements/response';
 import { CopyIcon, MessageCircleIcon, RefreshCcwIcon } from 'lucide-react';
 import Link from 'next/link';
@@ -88,6 +90,7 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
   const [input, setInput] = useState('');
   const [model, setModel] = useState<string>(models[0].value);
   const [autoMessageSent, setAutoMessageSent] = useState(false);
+  const { connectionStatus: openCodeConnection } = useOpenCodeStatus();
   const { messages, sendMessage, status, error, regenerate } = useChat({
     onError: error => {
       console.log('error caught', error)
@@ -286,14 +289,48 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                               <ReasoningContent>{part.text}</ReasoningContent>
                             </Reasoning>
                           );
+                        case 'tool-coder': {
+                          const { textContent, toolCalls, stepCount, isError } = extractOpenCodeContent(part.output);
+                          const isStreaming = part.state === 'input-streaming' || part.state === 'input-available';
+                          
+                          // Build display: tool calls first, then text content
+                          let displayContent = '';
+                          if (toolCalls.length > 0) {
+                            displayContent += formatToolCalls(toolCalls) + '\n\n';
+                          }
+                          if (textContent && textContent !== 'undefined') {
+                            displayContent += textContent;
+                          }
+                          
+                          // Determine display state - override error if we have successful content
+                          const hasContent = displayContent.length > 0 || textContent.length > 0;
+                          const displayState = isStreaming 
+                            ? part.state 
+                            : (isError ? 'output-error' : (hasContent ? 'output-available' : part.state));
+                          
+                          const stepInfo = stepCount > 0 ? ` (${stepCount} step${stepCount > 1 ? 's' : ''})` : '';
+                          
+                          return (
+                            <Tool key={`${message.id}-${partIndex}`} defaultOpen={true}>
+                              <ToolHeader type="tool-opencode" state={displayState} />
+                              <ToolContent>
+                                <ToolInput input={part.input} />
+                                <ToolOutput 
+                                  output={`${displayContent || (isStreaming ? 'Running...' : '')}${stepInfo ? `\n\n${stepInfo.trim()}` : ''}`} 
+                                  errorText={part.errorText} 
+                                />
+                              </ToolContent>
+                            </Tool>
+                          );
+                        }
                         case 'dynamic-tool': {
-                          const content =
-                            (part.output as { content: [{ text: string }] })?.content[0]
-                              ?.text ?? [];
+                          const toolName = (part as { toolName?: string }).toolName ?? '';
+                          const toolType = toolName === 'coder' ? 'tool-opencode' : 'tool-notion';
+                          const content = extractToolContent(part.output, toolName);
 
                           return (
-                            <Tool key={`${message.id}-${partIndex}`} defaultOpen={false}>
-                              <ToolHeader type={'tool-notion'} state={part.state} />
+                            <Tool key={`${message.id}-${partIndex}`} defaultOpen={toolName === 'coder'}>
+                              <ToolHeader type={toolType} state={part.state} />
                               <ToolContent>
                                 <ToolInput input={part.input} />
                                 <ToolOutput output={content} errorText={part.errorText} />
@@ -338,6 +375,19 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
               Sign in with Google
             </button>
             <span className="text-muted-foreground/50">for unlimited</span>
+            <span className="text-muted-foreground/50">•</span>
+            <span className="inline-flex items-center gap-1">
+              <span className={`inline-block w-2 h-2 rounded-full ${
+                openCodeConnection === 'checking' ? 'bg-muted-foreground/30' :
+                openCodeConnection === 'disconnected' ? 'bg-muted-foreground/50' :
+                'bg-emerald-500'
+              }`} />
+              <span className="text-muted-foreground">
+                {openCodeConnection === 'checking' ? 'OpenCode' :
+                 openCodeConnection === 'disconnected' ? 'OpenCode offline' :
+                 'OpenCode'}
+              </span>
+            </span>
           </div>
         </Authenticated>}
         {user && user.trialTokens <= 0 && user.tokens <= 0 && <Suggestions>

@@ -113,6 +113,29 @@ How to choose the single best purchase link:
 - Use my Notion knowledge base to find the template taxonomy page that includes product links.
 - Prefer an explicit product purchase URL present in the page content.
 - If multiple links match, pick the one that most directly matches the chosen category and the user intent.
+
+CODING AGENT (OpenCode):
+You have a "coder" tool that executes tasks via OpenCode with three modes:
+
+AGENTS:
+- "build" (default): Full access - can run commands, edit files, generate code
+- "plan": Read-only analysis - explores code and creates plans without making changes
+- "explore": Quick codebase search - fast exploration of files and symbols
+
+CRITICAL: When a user asks for coding operations, CALL THE TOOL. Do not describe what commands to run - actually call the coder tool to execute them.
+
+ALWAYS call the coder tool when users:
+- Mention "opencode", "coding agent", or "coder"
+- Ask to list files, check git status, see changes, or any file operation
+- Request code generation, file creation, or modifications
+- Want to run commands or scripts
+- Ask to explore or understand a codebase (use agent: "explore")
+- Want a plan or analysis without changes (use agent: "plan")
+
+WRONG: "Here are the commands you could run: git status..."
+RIGHT: Call the coder tool with task: "Run git status and show current changes"
+
+You can first look up context from Notion, then pass that context to the coder tool.
 `;
 
 // Lounge chat system prompt - for casual group chat
