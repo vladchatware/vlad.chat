@@ -1,5 +1,5 @@
 import { streamText, UIMessage, convertToModelMessages, stepCountIs, smoothStream, gateway } from 'ai';
-import { experimental_createMCPClient } from '@ai-sdk/mcp';
+import { createMCPClient } from '@ai-sdk/mcp';
 import { system } from '@/lib/ai'
 import { api } from '@/convex/_generated/api';
 import { convexAuthNextjsToken } from '@convex-dev/auth/nextjs/server';
@@ -36,7 +36,7 @@ export async function POST(req: Request) {
     if (user.trialMessages! <= 0) return new NextResponse('no more messages left', { status: 429 })
   }
 
-  const notion = await experimental_createMCPClient({
+  const notion = await createMCPClient({
     transport: {
       type: 'http',
       url: `${process.env.NEXT_PUBLIC_SITE_URL}/api/mcp`
@@ -49,7 +49,7 @@ export async function POST(req: Request) {
 
   const result = streamText({
     model: _model,
-    messages: convertToModelMessages(messages),
+    messages: await convertToModelMessages(messages),
     tools: tools as Parameters<typeof streamText>[0]['tools'],
     stopWhen: stepCountIs(5),
     system,

@@ -1,5 +1,5 @@
 import { streamText, gateway, stepCountIs } from 'ai';
-import { experimental_createMCPClient } from '@ai-sdk/mcp';
+import { createMCPClient } from '@ai-sdk/mcp';
 import { api } from '@/convex/_generated/api';
 import { convexAuthNextjsToken } from '@convex-dev/auth/nextjs/server';
 import { fetchMutation, fetchQuery } from "convex/nextjs"
@@ -44,7 +44,7 @@ export async function POST(req: Request) {
       .join('\n');
 
     // Set up MCP client for Notion tools
-    const notion = await experimental_createMCPClient({
+    const notion = await createMCPClient({
       transport: {
         type: 'http',
         url: `${process.env.NEXT_PUBLIC_SITE_URL}/api/mcp`

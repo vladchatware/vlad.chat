@@ -39,6 +39,15 @@ export const usage = mutation({
       outputTokens: v.optional(v.number()),
       reasoningTokens: v.optional(v.number()),
       cachedInputTokens: v.optional(v.number()),
+      inputTokenDetails: v.optional(v.object({
+        cacheReadTokens: v.optional(v.number()),
+        noCacheTokens: v.optional(v.number()),
+      })),
+      outputTokenDetails: v.optional(v.object({
+        reasoningTokens: v.optional(v.number()),
+        textTokens: v.optional(v.number()),
+      })),
+      raw: v.optional(v.any()),
     }),
     providerMetadata: v.optional(vProviderMetadata),
   },
