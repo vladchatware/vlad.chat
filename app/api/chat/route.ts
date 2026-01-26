@@ -2,6 +2,7 @@ import { streamText, UIMessage, convertToModelMessages, stepCountIs, smoothStrea
 import { createMCPClient } from '@ai-sdk/mcp';
 import { system } from '@/lib/ai'
 import { codingAgentTool } from '@/lib/opencode'
+import { NOTION_MCP_ENDPOINTS } from '@/lib/notion-oauth';
 import { api } from '@/convex/_generated/api';
 import { convexAuthNextjsToken } from '@convex-dev/auth/nextjs/server';
 import { fetchMutation, fetchQuery } from "convex/nextjs"
@@ -12,11 +13,11 @@ import { withTracing } from '@posthog/ai';
 
 const posthog = new PostHog(process.env.NEXT_PUBLIC_POSTHOG_KEY!, { host: process.env.NEXT_PUBLIC_POSTHOG_HOST! });
 
-// Cached MCP client and tools to avoid recreation on every request
+// Cached internal MCP client and tools to avoid recreation on every request
 let cachedMcpClient: Awaited<ReturnType<typeof createMCPClient>> | null = null;
 let cachedTools: Awaited<ReturnType<Awaited<ReturnType<typeof createMCPClient>>['tools']>> | null = null;
 
-async function getCachedTools() {
+async function getInternalTools() {
   if (!cachedMcpClient) {
     cachedMcpClient = await createMCPClient({
       transport: {
@@ -31,11 +32,35 @@ async function getCachedTools() {
   return cachedTools;
 }
 
+// Get user's Notion tools via official Notion MCP server
+async function getUserNotionTools(token: string): Promise<Record<string, unknown>> {
+  try {
+    const client = await createMCPClient({
+      transport: {
+        type: 'sse',
+        url: NOTION_MCP_ENDPOINTS.sse,
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      },
+    });
+    const tools = await client.tools();
+    // Prefix user tools to distinguish from internal tools
+    return Object.fromEntries(
+      Object.entries(tools).map(([key, value]) => [`user_${key}`, value])
+    );
+  } catch (error) {
+    console.error('Failed to connect to user Notion MCP:', error);
+    return {};
+  }
+}
+
 export async function POST(req: Request) {
   const {
     messages,
     model,
-  }: { messages: UIMessage[]; model: string } = await req.json();
+    notionToken,
+  }: { messages: UIMessage[]; model: string; notionToken?: string } = await req.json();
   const user = await fetchQuery(api.users.viewer, {}, { token: await convexAuthNextjsToken() })
 
   if (!user) return new NextResponse('no user present in session', { status: 403 })
@@ -60,9 +85,15 @@ export async function POST(req: Request) {
     }
   }
 
-  const notionTools = await getCachedTools()
+  // Get internal tools (Vlad's knowledge base)
+  const internalTools = await getInternalTools()
+  
+  // Get user's Notion tools if they've connected their workspace
+  const userNotionTools = notionToken ? await getUserNotionTools(notionToken) : {}
+  
   const tools = {
-    ...notionTools,
+    ...internalTools,
+    ...userNotionTools,
     coder: codingAgentTool,
   }
 

@@ -27,7 +27,7 @@ import {
   ToolOutput,
   ToolInput,
 } from '@/components/ai-elements/tool';
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { useChat } from '@ai-sdk/react';
 import { useOpenCodeStatus } from '@/hooks/use-opencode-status';
@@ -35,6 +35,7 @@ import { extractOpenCodeContent, extractToolContent, formatToolCalls } from '@/l
 import { Response } from '@/components/ai-elements/response';
 import { CopyIcon, MessageCircleIcon, RefreshCcwIcon } from 'lucide-react';
 import Link from 'next/link';
+import { NotionConnectButton } from '@/components/notion-connect-button';
 import {
   Source,
   Sources,
@@ -90,6 +91,30 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
   const [input, setInput] = useState('');
   const [model, setModel] = useState<string>(models[0].value);
   const [autoMessageSent, setAutoMessageSent] = useState(false);
+  
+  // Notion connection state
+  const [notionToken, setNotionToken] = useState<string | null>(null);
+  const [notionWorkspace, setNotionWorkspace] = useState<string | null>(null);
+
+  // Sync Notion state from localStorage on mount
+  useEffect(() => {
+    const token = localStorage.getItem('notion_token');
+    const workspace = localStorage.getItem('notion_workspace');
+    if (token) setNotionToken(token);
+    if (workspace) setNotionWorkspace(workspace);
+  }, []);
+
+  const handleNotionConnect = useCallback((token: string, workspace: string) => {
+    setNotionToken(token);
+    setNotionWorkspace(workspace);
+  }, []);
+
+  const handleNotionDisconnect = useCallback(() => {
+    localStorage.removeItem('notion_token');
+    localStorage.removeItem('notion_workspace');
+    setNotionToken(null);
+    setNotionWorkspace(null);
+  }, []);
   const { connectionStatus: openCodeConnection } = useOpenCodeStatus();
   const { messages, sendMessage, status, error, regenerate } = useChat({
     onError: error => {
@@ -113,11 +138,12 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
         {
           body: {
             model: model,
+            notionToken: notionToken || undefined,
           },
         },
       );
     }
-  }, [autoMessage, autoMessageSent, isAuthenticated, messages.length, status, sendMessage, model])
+  }, [autoMessage, autoMessageSent, isAuthenticated, messages.length, status, sendMessage, model, notionToken])
 
   useEffect(() => {
     if (input.length) {
@@ -145,6 +171,7 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
       {
         body: {
           model: model,
+          notionToken: notionToken || undefined,
         },
       },
     );
@@ -405,6 +432,7 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                   {
                     body: {
                       model: model,
+                      notionToken: notionToken || undefined,
                     },
                   },
                 );
@@ -421,6 +449,12 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
           </PromptInputBody>
           <PromptInputToolbar>
             <PromptInputTools>
+              <NotionConnectButton
+                connected={!!notionToken}
+                workspaceName={notionWorkspace || undefined}
+                onConnect={handleNotionConnect}
+                onDisconnect={handleNotionDisconnect}
+              />
               <PromptInputModelSelect
                 onValueChange={(value) => {
                   setModel(value);
