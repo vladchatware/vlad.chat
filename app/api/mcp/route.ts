@@ -383,6 +383,165 @@ For database queries, first use notion-get-database to discover available proper
         }
       }
     )
+    server.tool(
+      'notion-fetch-database-entry',
+      'Retrieves a Notion database entry (page) and formats it with all database properties displayed clearly, followed by the page content. Use this when you have a database entry ID from notion-search results and want to see the full entry details.',
+      {
+        page_id: z.string().describe('Identifier for a Notion database entry (page ID) to retrieve. This should be a page ID that represents a database entry.')
+      },
+      async ({ page_id }) => {
+        try {
+          // Retrieve the page
+          const page = await notion.pages.retrieve({ page_id })
+
+          let output = ''
+
+          // Format properties if this is a database entry
+          if ('properties' in page) {
+            const formatPropertyValue = (prop: PageObjectResponse['properties'][string]): string => {
+              if (!prop || !('type' in prop)) return ''
+              
+              switch (prop.type) {
+                case 'title':
+                  return prop.title.map((t) => t.plain_text).join('')
+                case 'rich_text':
+                  return prop.rich_text.map((t) => t.plain_text).join('')
+                case 'number':
+                  return prop.number?.toString() || ''
+                case 'select':
+                  return prop.select?.name || ''
+                case 'multi_select':
+                  return prop.multi_select.map((s) => s.name).join(', ')
+                case 'date':
+                  if (prop.date) {
+                    const dateStr = prop.date.start
+                    const timeStr = prop.date.end ? ` - ${prop.date.end}` : ''
+                    return `${dateStr}${timeStr}`
+                  }
+                  return ''
+                case 'people':
+                  return prop.people.map((p) => ('name' in p && p.name) || p.id).join(', ')
+                case 'checkbox':
+                  return prop.checkbox ? 'Yes' : 'No'
+                case 'url':
+                  return prop.url || ''
+                case 'email':
+                  return prop.email || ''
+                case 'phone_number':
+                  return prop.phone_number || ''
+                case 'status':
+                  return prop.status?.name || ''
+                case 'created_time':
+                  return prop.created_time ? new Date(prop.created_time).toISOString() : ''
+                case 'last_edited_time':
+                  return prop.last_edited_time ? new Date(prop.last_edited_time).toISOString() : ''
+                case 'relation':
+                  return prop.relation.map((r) => r.id).join(', ')
+                case 'rollup':
+                  // Rollup properties can be complex, show a simplified version
+                  if (prop.rollup.type === 'number' && prop.rollup.number !== null) {
+                    return prop.rollup.number.toString()
+                  } else if (prop.rollup.type === 'date' && prop.rollup.date) {
+                    return prop.rollup.date.start
+                  } else if (prop.rollup.type === 'array' && prop.rollup.array.length > 0) {
+                    return `[${prop.rollup.array.length} items]`
+                  }
+                  return ''
+                case 'formula':
+                  // Formula properties can be various types
+                  if (prop.formula.type === 'string' && prop.formula.string) {
+                    return prop.formula.string
+                  } else if (prop.formula.type === 'number' && prop.formula.number !== null) {
+                    return prop.formula.number.toString()
+                  } else if (prop.formula.type === 'boolean' && prop.formula.boolean !== null) {
+                    return prop.formula.boolean ? 'Yes' : 'No'
+                  } else if (prop.formula.type === 'date' && prop.formula.date) {
+                    return prop.formula.date.start
+                  }
+                  return ''
+                default:
+                  return JSON.stringify(prop)
+              }
+            }
+
+            // Extract title
+            let title = 'Untitled'
+            const properties: Array<{ name: string; value: string }> = []
+
+            for (const [propName, prop] of Object.entries(page.properties)) {
+              const value = formatPropertyValue(prop)
+              
+              // Identify title property
+              if (prop.type === 'title' || propName === 'Name') {
+                if (value) title = value
+              } else {
+                // Add non-title properties
+                if (value) {
+                  properties.push({ name: propName, value })
+                }
+              }
+            }
+
+            // Format output with title and properties
+            output += `# ${title}\n\n`
+            output += `**Entry ID:** ${page_id}\n\n`
+
+            if (properties.length > 0) {
+              output += `## Properties\n\n`
+              for (const { name, value } of properties) {
+                output += `**${name}:** ${value}\n\n`
+              }
+            }
+
+            // Add metadata
+            const lastEditedTime = 'last_edited_time' in page ? page.last_edited_time : undefined
+            const createdTime = 'created_time' in page ? page.created_time : undefined
+            if (lastEditedTime || createdTime) {
+              output += `## Metadata\n\n`
+              if (createdTime) {
+                output += `**Created:** ${new Date(createdTime).toLocaleString()}\n\n`
+              }
+              if (lastEditedTime) {
+                output += `**Last Edited:** ${new Date(lastEditedTime).toLocaleString()} (${getRelativeTime(new Date(lastEditedTime))})\n\n`
+              }
+            }
+
+            // Add page content if available
+            try {
+              const contentMarkdown = await convertBlocksToMarkdown(page_id)
+              if (contentMarkdown.trim()) {
+                output += `## Content\n\n${contentMarkdown}`
+              }
+            } catch (error) {
+              // If content fetch fails, continue without it
+              console.error(`Error fetching content for page ${page_id}:`, error)
+            }
+          } else {
+            // If it's not a database entry, fall back to regular page format
+            let title = 'Untitled'
+            if ('title' in page && Array.isArray(page.title)) {
+              title = page.title.map(t => t.plain_text).join('')
+            }
+            output += `# ${title}\n\n`
+            
+            try {
+              const contentMarkdown = await convertBlocksToMarkdown(page_id)
+              output += contentMarkdown
+            } catch (error) {
+              console.error(`Error fetching content for page ${page_id}:`, error)
+            }
+          }
+
+          return {
+            content: [{ type: 'text', text: output }]
+          }
+        } catch (error) {
+          return {
+            content: [{ type: 'text', text: `Error fetching database entry: ${error instanceof Error ? error.message : 'Unknown error'}` }]
+          }
+        }
+      }
+    )
   },
   {},
   { basePath: '/api' },
