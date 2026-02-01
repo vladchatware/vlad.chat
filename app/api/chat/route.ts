@@ -15,7 +15,8 @@ export async function POST(req: Request) {
   const {
     messages,
     model,
-  }: { messages: UIMessage[]; model: string } = await req.json();
+    searchEnabled,
+  }: { messages: UIMessage[]; model: string; searchEnabled?: boolean } = await req.json();
   const user = await fetchQuery(api.users.viewer, {}, { token: await convexAuthNextjsToken() })
 
   if (!user) return new NextResponse('no user present in session', { status: 403 })
@@ -43,7 +44,25 @@ export async function POST(req: Request) {
     }
   })
 
-  const tools = await notion.tools()
+  const notionTools = await notion.tools()
+
+  // Conditionally add Tavily search tools
+  let tools = notionTools
+  if (searchEnabled && process.env.TVLY) {
+    try {
+      const tavily = await createMCPClient({
+        transport: {
+          type: 'http',
+          url: `https://mcp.tavily.com/mcp/?tavilyApiKey=${process.env.TVLY}`
+        }
+      })
+      const tavilyTools = await tavily.tools()
+      tools = { ...notionTools, ...tavilyTools }
+    } catch (error) {
+      console.error('Failed to initialize Tavily MCP client:', error)
+      // Fall back to just Notion tools
+    }
+  }
 
   const _model = withTracing(gateway.languageModel(model), posthog, {})
 
