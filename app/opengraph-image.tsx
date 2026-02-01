@@ -28,6 +28,7 @@ export default function Image() {
           alignItems: 'center',
           justifyContent: 'center',
           fontFamily: 'system-ui, -apple-system, sans-serif',
+          padding: '40px',
         }}
       >
         {/* Cute mini chat window */}
@@ -35,13 +36,14 @@ export default function Image() {
           style={{
             display: 'flex',
             flexDirection: 'column',
-            width: '780px',
+            width: '100%',
+            maxWidth: '1000px',
             background: colors.background,
-            borderRadius: '32px',
-            border: `3px solid ${colors.border}`,
-            boxShadow: '0 30px 80px rgba(0,0,0,0.12), 0 12px 30px rgba(0,0,0,0.08)',
+            borderRadius: '24px',
+            border: `2px solid ${colors.border}`,
+            boxShadow: '0 20px 60px rgba(0,0,0,0.1), 0 8px 24px rgba(0,0,0,0.06)',
             overflow: 'hidden',
-            transform: 'rotate(-1deg)',
+            transform: 'rotate(-0.5deg)',
           }}
         >
           {/* Lounge button inside container - circle like mobile */}
@@ -49,7 +51,7 @@ export default function Image() {
             style={{
               display: 'flex',
               justifyContent: 'flex-end',
-              padding: '16px 20px 0 20px',
+              padding: '12px 16px 0 16px',
             }}
           >
             <div
@@ -57,8 +59,8 @@ export default function Image() {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                width: '36px',
-                height: '36px',
+                width: '32px',
+                height: '32px',
                 borderRadius: '9999px',
                 background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.9), rgba(217, 70, 239, 0.9))',
                 color: '#ffffff',
@@ -66,8 +68,8 @@ export default function Image() {
               }}
             >
               <svg
-                width="18"
-                height="18"
+                width="16"
+                height="16"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
@@ -85,8 +87,8 @@ export default function Image() {
             style={{
               display: 'flex',
               flexDirection: 'column',
-              padding: '16px 32px 32px 32px',
-              gap: '24px',
+              padding: '12px 24px 20px 24px',
+              gap: '16px',
             }}
           >
             {/* Assistant Message with Vlad's photo */}
@@ -96,45 +98,45 @@ export default function Image() {
                 flexDirection: 'row-reverse',
                 justifyContent: 'flex-end',
                 alignItems: 'flex-start',
-                gap: '16px',
+                gap: '12px',
               }}
             >
               <div
                 style={{
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: '10px',
-                  padding: '24px 28px',
+                  gap: '8px',
+                  padding: '16px 20px',
                   background: colors.secondary,
-                  borderRadius: '24px',
+                  borderRadius: '18px',
                   maxWidth: '85%',
                 }}
               >
                 {/* Vlad's Image */}
                 <img
                   src="https://vlad.chat/vlad.png"
-                  width={110}
-                  height={110}
+                  width={90}
+                  height={90}
                   style={{
-                    borderRadius: '16px',
+                    borderRadius: '12px',
                   }}
                 />
                 <div
                   style={{
-                    fontSize: '26px',
+                    fontSize: '22px',
                     fontWeight: '400',
                     color: colors.foreground,
-                    lineHeight: '1.35',
+                    lineHeight: '1.3',
                   }}
                 >
                   Hello, I am Vlad a software developer.
                 </div>
                 <div
                   style={{
-                    fontSize: '26px',
+                    fontSize: '22px',
                     fontWeight: '400',
                     color: colors.foreground,
-                    lineHeight: '1.35',
+                    lineHeight: '1.3',
                   }}
                 >
                   Check out my shop or listen to some music.
@@ -147,19 +149,19 @@ export default function Image() {
               style={{
                 display: 'flex',
                 justifyContent: 'flex-end',
-                gap: '16px',
+                gap: '12px',
               }}
             >
               <div
                 style={{
                   display: 'flex',
-                  padding: '16px 22px',
+                  padding: '14px 20px',
                   background: colors.primary,
                   color: colors.primaryForeground,
-                  borderRadius: '18px',
-                  fontSize: '26px',
+                  borderRadius: '16px',
+                  fontSize: '22px',
                   fontWeight: '400',
-                  lineHeight: '1.35',
+                  lineHeight: '1.3',
                 }}
               >
                 What are your latest updates?
@@ -179,14 +181,14 @@ export default function Image() {
             <div
               style={{
                 display: 'flex',
-                padding: '24px 28px',
+                padding: '16px 20px',
                 borderBottom: `1px solid ${colors.border}`,
               }}
             >
               <span
                 style={{
                   color: colors.mutedForeground,
-                  fontSize: '22px',
+                  fontSize: '18px',
                 }}
               >
                 What would you like to know?
@@ -198,7 +200,7 @@ export default function Image() {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                padding: '10px 14px',
+                padding: '8px 12px',
               }}
             >
               {/* Model Selector */}
@@ -206,18 +208,18 @@ export default function Image() {
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '6px',
-                  padding: '10px 16px',
-                  borderRadius: '10px',
+                  gap: '4px',
+                  padding: '8px 12px',
+                  borderRadius: '8px',
                   color: colors.mutedForeground,
-                  fontSize: '18px',
+                  fontSize: '16px',
                   fontWeight: '500',
                 }}
               >
                 OpenCode
                 <svg
-                  width="20"
-                  height="20"
+                  width="16"
+                  height="16"
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke="currentColor"
@@ -232,17 +234,17 @@ export default function Image() {
               <div
                 style={{
                   display: 'flex',
-                  width: '44px',
-                  height: '44px',
-                  borderRadius: '10px',
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '8px',
                   background: colors.primary,
                   alignItems: 'center',
                   justifyContent: 'center',
                 }}
               >
                 <svg
-                  width="24"
-                  height="24"
+                  width="18"
+                  height="18"
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke={colors.primaryForeground}
