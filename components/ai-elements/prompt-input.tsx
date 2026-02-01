@@ -18,6 +18,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type { ChatStatus, FileUIPart } from "ai";
 import {
+  GlobeIcon,
   ImageIcon,
   Loader2Icon,
   PaperclipIcon,
@@ -744,4 +745,31 @@ export const PromptInputModelSelectValue = ({
   ...props
 }: PromptInputModelSelectValueProps) => (
   <SelectValue className={cn(className)} {...props} />
+);
+
+export type PromptInputSearchToggleProps = {
+  enabled: boolean;
+  onToggle: (enabled: boolean) => void;
+  className?: string;
+};
+
+export const PromptInputSearchToggle = ({
+  enabled,
+  onToggle,
+  className,
+}: PromptInputSearchToggleProps) => (
+  <button
+    type="button"
+    onClick={() => onToggle(!enabled)}
+    className={cn(
+      "flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors",
+      enabled
+        ? "bg-primary text-primary-foreground"
+        : "text-muted-foreground hover:bg-accent hover:text-foreground",
+      className
+    )}
+  >
+    <GlobeIcon className="size-4" />
+    <span>Web</span>
+  </button>
 );

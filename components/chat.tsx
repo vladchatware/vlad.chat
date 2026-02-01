@@ -88,6 +88,7 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
   const [input, setInput] = useState('');
   const [model, setModel] = useState<string>(models[0].value);
   const [autoMessageSent, setAutoMessageSent] = useState(false);
+  const [searchEnabled, setSearchEnabled] = useState(false);
   const { messages, sendMessage, status, error, regenerate } = useChat({
     onError: error => {
       console.log('error caught', error)
@@ -110,11 +111,12 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
         {
           body: {
             model: model,
+            searchEnabled,
           },
         },
       );
     }
-  }, [autoMessage, autoMessageSent, isAuthenticated, messages.length, status, sendMessage, model])
+  }, [autoMessage, autoMessageSent, isAuthenticated, messages.length, status, sendMessage, model, searchEnabled])
 
   useEffect(() => {
     if (input.length) {
@@ -136,14 +138,8 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
     }
 
     sendMessage(
-      {
-        text: message.text,
-      },
-      {
-        body: {
-          model: model,
-        },
-      },
+      { text: message.text },
+      { body: { model, searchEnabled } },
     );
     setInput('');
   };
@@ -292,8 +288,8 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                               ?.text ?? [];
 
                           return (
-                            <Tool key={`${message.id}-${partIndex}`} defaultOpen={false}>
-                              <ToolHeader type={'tool-notion'} state={part.state} />
+                            <Tool key={`${messageKey}-${partIndex}`} defaultOpen={false}>
+                              <ToolHeader title={part.toolName} type={part.type} state={part.state} />
                               <ToolContent>
                                 <ToolInput input={part.input} />
                                 <ToolOutput output={content} errorText={part.errorText} />
@@ -355,6 +351,7 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                   {
                     body: {
                       model: model,
+                      searchEnabled,
                     },
                   },
                 );
@@ -388,6 +385,10 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                   ))}
                 </PromptInputModelSelectContent>
               </PromptInputModelSelect>
+              <PromptInputSearchToggle
+                enabled={searchEnabled}
+                onToggle={setSearchEnabled}
+              />
             </PromptInputTools>
             <PromptInputSubmit disabled={!input && !status} status={status} />
           </PromptInputToolbar>
