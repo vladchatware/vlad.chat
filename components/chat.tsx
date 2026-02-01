@@ -54,7 +54,7 @@ import { api } from '@/convex/_generated/api';
 
 const models = [
   {
-    name: 'Kimi K2',
+    name: 'Kimi K2.5',
     value: 'moonshotai/kimi-k2.5'
   },
   {
@@ -62,12 +62,12 @@ const models = [
     value: 'openai/gpt-5.2-codex',
   },
   {
-    name: 'Grok 4',
-    value: 'xai/grok-4-fast-reasoning'
+    name: 'Grok 4.1',
+    value: 'xai/grok-4.1-fast-reasoning'
   },
   {
     name: 'DeepSeek 3.2',
-    value: 'deepseek/deepseek-v3.2'
+    value: 'deepseek/deepseek-v3.2-thinking'
   }
 ];
 
