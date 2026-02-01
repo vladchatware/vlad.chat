@@ -15,6 +15,7 @@ import {
   PromptInputModelSelectItem,
   PromptInputModelSelectTrigger,
   PromptInputModelSelectValue,
+  PromptInputSearchToggle,
   PromptInputSubmit,
   PromptInputTextarea,
   PromptInputToolbar,
@@ -283,13 +284,21 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                             </Reasoning>
                           );
                         case 'dynamic-tool': {
+                          const messageKey = 'id' in message ? String(message.id) : `acp-${(message as { order: number; stepOrder: number }).order}-${(message as { order: number; stepOrder: number }).stepOrder}`;
                           const content =
                             (part.output as { content: [{ text: string }] })?.content[0]
                               ?.text ?? [];
 
+                          // Format tool names for display
+                          const toolDisplayName = part.toolName?.includes('tavily')
+                            ? 'Tavily'
+                            : part.toolName?.includes('notion')
+                              ? 'Notion'
+                              : part.toolName;
+
                           return (
                             <Tool key={`${messageKey}-${partIndex}`} defaultOpen={false}>
-                              <ToolHeader title={part.toolName} type={part.type} state={part.state} />
+                              <ToolHeader title={toolDisplayName} type={part.type} state={part.state} />
                               <ToolContent>
                                 <ToolInput input={part.input} />
                                 <ToolOutput output={content} errorText={part.errorText} />
