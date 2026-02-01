@@ -11,9 +11,7 @@ import {
 } from "./_generated/server.js";
 import { paginationOptsValidator } from "convex/server";
 import {
-  createThread,
   getThreadMetadata,
-  saveMessage,
   vMessage,
 } from "@convex-dev/agent";
 import { getAuthUserId } from "@convex-dev/auth/server"
@@ -38,14 +36,15 @@ export const createNewThread = mutation({
   args: { title: v.optional(v.string()), initialMessage: v.optional(vMessage) },
   handler: async (ctx, { title, initialMessage }) => {
     const userId = await getAuthUserId(ctx);
-    const threadId = await createThread(ctx, components.agent, {
+    const { threadId } = await agent.createThread(ctx, {
       userId,
       title,
     });
     if (initialMessage) {
-      await saveMessage(ctx, components.agent, {
+      await agent.saveMessage(ctx, {
         threadId,
         message: initialMessage,
+        skipEmbeddings: true,
       });
     }
     return threadId;
@@ -105,3 +104,72 @@ export async function authorizeThreadAccess(
     throw new Error("Unauthorized: user does not match thread user");
   }
 }
+
+// Get messages for user's default thread with pagination
+export const getMessages = query({
+  args: {
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, { paginationOpts }) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      return { page: [], isDone: true, continueCursor: "" };
+    }
+
+    const threads = await ctx.runQuery(
+      components.agent.threads.listThreadsByUserId,
+      { userId, paginationOpts: { cursor: null, numItems: 1 } }
+    );
+
+    if (threads.page.length === 0) {
+      return { page: [], isDone: true, continueCursor: "" };
+    }
+
+    const threadId = threads.page[0]._id;
+    // Use component API directly to control order (agent.listMessages hardcodes desc)
+    const result = await ctx.runQuery(
+      components.agent.messages.listMessagesByThreadId,
+      {
+        threadId,
+        paginationOpts,
+        order: "asc",
+        statuses: ["success"],
+      }
+    );
+
+    return result;
+  },
+});
+
+// Save message to user's default thread (creates thread on first message)
+export const saveMessage = mutation({
+  args: {
+    message: vMessage
+  },
+  handler: async (ctx, { message }) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Unauthorized");
+
+    const threads = await ctx.runQuery(
+      components.agent.threads.listThreadsByUserId,
+      { userId, paginationOpts: { cursor: null, numItems: 1 } }
+    );
+
+    let threadId: string;
+    if (threads.page.length > 0) {
+      threadId = threads.page[0]._id;
+    } else {
+      const result = await agent.createThread(ctx, {
+        userId,
+        title: "Chat with Vlad",
+      });
+      threadId = result.threadId;
+    }
+
+    await agent.saveMessage(ctx, {
+      threadId,
+      message,
+      skipEmbeddings: true,
+    });
+  },
+});

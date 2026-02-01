@@ -28,9 +28,10 @@ import {
   ToolOutput,
   ToolInput,
 } from '@/components/ai-elements/tool';
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { motion } from 'motion/react';
 import { useChat } from '@ai-sdk/react';
+import type { UIMessage } from 'ai';
 import { Response } from '@/components/ai-elements/response';
 import { CopyIcon, MessageCircleIcon, RefreshCcwIcon } from 'lucide-react';
 import Link from 'next/link';
@@ -49,7 +50,7 @@ import { Loader } from '@/components/ai-elements/loader';
 import { Suggestion, Suggestions } from '@/components/ai-elements/suggestion';
 import { Action, Actions } from '@/components/ai-elements/actions';
 import { useAuthActions } from "@convex-dev/auth/react"
-import { Authenticated, useQuery } from 'convex/react';
+import { Authenticated, useQuery, usePaginatedQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 
 const models = [
@@ -84,17 +85,98 @@ export interface ChatBotDemoProps {
 export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
   const isAuthenticated = useQuery(api.auth.isAuthenticated)
   const user = useQuery(api.users.viewer)
+  const { results: storedMessages, status: paginationStatus, loadMore } = usePaginatedQuery(
+    api.threads.getMessages,
+    {},
+    { initialNumItems: 50 }
+  );
   const { signIn } = useAuthActions()
   const [showSuggestions, setShowSuggestions] = useState(true)
   const [input, setInput] = useState('');
   const [model, setModel] = useState<string>(models[0].value);
   const [autoMessageSent, setAutoMessageSent] = useState(false);
   const [searchEnabled, setSearchEnabled] = useState(false);
-  const { messages, sendMessage, status, error, regenerate } = useChat({
+
+  const { messages, sendMessage, status, error, regenerate, setMessages } = useChat({
     onError: error => {
       console.log('error caught', error)
-    }
+    },
   });
+
+  // Track if we've done the initial history load
+  const [hasLoadedHistory, setHasLoadedHistory] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const prevScrollHeight = useRef<number>(0);
+
+  // Initial sync: load stored messages into useChat once
+  useEffect(() => {
+    if (storedMessages && storedMessages.length > 0 && !hasLoadedHistory && messages.length === 0) {
+      const converted: UIMessage[] = storedMessages.map(msg => {
+        const content = typeof msg.message?.content === 'string'
+          ? msg.message.content
+          : Array.isArray(msg.message?.content)
+            ? msg.message.content
+              .filter((part): part is { type: 'text'; text: string } => part.type === 'text')
+              .map(part => part.text)
+              .join('')
+            : '';
+        return {
+          id: msg._id,
+          role: msg.message?.role as 'user' | 'assistant',
+          parts: [{ type: 'text' as const, text: content }],
+        } as UIMessage;
+      });
+      setMessages(converted);
+      setHasLoadedHistory(true);
+    }
+  }, [storedMessages, hasLoadedHistory, messages.length, setMessages]);
+
+  // Scroll-based pagination: load more when scrolled to top
+  useEffect(() => {
+    const handleScroll = () => {
+      // Only trigger if near top (within 100px) and we can load more
+      if (window.scrollY < 100 && paginationStatus === 'CanLoadMore' && !isLoadingMore) {
+        setIsLoadingMore(true);
+        prevScrollHeight.current = document.documentElement.scrollHeight;
+        loadMore(50);
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [paginationStatus, loadMore, isLoadingMore]);
+
+  // After loading more, maintain scroll position and merge messages
+  useEffect(() => {
+    if (isLoadingMore && storedMessages && paginationStatus !== 'LoadingMore') {
+      // Convert and prepend older messages
+      const allConverted: UIMessage[] = storedMessages.map(msg => {
+        const content = typeof msg.message?.content === 'string'
+          ? msg.message.content
+          : Array.isArray(msg.message?.content)
+            ? msg.message.content
+              .filter((part): part is { type: 'text'; text: string } => part.type === 'text')
+              .map(part => part.text)
+              .join('')
+            : '';
+        return {
+          id: msg._id,
+          role: msg.message?.role as 'user' | 'assistant',
+          parts: [{ type: 'text' as const, text: content }],
+        } as UIMessage;
+      });
+
+      setMessages(allConverted);
+
+      // Restore scroll position after DOM updates
+      requestAnimationFrame(() => {
+        const newScrollHeight = document.documentElement.scrollHeight;
+        const scrollDiff = newScrollHeight - prevScrollHeight.current;
+        window.scrollTo(0, window.scrollY + scrollDiff);
+        setIsLoadingMore(false);
+      });
+    }
+  }, [storedMessages, paginationStatus, isLoadingMore, setMessages]);
 
   useEffect(() => {
     if (isAuthenticated === false) {
@@ -122,12 +204,12 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
   useEffect(() => {
     if (input.length) {
       setShowSuggestions(false)
-    } else if (messages.length > 0) {
+    } else if (messages.length > 0 || (storedMessages && storedMessages.length > 0)) {
       setShowSuggestions(false)
     } else {
       setShowSuggestions(true)
     }
-  }, [input, messages.length])
+  }, [input, messages.length, storedMessages])
 
   const handleSubmit = async (message: PromptInputMessage) => {
     const hasText = Boolean(message.text);
@@ -198,6 +280,18 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                   </MessageContent>
                 </Message>
               </div>
+              {/* Loading indicator for older messages */}
+              {isLoadingMore && (
+                <div className="flex justify-center py-4">
+                  <Loader />
+                </div>
+              )}
+              {/* Show "Load more" hint if more messages available */}
+              {paginationStatus === 'CanLoadMore' && !isLoadingMore && hasLoadedHistory && (
+                <div className="flex justify-center py-2">
+                  <span className="text-xs text-muted-foreground">Scroll up to load more</span>
+                </div>
+              )}
               {messages.map((message, messageIndex) => (
                 <motion.div
                   key={message.id}
@@ -399,7 +493,9 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                 onToggle={setSearchEnabled}
               />
             </PromptInputTools>
-            <PromptInputSubmit disabled={!input && !status} status={status} />
+            <div className="flex items-center gap-1">
+              <PromptInputSubmit disabled={!input && !status} status={status} />
+            </div>
           </PromptInputToolbar>
         </PromptInput>
       </div>

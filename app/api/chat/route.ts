@@ -17,7 +17,11 @@ export async function POST(req: Request) {
     model,
     searchEnabled,
   }: { messages: UIMessage[]; model: string; searchEnabled?: boolean } = await req.json();
-  const user = await fetchQuery(api.users.viewer, {}, { token: await convexAuthNextjsToken() })
+
+  // Get the auth token once to reuse throughout
+  const token = await convexAuthNextjsToken()
+
+  const user = await fetchQuery(api.users.viewer, {}, { token })
 
   if (!user) return new NextResponse('no user present in session', { status: 403 })
 
@@ -26,7 +30,7 @@ export async function POST(req: Request) {
       const customer = await stripe.customers.create(({
         email: user.email
       }))
-      await fetchMutation(api.users.connect, { stripeId: customer.id }, { token: await convexAuthNextjsToken() })
+      await fetchMutation(api.users.connect, { stripeId: customer.id }, { token })
       user.stripeId = customer.id
     }
 
@@ -66,6 +70,21 @@ export async function POST(req: Request) {
 
   const _model = withTracing(gateway.languageModel(model), posthog, {})
 
+  // Save user message before streaming
+  const lastUserMessage = messages[messages.length - 1];
+  if (lastUserMessage && lastUserMessage.role === 'user') {
+    const content = lastUserMessage.parts
+      ?.filter((part): part is { type: 'text'; text: string } => part.type === 'text')
+      .map(part => part.text)
+      .join('') || '';
+
+    if (content) {
+      await fetchMutation(api.threads.saveMessage, {
+        message: { role: 'user', content },
+      }, { token });
+    }
+  }
+
   const result = streamText({
     model: _model,
     messages: await convertToModelMessages(messages),
@@ -73,11 +92,19 @@ export async function POST(req: Request) {
     stopWhen: stepCountIs(5),
     system,
     experimental_transform: smoothStream(),
-    onFinish: async ({ usage, providerMetadata }) => {
+    onFinish: async ({ text, usage, providerMetadata }) => {
+      // Save assistant message
+      if (text) {
+        await fetchMutation(api.threads.saveMessage, {
+          message: { role: 'assistant', content: text },
+        }, { token });
+      }
+
+      // Track usage
       if (user.isAnonymous) {
-        await fetchMutation(api.users.messages, {}, { token: await convexAuthNextjsToken() })
+        await fetchMutation(api.users.messages, {}, { token })
       } else {
-        await fetchMutation(api.users.usage, { usage, model, provider: 'AI Gateway', providerMetadata }, { token: await convexAuthNextjsToken() })
+        await fetchMutation(api.users.usage, { usage, model, provider: 'AI Gateway', providerMetadata }, { token })
       }
     },
   });
