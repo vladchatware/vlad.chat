@@ -4,8 +4,8 @@ import type { Metadata } from 'next';
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
   const capitalizedSlug = slug.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
-  const title = `What Vlad knows about ${capitalizedSlug} - Expert insights and answers`;
-  const description = `Discover what Vlad knows about ${capitalizedSlug}. Get expert insights, ask questions, and learn from a software developer with over a decade of experience. Start your conversation today.`;
+  const title = `Ask Vlad about ${capitalizedSlug}`;
+  const description = `Chat with Vlad about ${capitalizedSlug}. Get insights from a software developer with 10+ years of experience.`;
   const imageUrl = `/${slug}/opengraph-image`;
   
   return {
