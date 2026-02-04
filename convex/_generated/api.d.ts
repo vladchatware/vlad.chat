@@ -8,7 +8,6 @@
  * @module
  */
 
-import type * as agents_prompts from "../agents/prompts.js";
 import type * as agents_simple from "../agents/simple.js";
 import type * as auth from "../auth.js";
 import type * as crons from "../crons.js";
@@ -32,7 +31,6 @@ import type {
  * ```
  */
 declare const fullApi: ApiFromModules<{
-  "agents/prompts": typeof agents_prompts;
   "agents/simple": typeof agents_simple;
   auth: typeof auth;
   crons: typeof crons;
