@@ -1,6 +1,6 @@
 import { api, components } from "./_generated/api";
 
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import {
   action,
   ActionCtx,
@@ -251,25 +251,25 @@ export const generateReply = action({
   handler: async (ctx, { prompt, model, searchEnabled = false }) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) {
-      throw new Error("Unauthorized");
+      throw new ConvexError("Please sign in to continue.");
     }
 
     const user = await ctx.runQuery(api.users.viewer, {});
     if (!user) {
-      throw new Error("no user present in session");
+      throw new ConvexError("We couldn't load your account. Please refresh and try again.");
     }
 
     if (!user.isAnonymous) {
       if (user.trialTokens <= 0 && user.tokens <= 0) {
-        throw new Error("out of tokens");
+        throw new ConvexError("You have run out of credits. Buy more to continue.");
       }
     } else if ((user.trialMessages ?? 0) <= 0) {
-      throw new Error("no more messages left");
+      throw new ConvexError("You've reached the anonymous message limit. Sign in with Google for unlimited messages.");
     }
 
     const text = prompt.trim();
     if (!text) {
-      throw new Error("Prompt cannot be empty");
+      throw new ConvexError("Your message is empty. Please type something first.");
     }
 
     const threadId = await getOrCreateDefaultThread(ctx, userId);

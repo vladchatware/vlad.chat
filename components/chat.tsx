@@ -30,9 +30,9 @@ import {
 } from '@/components/ai-elements/tool';
 import { Fragment, useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { motion } from 'motion/react';
-import { useUIMessages, type UIMessage } from '@convex-dev/agent/react';
+import { useUIMessages } from '@convex-dev/agent/react';
 import { Response } from '@/components/ai-elements/response';
-import { CopyIcon, MessageCircleIcon, RefreshCcwIcon } from 'lucide-react';
+import { AlertCircleIcon, CopyIcon, MessageCircleIcon, RefreshCcwIcon } from 'lucide-react';
 import Link from 'next/link';
 import {
   Source,
@@ -94,6 +94,7 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
   const [autoMessageSent, setAutoMessageSent] = useState(false);
   const [searchEnabled, setSearchEnabled] = useState(false);
   const [submitState, setSubmitState] = useState<'ready' | 'submitted'>('ready')
+  const [submitError, setSubmitError] = useState<{ message: string } | null>(null)
 
   const {
     results: messages,
@@ -155,6 +156,7 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
 
     setShowSuggestions(false)
     setSubmitState('submitted')
+    setSubmitError(null)
     try {
       const result = await generateReply({
         prompt,
@@ -164,6 +166,15 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
       setActiveThreadId(result.threadId)
     } catch (error) {
       console.error('Failed to generate reply', error)
+      const data =
+        typeof error === 'object' && error !== null && 'data' in error
+          ? (error as { data?: { message?: string } }).data
+          : undefined
+      setSubmitError({
+        message: data?.message
+          || (error instanceof Error ? error.message : '')
+          || 'Something went wrong while sending your message. Please try again.',
+      })
     } finally {
       setSubmitState('ready')
     }
@@ -448,6 +459,16 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
       </div >
 
       <div className="px-4 py-2 md:px-72 fixed bottom-0 left-0 right-0 bg-background/30 backdrop-blur-sm">
+        {submitError && (
+          <div className="mb-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-start gap-2">
+                <AlertCircleIcon className="mt-0.5 size-4 shrink-0" />
+                <span>{submitError.message}</span>
+              </div>
+            </div>
+          </div>
+        )}
         {user?.isAnonymous && (messages?.length ?? 0) > 0 && <Authenticated>
           <div className="mb-2 flex items-center justify-center gap-2 flex-wrap text-sm">
             <span className="text-muted-foreground">
@@ -484,7 +505,12 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
         <PromptInput onSubmit={handleSubmit} className="mt-2">
           <PromptInputBody>
             <PromptInputTextarea
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => {
+                setInput(e.target.value)
+                if (submitError) {
+                  setSubmitError(null)
+                }
+              }}
               value={input}
             />
           </PromptInputBody>
