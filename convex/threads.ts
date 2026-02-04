@@ -25,7 +25,7 @@ import { gateway } from "ai";
 import { createMCPClient } from "@ai-sdk/mcp";
 
 const ALLOWED_MODELS = new Set([
-  "moonshotai/kimi-k2.5",
+  "moonshotai/kimi-k2-thinking",
   "openai/gpt-5.2-codex",
   "xai/grok-4.1-fast-reasoning",
   "deepseek/deepseek-v3.2-thinking",

@@ -297,6 +297,48 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
               {(messages ?? []).map((message, messageIndex) => {
                 const messageKey = `${message.order}-${message.stepOrder}`
                 const parts = message.parts as Array<any>
+                const renderToolPart = (part: any, partIndex: number) => {
+                  const rawToolName =
+                    part.toolName ??
+                    (typeof part.type === 'string' && part.type.startsWith('tool-')
+                      ? part.type.slice(5)
+                      : part.type)
+
+                  const toolDisplayName = rawToolName?.includes('tavily')
+                    ? 'Tavily'
+                    : rawToolName?.includes('notion')
+                      ? 'Notion'
+                      : rawToolName
+
+                  const output = (() => {
+                    const content = part?.output?.content
+                    if (Array.isArray(content)) {
+                      const text = content
+                        .filter((item: any) => item?.type === 'text')
+                        .map((item: any) => item.text)
+                        .join('\n')
+                        .trim()
+                      if (text) {
+                        return text
+                      }
+                    }
+                    return part.output
+                  })()
+
+                  return (
+                    <Tool key={`${messageKey}-${partIndex}`} defaultOpen={false}>
+                      <ToolHeader
+                        title={toolDisplayName}
+                        type={part.type}
+                        state={part.state ?? 'input-available'}
+                      />
+                      <ToolContent>
+                        <ToolInput input={part.input} />
+                        <ToolOutput output={output} errorText={part.errorText} />
+                      </ToolContent>
+                    </Tool>
+                  )
+                }
                 return (
                   <motion.div
                     key={messageKey}
@@ -385,28 +427,12 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                               </Reasoning>
                             );
                           case 'dynamic-tool': {
-                            const content =
-                              (part.output as { content: [{ text: string }] })?.content[0]
-                                ?.text ?? [];
-
-                            // Format tool names for display
-                            const toolDisplayName = part.toolName?.includes('tavily')
-                              ? 'Tavily'
-                              : part.toolName?.includes('notion')
-                                ? 'Notion'
-                                : part.toolName;
-
-                            return (
-                              <Tool key={`${messageKey}-${partIndex}`} defaultOpen={false}>
-                                <ToolHeader title={toolDisplayName} type={part.type} state={part.state} />
-                                <ToolContent>
-                                  <ToolInput input={part.input} />
-                                  <ToolOutput output={content} errorText={part.errorText} />
-                                </ToolContent>
-                              </Tool>
-                            );
+                            return renderToolPart(part, partIndex);
                           }
                           default:
+                            if (typeof part.type === 'string' && part.type.startsWith('tool-')) {
+                              return renderToolPart(part, partIndex);
+                            }
                             return null;
                         }
                       })

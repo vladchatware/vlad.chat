@@ -91,9 +91,11 @@ export const agent = new Agent(components.agent, {
   contextOptions: {
     recentMessages: 100,
     searchOptions: {
-      limit: 0,
-      vectorSearch: false,
-      textSearch: false,
+      limit: 12,
+      vectorSearch: true,
+      textSearch: true,
+      vectorScoreThreshold: 0.2,
+      messageRange: { before: 2, after: 1 },
     },
   },
   contextHandler: async (_ctx, { allMessages }) => compactContext(allMessages as any[]),
