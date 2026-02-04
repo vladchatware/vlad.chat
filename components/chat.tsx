@@ -55,7 +55,7 @@ import { api } from '@/convex/_generated/api';
 const models = [
   {
     name: 'Kimi K2.5',
-    value: 'moonshotai/kimi-k2.5'
+    value: 'moonshotai/kimi-k2-thinking'
   },
   {
     name: 'GPT 5.2 Codex',
