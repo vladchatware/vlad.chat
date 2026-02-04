@@ -281,7 +281,7 @@ export const generateReply = action({
         model: resolveModel(model),
         prompt: text,
         tools: tools as any,
-        stopWhen: stepCountIs(5),
+        stopWhen: stepCountIs(8),
       } as any,
       {
         saveStreamDeltas: true,
