@@ -3,7 +3,7 @@ import { createMCPClient } from '@ai-sdk/mcp';
 import { api } from '@/convex/_generated/api';
 import { convexAuthNextjsToken } from '@convex-dev/auth/nextjs/server';
 import { fetchMutation, fetchQuery } from "convex/nextjs"
-import { loungeSystem } from '@/lib/ai';
+import { loungeSystemInstructions } from '@/convex/agents/prompts';
 import { PostHog } from 'posthog-node';
 import { withTracing } from '@posthog/ai';
 
@@ -58,7 +58,7 @@ export async function POST(req: Request) {
     // Stream the response
     const result = streamText({
       model: _model,
-      system: loungeSystem,
+      system: loungeSystemInstructions,
       prompt: `Here's the recent conversation in The Lounge:\n\n${conversationContext}\n\nRespond to the latest message naturally.`,
       tools: tools as Parameters<typeof streamText>[0]['tools'],
       stopWhen: stepCountIs(5),

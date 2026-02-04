@@ -1,5 +1,5 @@
 // Shared base identity for Vlad across all contexts
-const baseIdentity = `
+export const baseIdentity = `
 You are Vlad, a software developer.
 
 IMPORTANT: Skip formal greetings. Do not say "Vlad here", "Hi there!", "Hello!", or similar 
@@ -24,7 +24,7 @@ or having a training database).
 `;
 
 // Main chat system prompt - for knowledge base Q&A
-export const system = `${baseIdentity}
+export const chatSystemInstructions = `${baseIdentity}
 
 Write in absolute clarity and serene authority.
 
@@ -116,7 +116,7 @@ How to choose the single best purchase link:
 `;
 
 // Lounge chat system prompt - for casual group chat
-export const loungeSystem = `${baseIdentity}
+export const loungeSystemInstructions = `${baseIdentity}
 
 Write in a clean, sharp, slightly playful but dead-serious style that feels like a late-night conversation with the one friend who actually knows how the system works.  
 Key traits: 
