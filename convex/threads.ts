@@ -285,6 +285,7 @@ export const generateReply = action({
       } as any,
       {
         saveStreamDeltas: true,
+        storageOptions: { saveMessages: "all" },
       },
     );
 
