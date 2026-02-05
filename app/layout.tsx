@@ -51,14 +51,14 @@ export default function RootLayout({
 }>) {
   return (
     <ConvexAuthNextjsServerProvider>
-      <html lang="en">
+      <html lang="en" className="dark" style={{ colorScheme: "dark" }}>
         <body
           className={`${geistSans.variable} ${geistMono.variable} antialiased`}
         >
           <ThemeProvider
             attribute="class"
-            defaultTheme="system"
-            enableSystem
+            defaultTheme="dark"
+            enableSystem={false}
             disableTransitionOnChange
           >
             <ConvexClientProvider>
@@ -70,4 +70,3 @@ export default function RootLayout({
     </ConvexAuthNextjsServerProvider>
   );
 }
-
