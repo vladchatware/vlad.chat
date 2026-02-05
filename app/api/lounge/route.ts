@@ -21,7 +21,7 @@ export async function POST(req: Request) {
     );
 
     if (!canTrigger) {
-      return new Response('No @vlad triggers remaining. Sign in to continue!', { status: 403 });
+      return new Response('You have no @vlad mentions left. Sign in with Google for unlimited mentions.', { status: 403 });
     }
 
     // Decrement trial messages for anonymous users

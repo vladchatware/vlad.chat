@@ -1,6 +1,6 @@
-import { components } from "./_generated/api";
+import { api, components } from "./_generated/api";
 
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import {
   action,
   ActionCtx,
@@ -11,14 +11,25 @@ import {
 } from "./_generated/server.js";
 import { paginationOptsValidator } from "convex/server";
 import {
-  createThread,
   getThreadMetadata,
-  saveMessage,
+  listUIMessages,
+  stepCountIs,
+  syncStreams,
   vMessage,
+  vStreamArgs,
 } from "@convex-dev/agent";
 import { getAuthUserId } from "@convex-dev/auth/server"
 import { agent } from "./agents/simple";
 import { z } from "zod/v3";
+import { gateway } from "ai";
+import { createMCPClient } from "@ai-sdk/mcp";
+
+const ALLOWED_MODELS = new Set([
+  "moonshotai/kimi-k2-thinking",
+  "openai/gpt-5.2-codex",
+  "xai/grok-4.1-fast-reasoning",
+  "deepseek/deepseek-v3.2-thinking",
+]);
 
 export const listThreads = query({
   args: {
@@ -38,14 +49,15 @@ export const createNewThread = mutation({
   args: { title: v.optional(v.string()), initialMessage: v.optional(vMessage) },
   handler: async (ctx, { title, initialMessage }) => {
     const userId = await getAuthUserId(ctx);
-    const threadId = await createThread(ctx, components.agent, {
+    const { threadId } = await agent.createThread(ctx, {
       userId,
       title,
     });
     if (initialMessage) {
-      await saveMessage(ctx, components.agent, {
+      await agent.saveMessage(ctx, {
         threadId,
         message: initialMessage,
+        skipEmbeddings: true,
       });
     }
     return threadId;
@@ -87,6 +99,99 @@ export const updateThreadTitle = action({
   },
 });
 
+function toUsageObject(usage: {
+  totalTokens?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  reasoningTokens?: number;
+  cachedInputTokens?: number;
+  inputTokenDetails?: {
+    cacheReadTokens?: number;
+    noCacheTokens?: number;
+  };
+  outputTokenDetails?: {
+    reasoningTokens?: number;
+    textTokens?: number;
+  };
+  raw?: unknown;
+} | undefined) {
+  return {
+    totalTokens: usage?.totalTokens,
+    inputTokens: usage?.inputTokens,
+    outputTokens: usage?.outputTokens,
+    reasoningTokens: usage?.reasoningTokens,
+    cachedInputTokens: usage?.cachedInputTokens,
+    inputTokenDetails: usage?.inputTokenDetails,
+    outputTokenDetails: usage?.outputTokenDetails,
+    raw: usage?.raw,
+  };
+}
+
+function resolveModel(model: string) {
+  if (!ALLOWED_MODELS.has(model)) {
+    throw new Error(`Unsupported model: ${model}`);
+  }
+  return gateway.languageModel(model);
+}
+
+async function getMcpTools(searchEnabled: boolean) {
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
+  if (!siteUrl) {
+    return {};
+  }
+
+  const notion = await createMCPClient({
+    transport: {
+      type: "http",
+      url: `${siteUrl}/api/mcp`,
+    },
+  });
+  const notionTools = await notion.tools();
+
+  if (!searchEnabled || !process.env.TVLY) {
+    return notionTools;
+  }
+
+  try {
+    const tavily = await createMCPClient({
+      transport: {
+        type: "http",
+        url: `https://mcp.tavily.com/mcp/?tavilyApiKey=${process.env.TVLY}`,
+      },
+    });
+    const tavilyTools = await tavily.tools();
+    return { ...notionTools, ...tavilyTools };
+  } catch {
+    return notionTools;
+  }
+}
+
+async function getDefaultThreadForUser(
+  ctx: QueryCtx | MutationCtx | ActionCtx,
+  userId: string,
+) {
+  const threads = await ctx.runQuery(
+    components.agent.threads.listThreadsByUserId,
+    { userId, paginationOpts: { cursor: null, numItems: 1 } },
+  );
+  return threads.page[0]?._id ?? null;
+}
+
+async function getOrCreateDefaultThread(
+  ctx: MutationCtx | ActionCtx,
+  userId: string,
+) {
+  const existing = await getDefaultThreadForUser(ctx, userId);
+  if (existing) {
+    return existing;
+  }
+  const result = await agent.createThread(ctx, {
+    userId,
+    title: "Chat with Vlad",
+  });
+  return result.threadId;
+}
+
 export async function authorizeThreadAccess(
   ctx: QueryCtx | MutationCtx | ActionCtx,
   threadId: string,
@@ -105,3 +210,158 @@ export async function authorizeThreadAccess(
     throw new Error("Unauthorized: user does not match thread user");
   }
 }
+
+export const getDefaultThreadId = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      return null;
+    }
+    return getDefaultThreadForUser(ctx, userId);
+  },
+});
+
+export const getUIMessages = query({
+  args: {
+    threadId: v.string(),
+    paginationOpts: paginationOptsValidator,
+    streamArgs: v.optional(vStreamArgs),
+  },
+  handler: async (ctx, args) => {
+    await authorizeThreadAccess(ctx, args.threadId, true);
+    const result = await listUIMessages(ctx, components.agent, {
+      threadId: args.threadId,
+      paginationOpts: args.paginationOpts,
+    });
+    const streams = await syncStreams(ctx, components.agent, {
+      threadId: args.threadId,
+      streamArgs: args.streamArgs,
+    });
+    return { ...result, streams };
+  },
+});
+
+export const generateReply = action({
+  args: {
+    prompt: v.string(),
+    model: v.string(),
+    searchEnabled: v.optional(v.boolean()),
+  },
+  handler: async (ctx, { prompt, model, searchEnabled = false }) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new ConvexError("Please sign in to continue.");
+    }
+
+    const user = await ctx.runQuery(api.users.viewer, {});
+    if (!user) {
+      throw new ConvexError("We couldn't load your account. Please refresh and try again.");
+    }
+
+    if (!user.isAnonymous) {
+      if (user.trialTokens <= 0 && user.tokens <= 0) {
+        throw new ConvexError("You have run out of credits. Buy more to continue.");
+      }
+    } else if ((user.trialMessages ?? 0) <= 0) {
+      throw new ConvexError("You've reached the anonymous message limit. Sign in with Google for unlimited messages.");
+    }
+
+    const text = prompt.trim();
+    if (!text) {
+      throw new ConvexError("Your message is empty. Please type something first.");
+    }
+
+    const threadId = await getOrCreateDefaultThread(ctx, userId);
+    const { thread } = await agent.continueThread(ctx, { threadId, userId });
+
+    const tools = await getMcpTools(searchEnabled);
+    const result = await thread.streamText(
+      {
+        model: resolveModel(model),
+        prompt: text,
+        tools: tools as any,
+        stopWhen: stepCountIs(8),
+      } as any,
+      {
+        saveStreamDeltas: true,
+        storageOptions: { saveMessages: "all" },
+      },
+    );
+
+    const [outputText, usage, providerMetadata] = await Promise.all([
+      result.text,
+      result.usage,
+      result.providerMetadata,
+    ]);
+
+    if (outputText) {
+      if (user.isAnonymous) {
+        await ctx.runMutation(api.users.messages, {});
+      } else {
+        await ctx.runMutation(api.users.usage, {
+          usage: toUsageObject(usage),
+          model,
+          provider: "AI Gateway",
+          providerMetadata,
+        });
+      }
+    }
+
+    return {
+      threadId,
+      order: result.order,
+      promptMessageId: result.promptMessageId,
+    };
+  },
+});
+
+// Get messages for user's default thread with pagination
+export const getMessages = query({
+  args: {
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, { paginationOpts }) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      return { page: [], isDone: true, continueCursor: "" };
+    }
+
+    const threadId = await getDefaultThreadForUser(ctx, userId);
+    if (!threadId) {
+      return { page: [], isDone: true, continueCursor: "" };
+    }
+
+    // Use component API directly to control order (agent.listMessages hardcodes desc)
+    const result = await ctx.runQuery(
+      components.agent.messages.listMessagesByThreadId,
+      {
+        threadId,
+        paginationOpts,
+        order: "asc",
+        statuses: ["success"],
+      }
+    );
+
+    return result;
+  },
+});
+
+// Save message to user's default thread (creates thread on first message)
+export const saveMessage = mutation({
+  args: {
+    message: vMessage
+  },
+  handler: async (ctx, { message }) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Unauthorized");
+
+    const threadId = await getOrCreateDefaultThread(ctx, userId);
+
+    await agent.saveMessage(ctx, {
+      threadId,
+      message,
+      skipEmbeddings: true,
+    });
+  },
+});

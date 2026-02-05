@@ -4,11 +4,13 @@ import { useQuery, usePaginatedQuery, useMutation } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useAuthActions } from "@convex-dev/auth/react"
-import { SendIcon, SunriseIcon, UsersIcon, ChevronDownIcon, ChevronUpIcon } from 'lucide-react';
+import { AlertCircleIcon, SendIcon, SunriseIcon, UsersIcon, ChevronDownIcon, ChevronUpIcon } from 'lucide-react';
 import Link from 'next/link';
 import { Shimmer } from '@/components/ai-elements/shimmer';
 import { Loader } from '@/components/ai-elements/loader';
 import { motion, AnimatePresence } from 'motion/react';
+
+type UiError = { message: string }
 
 function formatTime(timestamp: number) {
   return new Date(timestamp).toLocaleTimeString('en-US', {
@@ -79,6 +81,7 @@ export function LoungeChat() {
   const [timeUntilReset, setTimeUntilReset] = useState(getTimeUntilReset());
   const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
   const [hasNewMessages, setHasNewMessages] = useState(false);
+  const [submitError, setSubmitError] = useState<UiError | null>(null);
 
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -179,7 +182,8 @@ export function LoungeChat() {
       });
 
       if (response.status === 403) {
-        console.log('No @vlad mentions remaining');
+        const message = await response.text();
+        setSubmitError({ message: message || 'No @vlad mentions left.' });
         return;
       }
 
@@ -205,6 +209,7 @@ export function LoungeChat() {
       }
     } catch (error) {
       console.error('Failed to get Vlad response:', error);
+      setSubmitError({ message: 'Could not get a response from @vlad right now. Please try again.' });
     } finally {
       setVladThinking(false);
       setVladStreamingText('');
@@ -271,8 +276,10 @@ export function LoungeChat() {
     if (!input.trim() || sending) return;
 
     const messageText = input;
+
     setSending(true);
     setShouldAutoScroll(true);
+    setSubmitError(null);
 
     try {
       await sendMessage({ content: messageText });
@@ -283,6 +290,7 @@ export function LoungeChat() {
       }
     } catch (error) {
       console.error('Failed to send message:', error);
+      setSubmitError({ message: 'Failed to send your message. Please try again.' });
     } finally {
       setSending(false);
       inputRef.current?.focus();
@@ -641,12 +649,28 @@ export function LoungeChat() {
             </div>
           )}
 
+          {submitError && (
+            <div className="mb-3 rounded-lg border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-start gap-2">
+                  <AlertCircleIcon className="mt-0.5 size-4 shrink-0" />
+                  <span>{submitError.message}</span>
+                </div>
+              </div>
+            </div>
+          )}
+
           <form onSubmit={handleSubmit} className="relative">
             <div className="relative rounded-2xl bg-white/10 border border-white/10 backdrop-blur-xl overflow-hidden focus-within:border-violet-500/50 focus-within:ring-2 focus-within:ring-violet-500/20 transition-all flex items-end shadow-lg shadow-black/20">
               <textarea
                 ref={inputRef}
                 value={input}
-                onChange={(e) => setInput(e.target.value)}
+                onChange={(e) => {
+                  setInput(e.target.value);
+                  if (submitError) {
+                    setSubmitError(null);
+                  }
+                }}
                 onKeyDown={handleKeyDown}
                 placeholder={isReady ? "Say something... (tag @vlad and he responds)" : "Join to start chatting..."}
                 disabled={!isReady}
