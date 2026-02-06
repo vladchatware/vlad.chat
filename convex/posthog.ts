@@ -28,6 +28,8 @@ export const captureLlmGeneration = internalAction({
     order: v.number(),
     model: v.string(),
     provider: v.string(),
+    input: v.optional(v.any()),
+    output: v.optional(v.any()),
     usage: v.object({
       totalTokens: v.optional(v.number()),
       inputTokens: v.optional(v.number()),
@@ -60,6 +62,8 @@ export const captureLlmGeneration = internalAction({
         $ai_trace_id: args.traceId,
         $ai_model: args.model,
         $ai_provider: args.provider,
+        $ai_input: args.input,
+        $ai_output_choices: args.output,
         $ai_input_tokens: args.usage.inputTokens,
         $ai_output_tokens: args.usage.outputTokens,
         $ai_total_tokens: args.usage.totalTokens,

@@ -322,6 +322,15 @@ export const generateReply = action({
           order: result.order,
           model,
           provider: "AI Gateway",
+          input: [{ role: "user", content: text }],
+          output: outputText
+            ? [
+                {
+                  role: "assistant",
+                  content: [{ type: "text", text: outputText }],
+                },
+              ]
+            : [],
           usage: usageObject,
           providerMetadata,
         });
