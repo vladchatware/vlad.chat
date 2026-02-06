@@ -4,7 +4,9 @@
 - Do **not** run Bun commands (`bun install`, `bun run ...`, `bunx ...`) unless the user explicitly asks.
 - Prefer static code inspection and minimal edits over command execution.
 
-## Hydration policy
+## Bandaid policy
 
-- Do **not** use `suppressHydrationWarning` to silence SSR/CSR mismatches.
-- Fix hydration mismatches at the source by making server-rendered and initial client-rendered markup deterministic.
+- Do **not** suppress warnings
+- Do **not** hide under `any` or `unknown` when types are present
+
+Fix the root causes instead.
