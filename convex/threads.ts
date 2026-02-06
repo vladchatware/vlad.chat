@@ -1,4 +1,4 @@
-import { api, components } from "./_generated/api";
+import { api, components, internal } from "./_generated/api";
 
 import { ConvexError, v } from "convex/values";
 import {
@@ -294,17 +294,39 @@ export const generateReply = action({
       result.usage,
       result.providerMetadata,
     ]);
+    const usageObject = toUsageObject(usage);
 
     if (outputText) {
       if (user.isAnonymous) {
         await ctx.runMutation(api.users.messages, {});
       } else {
         await ctx.runMutation(api.users.usage, {
-          usage: toUsageObject(usage),
+          usage: usageObject,
           model,
           provider: "AI Gateway",
           providerMetadata,
         });
+      }
+    }
+
+    const hasUsage =
+      usageObject.totalTokens !== undefined ||
+      usageObject.inputTokens !== undefined ||
+      usageObject.outputTokens !== undefined;
+    if (hasUsage || providerMetadata) {
+      try {
+        await ctx.runAction((internal as any).posthog.captureLlmGeneration, {
+          distinctId: userId,
+          traceId: `${threadId}:${result.order}`,
+          threadId,
+          order: result.order,
+          model,
+          provider: "AI Gateway",
+          usage: usageObject,
+          providerMetadata,
+        });
+      } catch (error) {
+        console.error("PostHog LLM capture failed", error);
       }
     }
 
