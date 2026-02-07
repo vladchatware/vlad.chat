@@ -25,14 +25,24 @@ import {
 } from '@/components/ai-elements/tool'
 import { Action, Actions } from '@/components/ai-elements/actions'
 import { Shimmer } from '@/components/ai-elements/shimmer'
+import {
+  ChatMessage,
+  ChatSubmitStatus,
+  ChatToolPart,
+  extractToolOutputText,
+  isReasoningPart,
+  isSourceUrlPart,
+  isTextPart,
+  isToolPart,
+} from '@/components/chat/types'
 
 interface MessageItemProps {
-  message: any
+  message: ChatMessage
   messageIndex: number
   messagesCount: number
   lastUserPrompt: string | null
   sendPrompt: (text: string) => Promise<void>
-  submitStatus: 'ready' | 'submitted' | 'streaming'
+  submitStatus: ChatSubmitStatus
 }
 
 export function MessageItem({
@@ -44,15 +54,15 @@ export function MessageItem({
   submitStatus,
 }: MessageItemProps) {
   const messageKey = `${message.order}-${message.stepOrder}`
-  const parts = message.parts as Array<any>
+  const parts = message.parts
   const hasRenderableContent = parts.some((part) => {
-    if (part.type === 'source-url') {
+    if (isSourceUrlPart(part)) {
       return false
     }
-    if (part.type === 'text' || part.type === 'reasoning' || part.type === 'dynamic-tool') {
+    if (isTextPart(part) || isReasoningPart(part) || isToolPart(part)) {
       return true
     }
-    return typeof part.type === 'string' && part.type.startsWith('tool-')
+    return false
   })
   const showMessageLoader =
     message.role === 'assistant' &&
@@ -60,10 +70,10 @@ export function MessageItem({
     !hasRenderableContent &&
     messageIndex === messagesCount - 1
 
-  const renderToolPart = (part: any, partIndex: number) => {
+  const renderToolPart = (part: ChatToolPart, partIndex: number) => {
     const rawToolName =
       part.toolName ??
-      (typeof part.type === 'string' && part.type.startsWith('tool-')
+      (part.type.startsWith('tool-')
         ? part.type.slice(5)
         : part.type)
 
@@ -71,22 +81,9 @@ export function MessageItem({
       ? 'Tavily'
       : rawToolName?.includes('notion')
         ? 'Notion'
-        : rawToolName
+      : rawToolName
 
-    const output = (() => {
-      const content = part?.output?.content
-      if (Array.isArray(content)) {
-        const text = content
-          .filter((item: any) => item?.type === 'text')
-          .map((item: any) => item.text)
-          .join('\n')
-          .trim()
-        if (text) {
-          return text
-        }
-      }
-      return part.output
-    })()
+    const output = extractToolOutputText(part)
 
     return (
       <Tool key={`${messageKey}-${partIndex}`} defaultOpen={false}>
@@ -115,14 +112,14 @@ export function MessageItem({
         ease: 'easeOut',
       }}
     >
-      {message.role === 'assistant' && parts.filter((part) => part.type === 'source-url').length > 0 && (
+      {message.role === 'assistant' && parts.filter((part) => isSourceUrlPart(part)).length > 0 && (
         <Sources>
           <SourcesTrigger
             count={
-              parts.filter((part) => part.type === 'source-url').length
+              parts.filter((part) => isSourceUrlPart(part)).length
             }
           />
-          {parts.filter((part) => part.type === 'source-url').map((part, i) => (
+          {parts.filter((part) => isSourceUrlPart(part)).map((part, i) => (
             <SourcesContent key={`${messageKey}-${i}`}>
               <Source
                 key={`${messageKey}-${i}`}
@@ -134,67 +131,66 @@ export function MessageItem({
         </Sources>
       )}
       {parts.map((part, partIndex) => {
-        switch (part.type) {
-          case 'text':
-            return (
-              <Fragment key={`${messageKey}-${partIndex}`}>
-                <Message from={message.role}>
-                  <MessageContent>
-                    <Response>
-                      {part.text}
-                    </Response>
-                  </MessageContent>
-                </Message>
-                {message.role === 'assistant' &&
-                  messageIndex === messagesCount - 1 &&
-                  partIndex === parts.length - 1 && (
-                    <Actions className="-mt-3">
-                      <Action
-                        onClick={() => {
-                          if (lastUserPrompt) {
-                            void sendPrompt(lastUserPrompt)
-                          }
-                        }}
-                        label="Retry"
-                      >
-                        <RefreshCcwIcon className="size-3" />
-                      </Action>
-                      <Action
-                        onClick={() =>
-                          navigator.clipboard.writeText(part.text)
+        if (isTextPart(part)) {
+          return (
+            <Fragment key={`${messageKey}-${partIndex}`}>
+              <Message from={message.role}>
+                <MessageContent>
+                  <Response>
+                    {part.text}
+                  </Response>
+                </MessageContent>
+              </Message>
+              {message.role === 'assistant' &&
+                messageIndex === messagesCount - 1 &&
+                partIndex === parts.length - 1 && (
+                  <Actions className="-mt-3">
+                    <Action
+                      onClick={() => {
+                        if (lastUserPrompt) {
+                          void sendPrompt(lastUserPrompt)
                         }
-                        label="Copy"
-                      >
-                        <CopyIcon className="size-3" />
-                      </Action>
-                    </Actions>
-                  )}
-              </Fragment>
-            )
-          case 'reasoning':
-            return (
-              <Reasoning
-                key={`${messageKey}-${partIndex}`}
-                className="w-full"
-                isStreaming={
-                  submitStatus === 'streaming' &&
-                  partIndex === parts.length - 1 &&
-                  messageIndex === messagesCount - 1
-                }
-              >
-                <ReasoningTrigger />
-                <ReasoningContent>{part.text}</ReasoningContent>
-              </Reasoning>
-            )
-          case 'dynamic-tool': {
-            return renderToolPart(part, partIndex)
-          }
-          default:
-            if (typeof part.type === 'string' && part.type.startsWith('tool-')) {
-              return renderToolPart(part, partIndex)
-            }
-            return null
+                      }}
+                      label="Retry"
+                    >
+                      <RefreshCcwIcon className="size-3" />
+                    </Action>
+                    <Action
+                      onClick={() =>
+                        navigator.clipboard.writeText(part.text)
+                      }
+                      label="Copy"
+                    >
+                      <CopyIcon className="size-3" />
+                    </Action>
+                  </Actions>
+                )}
+            </Fragment>
+          )
         }
+
+        if (isReasoningPart(part)) {
+          return (
+            <Reasoning
+              key={`${messageKey}-${partIndex}`}
+              className="w-full"
+              isStreaming={
+                submitStatus === 'streaming' &&
+                partIndex === parts.length - 1 &&
+                messageIndex === messagesCount - 1
+              }
+            >
+              <ReasoningTrigger />
+              <ReasoningContent>{part.text}</ReasoningContent>
+            </Reasoning>
+          )
+        }
+
+        if (isToolPart(part)) {
+          return renderToolPart(part, partIndex)
+        }
+
+        return null
       })}
       {showMessageLoader && (
         <Message from="assistant">

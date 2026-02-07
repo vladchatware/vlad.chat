@@ -5,6 +5,7 @@ import { useUIMessages } from '@convex-dev/agent/react'
 import { useAction, useQuery } from 'convex/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '@/convex/_generated/api'
+import { ChatMessage, isTextPart } from '@/components/chat/types'
 
 const models = [
   {
@@ -157,17 +158,19 @@ export function useChatThreadController({ autoMessage }: { autoMessage?: string 
     }
   }, [input, messages?.length])
 
+  const typedMessages = messages as ChatMessage[] | undefined
+
   const lastUserPrompt = useMemo(() => {
-    if (!messages) {
+    if (!typedMessages) {
       return null
     }
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const message = messages[i]
+    for (let i = typedMessages.length - 1; i >= 0; i--) {
+      const message = typedMessages[i]
       if (message.role !== 'user') {
         continue
       }
       const text = message.parts
-        .filter((part): part is { type: 'text'; text: string } => part.type === 'text')
+        .filter((part) => isTextPart(part))
         .map((part) => part.text)
         .join('')
         .trim()
@@ -176,11 +179,11 @@ export function useChatThreadController({ autoMessage }: { autoMessage?: string 
       }
     }
     return null
-  }, [messages])
+  }, [typedMessages])
 
   const streamActive = useMemo(
-    () => (messages ?? []).some((message) => message.status === 'streaming' || message.status === 'pending'),
-    [messages],
+    () => (typedMessages ?? []).some((message) => message.status === 'streaming' || message.status === 'pending'),
+    [typedMessages],
   )
 
   const submitStatus = (streamActive ? 'streaming' : submitState) as 'ready' | 'submitted' | 'streaming'
@@ -197,7 +200,7 @@ export function useChatThreadController({ autoMessage }: { autoMessage?: string 
     isAuthenticated,
     isLoadingMore,
     lastUserPrompt,
-    messages,
+    messages: typedMessages,
     model,
     paginationStatus,
     searchEnabled,

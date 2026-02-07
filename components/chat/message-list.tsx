@@ -4,15 +4,16 @@ import { AnimatePresence } from 'motion/react'
 import { Loader } from '@/components/ai-elements/loader'
 import { Shimmer } from '@/components/ai-elements/shimmer'
 import { MessageItem } from '@/components/chat/message-item'
+import { ChatMessage, ChatSubmitStatus } from '@/components/chat/types'
 
 interface MessageListProps {
   isLoadingMore: boolean
   lastUserPrompt: string | null
-  messages: Array<any> | undefined
+  messages: ChatMessage[] | undefined
   paginationStatus: string
   sendPrompt: (text: string) => Promise<void>
   showBottomLoader: boolean
-  submitStatus: 'ready' | 'submitted' | 'streaming'
+  submitStatus: ChatSubmitStatus
 }
 
 export function MessageList({
