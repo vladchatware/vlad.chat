@@ -45,7 +45,6 @@ export function useChatThreadController({ autoMessage }: { autoMessage?: string 
   const { signIn } = useAuthActions()
 
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null)
-  const [showSuggestions, setShowSuggestions] = useState(true)
   const [input, setInput] = useState('')
   const [model, setModel] = useState<string>(models[0].value)
   const [autoMessageSent, setAutoMessageSent] = useState(false)
@@ -108,7 +107,6 @@ export function useChatThreadController({ autoMessage }: { autoMessage?: string 
       return
     }
 
-    setShowSuggestions(false)
     setSubmitState('submitted')
     setSubmitError(null)
     try {
@@ -147,15 +145,10 @@ export function useChatThreadController({ autoMessage }: { autoMessage?: string 
     }
   }, [autoMessage, autoMessageSent, isAuthenticated, messages?.length, submitState, sendPrompt])
 
-  useEffect(() => {
-    if (input.length) {
-      setShowSuggestions(false)
-    } else if ((messages?.length ?? 0) > 0) {
-      setShowSuggestions(false)
-    } else {
-      setShowSuggestions(true)
-    }
-  }, [input, messages?.length])
+  const showSuggestions = useMemo(
+    () => !input.length && (messages?.length ?? 0) === 0,
+    [input, messages?.length],
+  )
 
   const lastUserPrompt = useMemo(() => {
     if (!messages) {
@@ -204,7 +197,6 @@ export function useChatThreadController({ autoMessage }: { autoMessage?: string 
     setInput,
     setModel,
     setSearchEnabled,
-    setShowSuggestions,
     showBottomLoader,
     showSuggestions,
     signIn,
