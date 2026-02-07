@@ -23,7 +23,7 @@ const models = [
     name: 'DeepSeek 3.2',
     value: 'deepseek/deepseek-v3.2-thinking'
   }
-]
+] as const satisfies ReadonlyArray<{ name: string; value: string }>
 
 function shouldShowBottomLoader(params: {
   defaultThreadId: string | undefined
@@ -122,10 +122,16 @@ export function useChatThreadController({ autoMessage }: { autoMessage?: string 
       console.error('Failed to generate reply', error)
       const data =
         typeof error === 'object' && error !== null && 'data' in error
-          ? (error as { data?: { message?: string } }).data
+          ? (error as { data?: unknown }).data
           : undefined
+      const dataMessage =
+        typeof data === 'string'
+          ? data
+          : typeof data === 'object' && data !== null && 'message' in data && typeof data.message === 'string'
+            ? data.message
+            : undefined
       setSubmitError({
-        message: data?.message
+        message: dataMessage
           || (error instanceof Error ? error.message : '')
           || 'Something went wrong while sending your message. Please try again.',
       })
@@ -140,12 +146,22 @@ export function useChatThreadController({ autoMessage }: { autoMessage?: string 
       !autoMessageSent &&
       isAuthenticated === true &&
       (messages?.length ?? 0) === 0 &&
+      (activeThreadId !== null || defaultThreadId !== undefined) &&
       submitState === 'ready'
     ) {
       setAutoMessageSent(true)
       void sendPrompt(autoMessage)
     }
-  }, [autoMessage, autoMessageSent, isAuthenticated, messages?.length, submitState, sendPrompt])
+  }, [
+    activeThreadId,
+    autoMessage,
+    autoMessageSent,
+    defaultThreadId,
+    isAuthenticated,
+    messages?.length,
+    submitState,
+    sendPrompt,
+  ])
 
   const showSuggestions = useMemo(
     () => !input.length && (messages?.length ?? 0) === 0,

@@ -411,9 +411,9 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                   <PromptInputModelSelectValue />
                 </PromptInputModelSelectTrigger>
                 <PromptInputModelSelectContent>
-                  {models.map((model) => (
-                    <PromptInputModelSelectItem key={model.value} value={model.value}>
-                      {model.name}
+                  {models.map((modelOption) => (
+                    <PromptInputModelSelectItem key={modelOption.value} value={modelOption.value}>
+                      {modelOption.name}
                     </PromptInputModelSelectItem>
                   ))}
                 </PromptInputModelSelectContent>
