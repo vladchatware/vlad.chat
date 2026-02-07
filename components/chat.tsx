@@ -21,34 +21,12 @@ import {
   PromptInputToolbar,
   PromptInputTools,
 } from '@/components/ai-elements/prompt-input'
-import {
-  Tool,
-  ToolContent,
-  ToolHeader,
-  ToolOutput,
-  ToolInput,
-} from '@/components/ai-elements/tool';
-import { Fragment } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
 import { Response } from '@/components/ai-elements/response';
-import { AlertCircleIcon, CopyIcon, MessageCircleIcon, RefreshCcwIcon } from 'lucide-react';
+import { AlertCircleIcon, MessageCircleIcon } from 'lucide-react';
 import Link from 'next/link';
-import {
-  Source,
-  Sources,
-  SourcesContent,
-  SourcesTrigger,
-} from '@/components/ai-elements/source';
-import {
-  Reasoning,
-  ReasoningContent,
-  ReasoningTrigger,
-} from '@/components/ai-elements/reasoning';
-import { Loader } from '@/components/ai-elements/loader';
-import { Shimmer } from '@/components/ai-elements/shimmer';
 import { Suggestion, Suggestions } from '@/components/ai-elements/suggestion';
-import { Action, Actions } from '@/components/ai-elements/actions';
 import { Authenticated } from 'convex/react';
+import { MessageList } from '@/components/chat/message-list';
 import { models, useChatThreadController } from '@/components/chat/use-chat-thread-controller';
 
 const suggestions = [
@@ -147,196 +125,15 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                   </MessageContent>
                 </Message>
               </div>
-              {/* Loading indicator for older messages */}
-              {isLoadingMore && (
-                <div className="flex justify-center py-4">
-                  <Loader />
-                </div>
-              )}
-              {/* Show "Load more" hint if more messages available */}
-              {paginationStatus === 'CanLoadMore' && !isLoadingMore && (
-                <div className="flex justify-center py-2">
-                  <span className="text-xs text-muted-foreground">Scroll up to load more</span>
-                </div>
-              )}
-              <AnimatePresence initial={false}>
-                {(messages ?? []).map((message, messageIndex) => {
-                  const messageKey = `${message.order}-${message.stepOrder}`
-                  const parts = message.parts as Array<any>
-                  const hasRenderableContent = parts.some((part) => {
-                    if (part.type === 'source-url') {
-                      return false
-                    }
-                    if (part.type === 'text' || part.type === 'reasoning' || part.type === 'dynamic-tool') {
-                      return true
-                    }
-                    return typeof part.type === 'string' && part.type.startsWith('tool-')
-                  })
-                  const showMessageLoader =
-                    message.role === 'assistant' &&
-                    (message.status === 'pending' || message.status === 'streaming') &&
-                    !hasRenderableContent &&
-                    messageIndex === (messages ?? []).length - 1
-
-                  const renderToolPart = (part: any, partIndex: number) => {
-                    const rawToolName =
-                      part.toolName ??
-                      (typeof part.type === 'string' && part.type.startsWith('tool-')
-                        ? part.type.slice(5)
-                        : part.type)
-
-                    const toolDisplayName = rawToolName?.includes('tavily')
-                      ? 'Tavily'
-                      : rawToolName?.includes('notion')
-                        ? 'Notion'
-                        : rawToolName
-
-                    const output = (() => {
-                      const content = part?.output?.content
-                      if (Array.isArray(content)) {
-                        const text = content
-                          .filter((item: any) => item?.type === 'text')
-                          .map((item: any) => item.text)
-                          .join('\n')
-                          .trim()
-                        if (text) {
-                          return text
-                        }
-                      }
-                      return part.output
-                    })()
-
-                    return (
-                      <Tool key={`${messageKey}-${partIndex}`} defaultOpen={false}>
-                        <ToolHeader
-                          title={toolDisplayName}
-                          type={part.type}
-                          state={part.state ?? 'input-available'}
-                        />
-                        <ToolContent>
-                          <ToolInput input={part.input} />
-                          <ToolOutput output={output} errorText={part.errorText} />
-                        </ToolContent>
-                      </Tool>
-                    )
-                  }
-                  return (
-                    <motion.div
-                      key={messageKey}
-                      className={(messages ?? []).length - 1 === messageIndex ? 'pb-46' : ''}
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      transition={{
-                        duration: 0.22,
-                        ease: 'easeOut',
-                      }}
-                    >
-                      {
-                        message.role === 'assistant' && parts.filter((part) => part.type === 'source-url').length > 0 && (
-                          <Sources>
-                            <SourcesTrigger
-                              count={
-                                parts.filter((part) => part.type === 'source-url').length
-                              }
-                            />
-                            {parts.filter((part) => part.type === 'source-url').map((part, i) => (
-                              <SourcesContent key={`${messageKey}-${i}`}>
-                                <Source
-                                  key={`${messageKey}-${i}`}
-                                  href={part.url}
-                                  title={part.url}
-                                />
-                              </SourcesContent>
-                            ))}
-                          </Sources>
-                        )
-                      }
-                      {
-                        parts.map((part, partIndex) => {
-                          switch (part.type) {
-                            case 'text':
-                              return (
-                                <Fragment key={`${messageKey}-${partIndex}`}>
-                                  <Message from={message.role}>
-                                    <MessageContent>
-                                      <Response>
-                                        {part.text}
-                                      </Response>
-                                    </MessageContent>
-                                  </Message>
-                                  {message.role === 'assistant' &&
-                                    messageIndex === (messages ?? []).length - 1 &&
-                                    partIndex === parts.length - 1 && (
-                                      <Actions className="-mt-3">
-                                        <Action
-                                          onClick={() => {
-                                            if (lastUserPrompt) {
-                                              void sendPrompt(lastUserPrompt)
-                                            }
-                                          }}
-                                          label="Retry"
-                                        >
-                                          <RefreshCcwIcon className="size-3" />
-                                        </Action>
-                                        <Action
-                                          onClick={() =>
-                                            navigator.clipboard.writeText(part.text)
-                                          }
-                                          label="Copy"
-                                        >
-                                          <CopyIcon className="size-3" />
-                                        </Action>
-                                      </Actions>
-                                    )}
-                                </Fragment>
-                              );
-                            case 'reasoning':
-                              return (
-                                <Reasoning
-                                  key={`${messageKey}-${partIndex}`}
-                                  className="w-full"
-                                  isStreaming={
-                                    submitStatus === 'streaming' &&
-                                    partIndex === parts.length - 1 &&
-                                    messageIndex === (messages ?? []).length - 1
-                                  }
-                                >
-                                  <ReasoningTrigger />
-                                  <ReasoningContent>{part.text}</ReasoningContent>
-                                </Reasoning>
-                              );
-                            case 'dynamic-tool': {
-                              return renderToolPart(part, partIndex);
-                            }
-                            default:
-                              if (typeof part.type === 'string' && part.type.startsWith('tool-')) {
-                                return renderToolPart(part, partIndex);
-                              }
-                              return null;
-                          }
-                        })
-                      }
-                      {showMessageLoader && (
-                        <Message from="assistant">
-                          <MessageContent className="text-muted-foreground">
-                            <Shimmer as="span" duration={1.5} spread={1.5} className="text-sm">
-                              Thinking...
-                            </Shimmer>
-                          </MessageContent>
-                        </Message>
-                      )}
-                    </motion.div>
-                  )
-                })}
-              </AnimatePresence>
-              {showBottomLoader && (
-                <div className="pb-46 flex justify-center text-muted-foreground">
-                  <Shimmer as="span" duration={1.5} spread={1.3} className="text-sm">
-                    Loading history...
-                  </Shimmer>
-                </div>
-              )}
+              <MessageList
+                isLoadingMore={isLoadingMore}
+                lastUserPrompt={lastUserPrompt}
+                messages={messages}
+                paginationStatus={paginationStatus}
+                sendPrompt={sendPrompt}
+                showBottomLoader={showBottomLoader}
+                submitStatus={submitStatus}
+              />
             </ConversationContent>
             <ConversationScrollButton />
           </Conversation>
