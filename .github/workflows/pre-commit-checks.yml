@@ -1,0 +1,48 @@
+name: Pre-commit Checks
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  checks:
+    name: Lint and Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Run lint on changed files
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE_SHA="${{ github.event.before }}"
+          fi
+
+          CHANGED_FILES="$(git diff --name-only --diff-filter=ACMRT "$BASE_SHA"...HEAD | grep -E '\.(js|jsx|ts|tsx|mjs|cjs)$' || true)"
+
+          if [[ -z "$CHANGED_FILES" ]]; then
+            echo "No JS/TS files changed; skipping lint."
+            exit 0
+          fi
+
+          bunx eslint --ignore-pattern .next $CHANGED_FILES
+
+      - name: Run tests
+        run: bun run test

@@ -2,6 +2,7 @@ pre-commit:
   parallel: true
   commands:
     lint:
-      run: npm run lint
+      glob: "*.{js,jsx,ts,tsx,mjs,cjs}"
+      run: bunx eslint --ignore-pattern .next {staged_files}
     test:
-      run: npm run test
+      run: bun run test
