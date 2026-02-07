@@ -97,7 +97,9 @@ export function useChatThreadController({ autoMessage }: { autoMessage?: string 
 
   useEffect(() => {
     if (isAuthenticated === false) {
-      signIn('anonymous')
+      signIn('anonymous').catch((error) => {
+        console.error('Anonymous sign-in failed:', error)
+      })
     }
   }, [isAuthenticated, signIn])
 
