@@ -28,3 +28,11 @@ Fix the root causes instead.
   - then switch back to `main` (or continue stacking intentionally)
 - If a PR becomes obsolete because a follow-up removes/replaces the behavior, close the obsolete PR and reference the superseding PR.
 - Prefer cleanup PRs that remove dead paths/docs once migration is complete.
+
+## Git execution policy
+
+- Stage intentionally: add only files relevant to the current slice; do not mix unrelated changes.
+- Keep commits small and descriptive; prefer follow-up fix commits over history rewriting.
+- For stacked work, apply review fixes to the correct base PR branch so downstream PRs inherit them.
+- Check PR feedback explicitly (review comments + reviews + issue comments) and prioritize actionable items.
+- When replacing behavior, close superseded PRs with a short note pointing to the new PR.
