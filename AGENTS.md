@@ -31,6 +31,7 @@ Fix the root causes instead.
 
 ## Git execution policy
 
+- Enforce pre-commit checks through Git hooks (Lefthook) rather than manual-only checks.
 - Stage intentionally: add only files relevant to the current slice; do not mix unrelated changes.
 - Keep commits small and descriptive; prefer follow-up fix commits over history rewriting.
 - For stacked work, apply review fixes to the correct base PR branch so downstream PRs inherit them.
