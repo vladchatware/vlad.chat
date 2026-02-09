@@ -37,18 +37,47 @@ vlad.chat is an AI-powered conversational interface for interacting with Vlad, h
 - Letters
 - About
 
-### Representative Products (Public Links)
+### Prompt Taxonomy (from chat prompts in lib/ai.ts)
 
-- [Decision Compass](https://shop.vlad.chat/l/framework)
-- [The Master Key Notion Template](https://shop.vlad.chat/l/the-master-key)
-- [The Inner Work Notion Template](https://shop.vlad.chat/l/the-inner-work)
-- [Habits Notion Template](https://shop.vlad.chat/l/habits)
-- [Notion Scroll: Breaking the Limits - ACT II (Limitless)](https://shop.vlad.chat/l/limitless)
-- [Notion Scroll: Emotional Trading](https://shop.vlad.chat/l/trading)
-- [The Complete Scrolls Collection](https://shop.vlad.chat/l/scrolls)
-- [Music Streaming Agent](https://shop.vlad.chat/l/music)
-- [Social Media Agent: Content Engine](https://shop.vlad.chat/l/media)
-- [Digital Twin Terminal](https://shop.vlad.chat/l/chat)
+- Operation Systems
+- Scrolls
+- Mental Models
+- Playbooks
+
+### Product Catalog Links
+
+#### Operation Systems
+
+- [Habits Notion Template](https://shop.vlad.chat/l/habits): Daily/weekly habit execution loop with tracking and review.
+- [The Master Key Notion Template](https://shop.vlad.chat/l/the-master-key): Personal progress dashboard for reflection and consistency.
+- [The Inner Work Notion Template](https://shop.vlad.chat/l/the-inner-work): Structured emotional processing and self-reflection workflow.
+#### Scrolls
+
+- [Notion Scroll: Uncovering Hidden Truths - ACT I](https://shop.vlad.chat/l/hidden-truths): Guided prompts for surfacing assumptions and blind spots.
+- [The Complete Scrolls Collection](https://shop.vlad.chat/l/scrolls): Bundle of all scroll-based introspection frameworks.
+- [Notion Scroll: The Idea Generation Framework - ACT III](https://shop.vlad.chat/l/idea): Prompted system for generating and refining ideas.
+- [Notion Scroll: Breaking the Limits - ACT II (Limitless)](https://shop.vlad.chat/l/limitless): Framework for identifying and removing self-imposed constraints.
+- [Notion Scroll: Emotional Trading](https://shop.vlad.chat/l/trading): Reflection framework for decision quality under emotional pressure.
+
+#### Mental Models
+
+- [Decision Compass](https://shop.vlad.chat/l/framework): Core decision model for moving from uncertainty to clear next action.
+- [Stable Self Concept](https://shop.vlad.chat/l/owmffz): Model for identity stability and behavior alignment.
+
+#### Playbooks
+
+- [Notion Playbook - Sales Almanac](https://shop.vlad.chat/l/sales): Repeatable sales planning and execution playbook.
+- [Shackleton Decision Manual](https://shop.vlad.chat/l/kyiegz): Adversity-oriented decision procedure for uncertain environments.
+- [Combating learned helplessness](https://shop.vlad.chat/l/help): Recovery playbook for rebuilding agency through small repeatable actions.
+- [Effective Communication](https://shop.vlad.chat/l/ijyrqe): Communication routines and checklists for clearer outcomes.
+- [Geido Playbook](https://shop.vlad.chat/l/plrdb): Craft-discipline playbook for deliberate practice and iterative improvement.
+
+#### AI Agents
+
+- [Digital Twin Terminal](https://shop.vlad.chat/l/chat): Conversational AI agent product.
+- [Music Streaming Agent](https://shop.vlad.chat/l/music): Agent workflow for AI-assisted music streaming use cases.
+- [Social Media Agent: Content Engine](https://shop.vlad.chat/l/media): Agent workflow for AI-generated social content operations.
+- [The Complete Scrolls Collection](https://shop.vlad.chat/l/scrolls): Cross-listed bundle from introspective tools.
 
 ## Music (music.vlad.chat)
 
