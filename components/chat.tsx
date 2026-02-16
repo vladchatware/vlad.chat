@@ -309,7 +309,7 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
 
   return (
     <>
-      <div className="fixed top-4 right-4 z-50 flex items-center gap-2">
+      <div className="fixed top-4 right-4 z-50 flex flex-col items-end gap-2 md:flex-row md:items-center">
         <Link
           href="/usage"
           className="flex items-center gap-2 rounded-full bg-gradient-to-r from-emerald-600/90 to-teal-600/90 p-2 text-sm font-medium text-white shadow-lg shadow-emerald-600/20 transition-all hover:scale-105 hover:from-emerald-500 hover:to-teal-500 md:px-4 md:py-2"
