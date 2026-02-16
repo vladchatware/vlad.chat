@@ -28,11 +28,11 @@ import {
   ToolOutput,
   ToolInput,
 } from '@/components/ai-elements/tool';
-import { Fragment, useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState, useCallback, type ComponentProps } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useUIMessages } from '@convex-dev/agent/react';
 import { Response } from '@/components/ai-elements/response';
-import { AlertCircleIcon, CopyIcon, MessageCircleIcon, RefreshCcwIcon } from 'lucide-react';
+import { AlertCircleIcon, BarChart3Icon, CopyIcon, MessageCircleIcon, RefreshCcwIcon } from 'lucide-react';
 import Link from 'next/link';
 import {
   Source,
@@ -80,6 +80,25 @@ const suggestions = [
 export interface ChatBotDemoProps {
   autoMessage?: string;
 }
+
+type ChatMessagePart = {
+  type: string;
+  toolName?: string;
+  state?: string;
+  input?: unknown;
+  output?: unknown;
+  errorText?: string;
+  text?: string;
+  url?: string;
+};
+
+type ToolOutputTextItem = {
+  type?: string;
+  text?: string;
+};
+
+type ToolHeaderType = ComponentProps<typeof ToolHeader>['type'];
+type ToolHeaderState = ComponentProps<typeof ToolHeader>['state'];
 
 function shouldShowBottomLoader(params: {
   defaultThreadId: string | undefined
@@ -291,6 +310,13 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
   return (
     <>
       <Link
+        href="/usage"
+        className="fixed top-4 left-4 z-50 flex items-center gap-2 rounded-full bg-gradient-to-r from-emerald-600/90 to-teal-600/90 p-2 text-sm font-medium text-white shadow-lg shadow-emerald-600/20 transition-all hover:scale-105 hover:from-emerald-500 hover:to-teal-500 md:px-4 md:py-2"
+      >
+        <BarChart3Icon className='h-4 w-4' />
+        <span className="hidden md:inline">Usage</span>
+      </Link>
+      <Link
         href="/lounge"
         className="fixed top-4 right-4 z-50 flex items-center gap-0 md:gap-2 p-2 md:px-4 md:py-2 rounded-full bg-gradient-to-r from-violet-600/90 to-fuchsia-600/90 hover:from-violet-500 hover:to-fuchsia-500 text-white text-sm font-medium shadow-lg shadow-violet-500/25 transition-all hover:scale-105">
         <MessageCircleIcon className='w-4 h-4' />
@@ -329,7 +355,7 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
               <AnimatePresence initial={false}>
                 {(messages ?? []).map((message, messageIndex) => {
                   const messageKey = `${message.order}-${message.stepOrder}`
-                  const parts = message.parts as Array<any>
+                  const parts = message.parts as ChatMessagePart[]
                   const hasRenderableContent = parts.some((part) => {
                     if (part.type === 'source-url') {
                       return false
@@ -345,7 +371,7 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                     !hasRenderableContent &&
                     messageIndex === (messages ?? []).length - 1
 
-                  const renderToolPart = (part: any, partIndex: number) => {
+                  const renderToolPart = (part: ChatMessagePart, partIndex: number) => {
                     const rawToolName =
                       part.toolName ??
                       (typeof part.type === 'string' && part.type.startsWith('tool-')
@@ -358,12 +384,20 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                         ? 'Notion'
                         : rawToolName
 
+                    const toolType = (typeof part.type === 'string' ? part.type : 'dynamic-tool') as ToolHeaderType
+                    const toolState = (typeof part.state === 'string' ? part.state : 'input-available') as ToolHeaderState
+
                     const output = (() => {
-                      const content = part?.output?.content
+                      const content =
+                        typeof part.output === 'object' &&
+                        part.output !== null &&
+                        'content' in part.output
+                          ? (part.output as { content?: ToolOutputTextItem[] }).content
+                          : undefined
                       if (Array.isArray(content)) {
                         const text = content
-                          .filter((item: any) => item?.type === 'text')
-                          .map((item: any) => item.text)
+                          .filter((item) => item?.type === 'text' && typeof item.text === 'string')
+                          .map((item) => item.text)
                           .join('\n')
                           .trim()
                         if (text) {
@@ -377,8 +411,8 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                       <Tool key={`${messageKey}-${partIndex}`} defaultOpen={false}>
                         <ToolHeader
                           title={toolDisplayName}
-                          type={part.type}
-                          state={part.state ?? 'input-available'}
+                          type={toolType}
+                          state={toolState}
                         />
                         <ToolContent>
                           <ToolInput input={part.input} />
