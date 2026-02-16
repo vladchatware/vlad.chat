@@ -1,13 +1,64 @@
 import { v } from "convex/values";
 import { internalMutation, mutation, query } from "./_generated/server";
-import { getAuthSessionId, getAuthUserId } from "@convex-dev/auth/server";
+import { getAuthUserId } from "@convex-dev/auth/server";
 import { vProviderMetadata } from "@convex-dev/agent";
+
+const FREE_MESSAGE_LIMIT = 10;
+const FREE_TRIAL_TOKEN_LIMIT = 16_000_000;
+const PRICE_PER_MILLION_TOKENS_USD = 0.3;
 
 export const viewer = query({
   args: {},
   handler: async (ctx) => {
     const userId = await getAuthUserId(ctx);
     return userId !== null ? ctx.db.get(userId) : null;
+  },
+});
+
+export const usageSummary = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      return null;
+    }
+
+    const user = await ctx.db.get(userId);
+    if (!user) {
+      return null;
+    }
+
+    const usageRows = await ctx.db
+      .query("usage")
+      .filter((q) => q.eq(q.field("userId"), userId))
+      .collect();
+
+    const totalTokensTracked = usageRows.reduce((sum, row) => {
+      return sum + (row.usage.totalTokens ?? 0);
+    }, 0);
+
+    const freeMessagesLeft = Math.max(0, user.trialMessages ?? 0);
+    const freeMessagesUsed = Math.max(0, FREE_MESSAGE_LIMIT - freeMessagesLeft);
+    const freeMessagesLeftPercent = (freeMessagesLeft / FREE_MESSAGE_LIMIT) * 100;
+
+    const trialTokensLeft = Math.max(0, user.trialTokens ?? 0);
+    const trialTokensUsed = Math.max(0, FREE_TRIAL_TOKEN_LIMIT - trialTokensLeft);
+
+    const usageTrackedPercent = user.isAnonymous
+      ? (freeMessagesUsed / FREE_MESSAGE_LIMIT) * 100
+      : (trialTokensUsed / FREE_TRIAL_TOKEN_LIMIT) * 100;
+
+    const estimatedSpendUsd =
+      (totalTokensTracked / 1_000_000) * PRICE_PER_MILLION_TOKENS_USD;
+
+    return {
+      isAnonymous: Boolean(user.isAnonymous),
+      totalTokensTracked,
+      freeMessagesLeft,
+      usageTrackedPercent: Math.min(100, Math.max(0, usageTrackedPercent)),
+      freeMessagesLeftPercent: Math.min(100, Math.max(0, freeMessagesLeftPercent)),
+      estimatedSpendUsd,
+    };
   },
 });
 

@@ -14,6 +14,7 @@ import type * as auth from "../auth.js";
 import type * as crons from "../crons.js";
 import type * as http from "../http.js";
 import type * as lounge from "../lounge.js";
+import type * as posthog from "../posthog.js";
 import type * as threads from "../threads.js";
 import type * as users from "../users.js";
 
@@ -38,6 +39,7 @@ declare const fullApi: ApiFromModules<{
   crons: typeof crons;
   http: typeof http;
   lounge: typeof lounge;
+  posthog: typeof posthog;
   threads: typeof threads;
   users: typeof users;
 }>;
