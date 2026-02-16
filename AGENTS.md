@@ -14,6 +14,7 @@ Fix the root causes instead.
 ## PR workflow policy
 
 - Default to an **isolated PR workflow** for non-trivial refactors and feature work.
+- **Hotfix exception:** when the user explicitly asks for a hotfix, commit directly to `main` and push without opening a PR.
 - Start with a short plan, then execute in small vertical slices.
 - Keep each PR focused on one concern (for example: controller extraction, render split, typing, API cleanup).
 - Prefer **stacked PRs** when work is sequential:
