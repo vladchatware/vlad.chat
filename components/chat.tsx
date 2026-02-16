@@ -309,19 +309,22 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
 
   return (
     <>
-      <Link
-        href="/usage"
-        className="fixed top-4 left-4 z-50 flex items-center gap-2 rounded-full bg-gradient-to-r from-emerald-600/90 to-teal-600/90 p-2 text-sm font-medium text-white shadow-lg shadow-emerald-600/20 transition-all hover:scale-105 hover:from-emerald-500 hover:to-teal-500 md:px-4 md:py-2"
-      >
-        <BarChart3Icon className='h-4 w-4' />
-        <span className="hidden md:inline">Usage</span>
-      </Link>
-      <Link
-        href="/lounge"
-        className="fixed top-4 right-4 z-50 flex items-center gap-0 md:gap-2 p-2 md:px-4 md:py-2 rounded-full bg-gradient-to-r from-violet-600/90 to-fuchsia-600/90 hover:from-violet-500 hover:to-fuchsia-500 text-white text-sm font-medium shadow-lg shadow-violet-500/25 transition-all hover:scale-105">
-        <MessageCircleIcon className='w-4 h-4' />
-        <span className="hidden md:inline">The Lounge</span>
-      </Link>
+      <div className="fixed top-4 right-4 z-50 flex items-center gap-2">
+        <Link
+          href="/usage"
+          className="flex items-center gap-2 rounded-full bg-gradient-to-r from-emerald-600/90 to-teal-600/90 p-2 text-sm font-medium text-white shadow-lg shadow-emerald-600/20 transition-all hover:scale-105 hover:from-emerald-500 hover:to-teal-500 md:px-4 md:py-2"
+        >
+          <BarChart3Icon className='h-4 w-4' />
+          <span className="hidden md:inline">Usage</span>
+        </Link>
+        <Link
+          href="/lounge"
+          className="flex items-center gap-0 rounded-full bg-gradient-to-r from-violet-600/90 to-fuchsia-600/90 p-2 text-sm font-medium text-white shadow-lg shadow-violet-500/25 transition-all hover:scale-105 hover:from-violet-500 hover:to-fuchsia-500 md:gap-2 md:px-4 md:py-2"
+        >
+          <MessageCircleIcon className='w-4 h-4' />
+          <span className="hidden md:inline">The Lounge</span>
+        </Link>
+      </div>
       <div className="">
         <div className="md:px-72">
           <Conversation className="">
