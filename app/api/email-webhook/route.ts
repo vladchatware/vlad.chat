@@ -32,29 +32,42 @@ function verifyResendWebhookSignature(rawBody: string, headers: Headers, secret:
   const timestamp = getWebhookHeader(headers, 'timestamp');
   const signatureHeader = getWebhookHeader(headers, 'signature');
 
-  if (!id || !timestamp || !signatureHeader) return false;
+  if (!id || !timestamp || !signatureHeader) {
+    console.error('Webhook signature verification failed: missing svix headers');
+    return false;
+  }
 
   const timestampSeconds = Number(timestamp);
-  if (!Number.isFinite(timestampSeconds)) return false;
+  if (!Number.isFinite(timestampSeconds)) {
+    console.error('Webhook signature verification failed: invalid timestamp');
+    return false;
+  }
 
   // Match Svix default replay protection window.
   const nowSeconds = Math.floor(Date.now() / 1000);
-  if (Math.abs(nowSeconds - timestampSeconds) > 60 * 5) return false;
+  if (Math.abs(nowSeconds - timestampSeconds) > 60 * 5) {
+    console.error('Webhook signature verification failed: timestamp outside 5 minute window');
+    return false;
+  }
 
   const signingSecret = secret.startsWith('whsec_') ? secret.slice('whsec_'.length) : secret;
+  const secretBytes = Buffer.from(signingSecret, 'base64');
+  if (!secretBytes.length) {
+    console.error('Webhook signature verification failed: invalid webhook secret');
+    return false;
+  }
+
   const signedContent = `${id}.${timestamp}.${rawBody}`;
-  const expectedSignature = createHmac('sha256', signingSecret).update(signedContent).digest('base64');
+  const expectedSignature = createHmac('sha256', secretBytes).update(signedContent).digest('base64');
 
-  const signatures = signatureHeader
-    .split(' ')
-    .map((entry) => entry.trim())
-    .filter(Boolean)
-    .map((entry) => {
-      const [version, signature] = entry.split(',');
-      return { version, signature };
-    });
+  // Header can contain one or multiple entries like: "v1,abc v1,def" (or comma-joined variants)
+  const signatures = Array.from(signatureHeader.matchAll(/v1,([A-Za-z0-9+/=]+)/g)).map((m) => m[1]);
+  if (!signatures.length) {
+    console.error('Webhook signature verification failed: no v1 signature in header');
+    return false;
+  }
 
-  return signatures.some(({ version, signature }) => version === 'v1' && !!signature && safeEqual(signature, expectedSignature));
+  return signatures.some((signature) => safeEqual(signature, expectedSignature));
 }
 
 export async function POST(req: Request) {
