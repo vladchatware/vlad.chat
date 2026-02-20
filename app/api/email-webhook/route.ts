@@ -9,11 +9,18 @@ type ResendReceivedPayload = {
     to?: string[] | string;
     subject?: string | null;
     message_id?: string;
+    text?: string | null;
+    html?: string | null;
   };
 };
 
 function escapeTelegramMarkdown(value: string): string {
   return value.replace(/([_*`\[])/g, '\\$1');
+}
+
+function truncate(value: string, maxChars: number): string {
+  if (value.length <= maxChars) return value;
+  return `${value.slice(0, maxChars - 1)}…`;
 }
 
 function getWebhookHeader(headers: Headers, key: string): string | null {
@@ -104,6 +111,8 @@ export async function POST(req: Request) {
   const from = payload.data?.from;
   const toRaw = payload.data?.to;
   const subject = payload.data?.subject ?? '(no subject)';
+  const textBody = payload.data?.text?.trim() || '';
+  const htmlBody = payload.data?.html?.trim() || '';
 
   const to = Array.isArray(toRaw) ? toRaw.join(', ') : toRaw ?? '';
 
@@ -114,12 +123,23 @@ export async function POST(req: Request) {
     );
   }
 
-  const text =
+  const textSection = textBody
+    ? `\n\n*Text:*\n\`\`\`\n${escapeTelegramMarkdown(truncate(textBody, 1400))}\n\`\`\``
+    : '';
+  const htmlSection = htmlBody
+    ? `\n\n*HTML:*\n\`\`\`\n${escapeTelegramMarkdown(truncate(htmlBody, 1400))}\n\`\`\``
+    : '';
+
+  const message =
     '*Incoming email*' +
     `\n*From:* \`${escapeTelegramMarkdown(from)}\`` +
     `\n*To:* \`${escapeTelegramMarkdown(to)}\`` +
     `\n*Subject:* \`${escapeTelegramMarkdown(subject)}\`` +
-    `\n*Email ID:* \`${escapeTelegramMarkdown(emailId)}\``;
+    `\n*Email ID:* \`${escapeTelegramMarkdown(emailId)}\`` +
+    textSection +
+    htmlSection;
+
+  const text = truncate(message, 3900);
 
   const telegramResponse = await fetch(`https://api.telegram.org/bot${telegramBotToken}/sendMessage`, {
     method: 'POST',
