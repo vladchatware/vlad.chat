@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 
 type ResendReceivedPayload = {
   type: string;
@@ -15,21 +16,69 @@ function escapeTelegramMarkdown(value: string): string {
   return value.replace(/([_*`\[])/g, '\\$1');
 }
 
+function getWebhookHeader(headers: Headers, key: string): string | null {
+  return headers.get(`svix-${key}`) ?? headers.get(`webhook-${key}`);
+}
+
+function safeEqual(a: string, b: string): boolean {
+  const aBuffer = Buffer.from(a);
+  const bBuffer = Buffer.from(b);
+  if (aBuffer.length !== bBuffer.length) return false;
+  return timingSafeEqual(aBuffer, bBuffer);
+}
+
+function verifyResendWebhookSignature(rawBody: string, headers: Headers, secret: string): boolean {
+  const id = getWebhookHeader(headers, 'id');
+  const timestamp = getWebhookHeader(headers, 'timestamp');
+  const signatureHeader = getWebhookHeader(headers, 'signature');
+
+  if (!id || !timestamp || !signatureHeader) return false;
+
+  const timestampSeconds = Number(timestamp);
+  if (!Number.isFinite(timestampSeconds)) return false;
+
+  // Match Svix default replay protection window.
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  if (Math.abs(nowSeconds - timestampSeconds) > 60 * 5) return false;
+
+  const signingSecret = secret.startsWith('whsec_') ? secret.slice('whsec_'.length) : secret;
+  const signedContent = `${id}.${timestamp}.${rawBody}`;
+  const expectedSignature = createHmac('sha256', signingSecret).update(signedContent).digest('base64');
+
+  const signatures = signatureHeader
+    .split(' ')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const [version, signature] = entry.split(',');
+      return { version, signature };
+    });
+
+  return signatures.some(({ version, signature }) => version === 'v1' && !!signature && safeEqual(signature, expectedSignature));
+}
+
 export async function POST(req: Request) {
   const telegramBotToken = process.env.TELEGRAM_BOT_TOKEN;
   const telegramChatId = process.env.TELEGRAM_CHAT_ID;
+  const resendWebhookSecret = process.env.RESEND_WEBHOOK_SECRET;
 
-  if (!telegramBotToken || !telegramChatId) {
-    console.error('Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID');
+  if (!telegramBotToken || !telegramChatId || !resendWebhookSecret) {
+    console.error('Missing TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, or RESEND_WEBHOOK_SECRET');
     return NextResponse.json(
-      { ok: false, error: 'missing telegram configuration' },
+      { ok: false, error: 'missing webhook configuration' },
       { status: 500 }
     );
   }
 
+  const rawBody = await req.text();
+
+  if (!verifyResendWebhookSignature(rawBody, req.headers, resendWebhookSecret)) {
+    return NextResponse.json({ ok: false, error: 'invalid webhook signature' }, { status: 400 });
+  }
+
   let payload: ResendReceivedPayload;
   try {
-    payload = (await req.json()) as ResendReceivedPayload;
+    payload = JSON.parse(rawBody) as ResendReceivedPayload;
   } catch {
     return NextResponse.json({ ok: false, error: 'invalid json payload' }, { status: 400 });
   }
