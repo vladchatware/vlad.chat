@@ -124,17 +124,13 @@ The MCP server needs to be publicly accessible for AI inference to make requests
 
 4. **Copy the ngrok HTTPS URL** (e.g., `https://abc123.ngrok.io`)
 
-5. **Update the MCP server URL** in `app/api/chat/route.ts`:
-   - Change line 36 from:
-     ```typescript
-     const transport = new StreamableHTTPClientTransport(new URL('https://vlad.chat/api/mcp'))
-     ```
-   - To your ngrok URL:
-     ```typescript
-     const transport = new StreamableHTTPClientTransport(new URL('https://your-ngrok-url.ngrok.io/api/mcp'))
+5. **Set your public site URL**:
+   - In `.env.local`, set:
+     ```bash
+     NEXT_PUBLIC_SITE_URL=https://your-ngrok-url.ngrok.io
      ```
 
-   > **Note**: For production, this should remain as your production domain. Consider using an environment variable to switch between local and production URLs.
+   > **Note**: For production, set this to your production domain.
 
 ### 6. Run the Development Server
 
@@ -151,7 +147,7 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 ```
 vlad.chat/
 ├── app/                    # Next.js app directory
-│   ├── api/               # API routes (chat, checkout, mcp)
+│   ├── api/               # API routes (checkout, mcp, lounge)
 │   ├── page.tsx           # Main chat interface
 │   └── layout.tsx         # Root layout
 ├── components/            # React components
@@ -193,7 +189,7 @@ The MCP (Model Context Protocol) server at `/api/mcp` provides tools for the AI 
 
 **For Local Development:**
 - Use ngrok to expose your local server (see step 5 in Getting Started)
-- Update the MCP server URL in `app/api/chat/route.ts` to your ngrok URL
+- Set `NEXT_PUBLIC_SITE_URL` to your ngrok URL
 - Keep both the dev server and ngrok running
 
 **For Production:**
