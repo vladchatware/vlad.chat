@@ -109,6 +109,7 @@ function blockToMarkdown(block: BlockObjectResponse, depth: number): string {
 type ConversionContext = {
     processedBlocks: number
     truncated: boolean
+    blockLimitReached: boolean
     trimMarkerAppended: boolean
     structureLines: string[]
     preserveStructureOnTrim: boolean
@@ -150,6 +151,7 @@ async function listBlocksLimited(blockId: string, maxBlocks: number, ctx: Conver
         for (const block of page.results) {
             if (!('type' in block)) continue
             if (maxBlocks !== Number.POSITIVE_INFINITY && ctx.processedBlocks >= maxBlocks) {
+                ctx.blockLimitReached = true
                 break
             }
             collected.push(block)
@@ -162,6 +164,14 @@ async function listBlocksLimited(blockId: string, maxBlocks: number, ctx: Conver
             ctx.truncated ||
             (maxBlocks !== Number.POSITIVE_INFINITY && ctx.processedBlocks >= maxBlocks)
         ) {
+            if (
+                !ctx.blockLimitReached &&
+                maxBlocks !== Number.POSITIVE_INFINITY &&
+                ctx.processedBlocks >= maxBlocks &&
+                page.has_more
+            ) {
+                ctx.blockLimitReached = true
+            }
             break
         }
         startCursor = page.next_cursor
@@ -221,6 +231,7 @@ export async function convertBlocksToMarkdownWithMeta(
     const ctx: ConversionContext = {
         processedBlocks: 0,
         truncated: false,
+        blockLimitReached: false,
         trimMarkerAppended: false,
         structureLines: [],
         preserveStructureOnTrim,
@@ -233,7 +244,7 @@ export async function convertBlocksToMarkdownWithMeta(
 
     return {
         markdown,
-        truncated: ctx.truncated,
+        truncated: ctx.truncated || ctx.blockLimitReached,
         processedBlocks: ctx.processedBlocks,
         processedChars: markdown.length,
     }
@@ -251,6 +262,7 @@ export async function convertBlocksToMarkdown(
     const ctx: ConversionContext = {
         processedBlocks: 0,
         truncated: false,
+        blockLimitReached: false,
         trimMarkerAppended: false,
         structureLines: [],
         preserveStructureOnTrim,
