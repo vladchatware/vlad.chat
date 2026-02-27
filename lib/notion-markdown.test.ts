@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { convertBlocksToMarkdown } from './notion-markdown'
+import { convertBlocksToMarkdown, convertBlocksToMarkdownWithMeta } from './notion-markdown'
 
 // Mock the notion client
 const mockList = vi.fn()
@@ -182,8 +182,8 @@ describe('convertBlocksToMarkdown', () => {
         const markdown = await convertBlocksToMarkdown('root-id')
 
         expect(mockList).toHaveBeenCalledTimes(2)
-        expect(mockList).toHaveBeenNthCalledWith(1, { block_id: 'root-id' })
-        expect(mockList).toHaveBeenNthCalledWith(2, { block_id: 'parent-block' })
+        expect(mockList).toHaveBeenNthCalledWith(1, { block_id: 'root-id', page_size: 100, start_cursor: undefined })
+        expect(mockList).toHaveBeenNthCalledWith(2, { block_id: 'parent-block', page_size: 100, start_cursor: undefined })
 
         expect(markdown).toBe('- Parent item\n  Child content\n\n')
     })
@@ -269,5 +269,40 @@ describe('convertBlocksToMarkdown', () => {
 
         const markdown = await convertBlocksToMarkdown('block-id')
         expect(markdown).toBe('')
+    })
+
+    it('should mark result truncated when maxBlocks limit is reached', async () => {
+        mockList.mockResolvedValueOnce({
+            results: [
+                {
+                    id: 'block-1',
+                    type: 'paragraph',
+                    paragraph: { rich_text: [{ plain_text: 'First' }] },
+                    has_children: false,
+                },
+                {
+                    id: 'block-2',
+                    type: 'paragraph',
+                    paragraph: { rich_text: [{ plain_text: 'Second' }] },
+                    has_children: false,
+                },
+                {
+                    id: 'block-3',
+                    type: 'paragraph',
+                    paragraph: { rich_text: [{ plain_text: 'Third' }] },
+                    has_children: false,
+                }
+            ],
+            has_more: false,
+            next_cursor: null,
+        })
+
+        const result = await convertBlocksToMarkdownWithMeta('root-id', { maxBlocks: 2 })
+
+        expect(result.truncated).toBe(true)
+        expect(result.processedBlocks).toBe(2)
+        expect(result.markdown).toContain('First')
+        expect(result.markdown).toContain('Second')
+        expect(result.markdown).not.toContain('Third')
     })
 })

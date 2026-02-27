@@ -1,6 +1,6 @@
 import { z } from "zod"
 import notion from "@/lib/notion"
-import { convertBlocksToMarkdown } from "@/lib/notion-markdown"
+import { convertBlocksToMarkdownWithMeta } from "@/lib/notion-markdown"
 import { getRelativeTime } from "@/lib/utils"
 import { createMcpHandler } from "mcp-handler"
 import type {
@@ -12,6 +12,37 @@ import type {
   PartialDataSourceObjectResponse,
   QueryDataSourceParameters
 } from "@notionhq/client";
+
+const NOTION_FETCH_LIMITS = {
+  maxChars: 90000,
+  preserveStructureOnTrim: true,
+}
+
+const NOTION_ENTRY_FETCH_LIMITS = {
+  maxChars: 60000,
+  preserveStructureOnTrim: true,
+}
+
+type NotionObjectNotFoundError = {
+  code?: 'object_not_found'
+  status?: 404
+}
+
+function isNotionObjectNotFoundError(error: unknown): error is NotionObjectNotFoundError {
+  if (!error || typeof error !== 'object') {
+    return false
+  }
+
+  if ('code' in error && error.code === 'object_not_found') {
+    return true
+  }
+
+  if ('status' in error && error.status === 404) {
+    return true
+  }
+
+  return false
+}
 
 const handler = createMcpHandler(
   (server) => {
@@ -290,7 +321,11 @@ For database queries, first use notion-get-database to discover available proper
               
               return { parentId, parentTitle }
             } catch (error) {
-              console.error(`Error fetching parent page ${parentId}:`, error)
+              if (isNotionObjectNotFoundError(error)) {
+                console.warn(`Parent page ${parentId} is not accessible to this Notion integration; continuing without parent title.`)
+              } else {
+                console.error(`Error fetching parent page ${parentId}:`, error)
+              }
               return { parentId, parentTitle: 'Unknown' }
             }
           })
@@ -369,9 +404,12 @@ For database queries, first use notion-get-database to discover available proper
             }
           }
 
-          // Convert all blocks to markdown
-          const contentMarkdown = await convertBlocksToMarkdown(page_id)
-          markdown += contentMarkdown
+          // Convert blocks to markdown with limits for predictable latency
+          const content = await convertBlocksToMarkdownWithMeta(page_id, NOTION_FETCH_LIMITS)
+          markdown += content.markdown
+          if (content.truncated) {
+            markdown += `\n\n[Content truncated after ${content.processedBlocks} blocks / ${content.processedChars} characters for faster response. Narrow your request to a specific section if needed.]\n`
+          }
 
           return {
             content: [{ type: 'text', text: markdown }]
@@ -508,9 +546,12 @@ For database queries, first use notion-get-database to discover available proper
 
             // Add page content if available
             try {
-              const contentMarkdown = await convertBlocksToMarkdown(page_id)
-              if (contentMarkdown.trim()) {
-                output += `## Content\n\n${contentMarkdown}`
+              const content = await convertBlocksToMarkdownWithMeta(page_id, NOTION_ENTRY_FETCH_LIMITS)
+              if (content.markdown.trim()) {
+                output += `## Content\n\n${content.markdown}`
+              }
+              if (content.truncated) {
+                output += `\n\n[Content truncated after ${content.processedBlocks} blocks / ${content.processedChars} characters for faster response. Ask for a specific section if you need full detail.]\n`
               }
             } catch (error) {
               // If content fetch fails, continue without it
@@ -525,8 +566,11 @@ For database queries, first use notion-get-database to discover available proper
             output += `# ${title}\n\n`
             
             try {
-              const contentMarkdown = await convertBlocksToMarkdown(page_id)
-              output += contentMarkdown
+              const content = await convertBlocksToMarkdownWithMeta(page_id, NOTION_ENTRY_FETCH_LIMITS)
+              output += content.markdown
+              if (content.truncated) {
+                output += `\n\n[Content truncated after ${content.processedBlocks} blocks / ${content.processedChars} characters for faster response. Ask for a specific section if you need full detail.]\n`
+              }
             } catch (error) {
               console.error(`Error fetching content for page ${page_id}:`, error)
             }
