@@ -23,10 +23,25 @@ const NOTION_ENTRY_FETCH_LIMITS = {
   preserveStructureOnTrim: true,
 }
 
-function isNotionObjectNotFoundError(error: unknown): boolean {
-  if (!error || typeof error !== 'object') return false
-  const candidate = error as { code?: string; status?: number }
-  return candidate.code === 'object_not_found' || candidate.status === 404
+type NotionObjectNotFoundError = {
+  code?: 'object_not_found'
+  status?: 404
+}
+
+function isNotionObjectNotFoundError(error: unknown): error is NotionObjectNotFoundError {
+  if (!error || typeof error !== 'object') {
+    return false
+  }
+
+  if ('code' in error && error.code === 'object_not_found') {
+    return true
+  }
+
+  if ('status' in error && error.status === 404) {
+    return true
+  }
+
+  return false
 }
 
 const handler = createMcpHandler(
