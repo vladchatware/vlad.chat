@@ -1,6 +1,19 @@
 import notion from "@/lib/notion"
 import type { BlockObjectResponse, RichTextItemResponse } from "@notionhq/client"
 
+export type MarkdownConversionOptions = {
+    maxBlocks?: number
+    maxChars?: number
+    preserveStructureOnTrim?: boolean
+}
+
+export type MarkdownConversionResult = {
+    markdown: string
+    truncated: boolean
+    processedBlocks: number
+    processedChars: number
+}
+
 // Helper function to convert a single block to markdown (without children)
 function blockToMarkdown(block: BlockObjectResponse, depth: number): string {
     if (!('type' in block)) return ''
@@ -93,49 +106,158 @@ function blockToMarkdown(block: BlockObjectResponse, depth: number): string {
     return markdown
 }
 
-// Helper function to convert Notion blocks to markdown
-export async function convertBlocksToMarkdown(blockId: string, depth = 0): Promise<string> {
-    const blocks = await notion.blocks.children.list({ block_id: blockId })
+type ConversionContext = {
+    processedBlocks: number
+    truncated: boolean
+    trimMarkerAppended: boolean
+    structureLines: string[]
+    preserveStructureOnTrim: boolean
+}
+
+function appendWithCharLimit(current: string, next: string, maxChars: number, ctx: ConversionContext): string {
+    if (!next || ctx.truncated) return current
+    if (maxChars === Number.POSITIVE_INFINITY) return current + next
+
+    const remaining = maxChars - current.length
+    if (remaining <= 0) {
+        ctx.truncated = true
+        return current
+    }
+    if (next.length <= remaining) {
+        return current + next
+    }
+
+    ctx.truncated = true
+    return current + next.slice(0, remaining)
+}
+
+function blockToStructureLine(block: BlockObjectResponse, depth: number): string {
+    const indent = '  '.repeat(depth)
+    return `${indent}- ${block.type}`
+}
+
+async function listBlocksLimited(blockId: string, maxBlocks: number, ctx: ConversionContext): Promise<BlockObjectResponse[]> {
+    const collected: BlockObjectResponse[] = []
+    let startCursor: string | undefined
+
+    while (!ctx.truncated && (maxBlocks === Number.POSITIVE_INFINITY || ctx.processedBlocks < maxBlocks)) {
+        const page = await notion.blocks.children.list({
+            block_id: blockId,
+            start_cursor: startCursor,
+            page_size: 100,
+        })
+
+        for (const block of page.results) {
+            if (!('type' in block)) continue
+            if (maxBlocks !== Number.POSITIVE_INFINITY && ctx.processedBlocks >= maxBlocks) {
+                break
+            }
+            collected.push(block)
+            ctx.processedBlocks += 1
+        }
+
+        if (
+            !page.has_more ||
+            !page.next_cursor ||
+            ctx.truncated ||
+            (maxBlocks !== Number.POSITIVE_INFINITY && ctx.processedBlocks >= maxBlocks)
+        ) {
+            break
+        }
+        startCursor = page.next_cursor
+    }
+
+    return collected
+}
+
+async function convertBlocksRecursive(
+    blockId: string,
+    depth: number,
+    maxBlocks: number,
+    maxChars: number,
+    ctx: ConversionContext
+): Promise<string> {
+    const blocks = await listBlocksLimited(blockId, maxBlocks, ctx)
     let markdown = ''
 
-    // Separate blocks into those with and without children
-    const blocksWithChildren: Array<{ block: BlockObjectResponse; index: number }> = []
-    const blocksWithoutChildren: Array<{ block: BlockObjectResponse; index: number }> = []
+    for (const block of blocks) {
+        if (ctx.preserveStructureOnTrim) {
+            ctx.structureLines.push(blockToStructureLine(block, depth))
+        }
 
-    blocks.results.forEach((block, index) => {
-        if (!('type' in block)) return
+        if (!ctx.truncated) {
+            const nextMarkdown = blockToMarkdown(block, depth)
+            const beforeLen = markdown.length
+            markdown = appendWithCharLimit(markdown, nextMarkdown, maxChars, ctx)
+            if (ctx.truncated && !ctx.trimMarkerAppended && markdown.length >= beforeLen) {
+                const marker = `\n\n[Content trimmed for faster response. Full page structure is included below.]\n\n`
+                markdown = appendWithCharLimit(markdown, marker, maxChars, ctx)
+                ctx.trimMarkerAppended = true
+            }
+        }
+
         if (block.has_children) {
-            blocksWithChildren.push({ block, index })
-        } else {
-            blocksWithoutChildren.push({ block, index })
+            try {
+                const childMarkdown = await convertBlocksRecursive(block.id, depth + 1, maxBlocks, maxChars, ctx)
+                if (!ctx.truncated) {
+                    markdown = appendWithCharLimit(markdown, childMarkdown, maxChars, ctx)
+                }
+            } catch (error) {
+                console.error(`Error fetching children for block ${block.id}:`, error)
+            }
         }
-    })
-
-    // Process blocks without children immediately
-    for (const { block } of blocksWithoutChildren) {
-        markdown += blockToMarkdown(block, depth)
     }
 
-    // Fetch all child blocks in parallel for blocks with children
-    const childMarkdownPromises = blocksWithChildren.map(async ({ block }) => {
-        try {
-            const childMarkdown = await convertBlocksToMarkdown(block.id, depth + 1)
-            return { block, childMarkdown }
-        } catch (error) {
-            // If one child fetch fails, continue with others
-            console.error(`Error fetching children for block ${block.id}:`, error)
-            return { block, childMarkdown: '' }
-        }
-    })
+    return markdown
+}
 
-    // Wait for all child fetches to complete
-    const childResults = await Promise.all(childMarkdownPromises)
-
-    // Process blocks with children in order, appending their child markdown
-    for (const { block, childMarkdown } of childResults) {
-        markdown += blockToMarkdown(block, depth)
-        markdown += childMarkdown
+export async function convertBlocksToMarkdownWithMeta(
+    blockId: string,
+    options: MarkdownConversionOptions = {}
+): Promise<MarkdownConversionResult> {
+    const maxBlocks = options.maxBlocks ?? Number.POSITIVE_INFINITY
+    const maxChars = options.maxChars ?? Number.POSITIVE_INFINITY
+    const preserveStructureOnTrim = options.preserveStructureOnTrim ?? false
+    const ctx: ConversionContext = {
+        processedBlocks: 0,
+        truncated: false,
+        trimMarkerAppended: false,
+        structureLines: [],
+        preserveStructureOnTrim,
     }
 
+    let markdown = await convertBlocksRecursive(blockId, 0, maxBlocks, maxChars, ctx)
+    if (ctx.truncated && preserveStructureOnTrim && ctx.structureLines.length > 0) {
+        markdown += `\n\n## Structure Outline\n\n${ctx.structureLines.join('\n')}\n`
+    }
+
+    return {
+        markdown,
+        truncated: ctx.truncated,
+        processedBlocks: ctx.processedBlocks,
+        processedChars: markdown.length,
+    }
+}
+
+// Helper function to convert Notion blocks to markdown
+export async function convertBlocksToMarkdown(
+    blockId: string,
+    depth = 0,
+    options: MarkdownConversionOptions = {}
+): Promise<string> {
+    const maxBlocks = options.maxBlocks ?? Number.POSITIVE_INFINITY
+    const maxChars = options.maxChars ?? Number.POSITIVE_INFINITY
+    const preserveStructureOnTrim = options.preserveStructureOnTrim ?? false
+    const ctx: ConversionContext = {
+        processedBlocks: 0,
+        truncated: false,
+        trimMarkerAppended: false,
+        structureLines: [],
+        preserveStructureOnTrim,
+    }
+    let markdown = await convertBlocksRecursive(blockId, depth, maxBlocks, maxChars, ctx)
+    if (ctx.truncated && preserveStructureOnTrim && ctx.structureLines.length > 0 && depth === 0) {
+        markdown += `\n\n## Structure Outline\n\n${ctx.structureLines.join('\n')}\n`
+    }
     return markdown
 }

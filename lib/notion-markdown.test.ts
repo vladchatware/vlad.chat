@@ -182,8 +182,8 @@ describe('convertBlocksToMarkdown', () => {
         const markdown = await convertBlocksToMarkdown('root-id')
 
         expect(mockList).toHaveBeenCalledTimes(2)
-        expect(mockList).toHaveBeenNthCalledWith(1, { block_id: 'root-id' })
-        expect(mockList).toHaveBeenNthCalledWith(2, { block_id: 'parent-block' })
+        expect(mockList).toHaveBeenNthCalledWith(1, { block_id: 'root-id', page_size: 100, start_cursor: undefined })
+        expect(mockList).toHaveBeenNthCalledWith(2, { block_id: 'parent-block', page_size: 100, start_cursor: undefined })
 
         expect(markdown).toBe('- Parent item\n  Child content\n\n')
     })
