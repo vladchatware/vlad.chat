@@ -23,6 +23,12 @@ const NOTION_ENTRY_FETCH_LIMITS = {
   preserveStructureOnTrim: true,
 }
 
+function isNotionObjectNotFoundError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const candidate = error as { code?: string; status?: number }
+  return candidate.code === 'object_not_found' || candidate.status === 404
+}
+
 const handler = createMcpHandler(
   (server) => {
     server.tool(
@@ -300,7 +306,11 @@ For database queries, first use notion-get-database to discover available proper
               
               return { parentId, parentTitle }
             } catch (error) {
-              console.error(`Error fetching parent page ${parentId}:`, error)
+              if (isNotionObjectNotFoundError(error)) {
+                console.warn(`Parent page ${parentId} is not accessible to this Notion integration; continuing without parent title.`)
+              } else {
+                console.error(`Error fetching parent page ${parentId}:`, error)
+              }
               return { parentId, parentTitle: 'Unknown' }
             }
           })
