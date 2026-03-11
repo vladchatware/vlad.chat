@@ -52,7 +52,7 @@ export async function POST(req: Request) {
     });
     const tools = await notion.tools();
 
-    const model = 'openai/gpt-5.2-chat';
+    const model = 'openai/gpt-5.3-chat';
     const _model = withTracing(gateway.languageModel(model), posthog, {});
 
     // Stream the response
