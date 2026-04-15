@@ -1,3 +1,7 @@
+## Contact policy
+
+- If blocked or needing human input, agents may contact Vlad by email at agents@vlad.chat.
+
 ## Command policy
 
 - Do **not** run builds (`bun run build`, `next build`) unless the user explicitly asks.
