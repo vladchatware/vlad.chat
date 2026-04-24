@@ -73,7 +73,7 @@ const models = [
 ];
 
 const suggestions = [
-  'Latest updates',
+  'Projects',
   'Notion Templates',
 ]
 
