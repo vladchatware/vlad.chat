@@ -49,6 +49,7 @@ import { Loader } from '@/components/ai-elements/loader';
 import { Shimmer } from '@/components/ai-elements/shimmer';
 import { Suggestion, Suggestions } from '@/components/ai-elements/suggestion';
 import { Action, Actions } from '@/components/ai-elements/actions';
+import { GlassButton } from '@/components/ui/glass';
 import { useAuthActions } from '@convex-dev/auth/react'
 import { Authenticated, useAction, useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
@@ -310,20 +311,18 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
   return (
     <>
       <div className="fixed top-4 right-4 z-50 flex flex-col items-end gap-2 md:flex-row md:items-center">
-        <Link
-          href="/usage"
-          className="flex items-center gap-2 rounded-full bg-gradient-to-r from-emerald-600/90 to-teal-600/90 p-2 text-sm font-medium text-white shadow-lg shadow-emerald-600/20 transition-all hover:scale-105 hover:from-emerald-500 hover:to-teal-500 md:px-4 md:py-2"
-        >
-          <BarChart3Icon className='h-4 w-4' />
-          <span className="hidden md:inline">Usage</span>
-        </Link>
-        <Link
-          href="/lounge"
-          className="flex items-center gap-0 rounded-full bg-gradient-to-r from-violet-600/90 to-fuchsia-600/90 p-2 text-sm font-medium text-white shadow-lg shadow-violet-500/25 transition-all hover:scale-105 hover:from-violet-500 hover:to-fuchsia-500 md:gap-2 md:px-4 md:py-2"
-        >
-          <MessageCircleIcon className='w-4 h-4' />
-          <span className="hidden md:inline">The Lounge</span>
-        </Link>
+        <GlassButton asChild className="gap-2 p-2 md:px-4 md:py-2">
+          <Link href="/usage">
+            <BarChart3Icon className='h-4 w-4' />
+            <span className="hidden md:inline">Usage</span>
+          </Link>
+        </GlassButton>
+        <GlassButton asChild className="gap-0 p-2 md:gap-2 md:px-4 md:py-2">
+          <Link href="/lounge">
+            <MessageCircleIcon className='w-4 h-4' />
+            <span className="hidden md:inline">The Lounge</span>
+          </Link>
+        </GlassButton>
       </div>
       <div className="">
         <div className="md:px-72">
@@ -547,7 +546,7 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
         </div>
       </div >
 
-      <div className="px-4 py-2 md:px-72 fixed bottom-0 left-0 right-0 bg-background/30 backdrop-blur-sm">
+      <div className="fixed bottom-0 left-0 right-0 px-4 py-2 md:px-72">
         {submitError && (
           <div className="mb-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
             <div className="flex items-center justify-between gap-3">

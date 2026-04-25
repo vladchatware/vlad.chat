@@ -206,6 +206,7 @@ export type PromptInputProps = Omit<
   globalDrop?: boolean;
   // Render a hidden input with given name and keep it in sync for native form posts. Default false.
   syncHiddenInput?: boolean;
+  formClassName?: string;
   // Minimal constraints
   maxFiles?: number;
   maxFileSize?: number; // bytes
@@ -221,6 +222,7 @@ export type PromptInputProps = Omit<
 
 export const PromptInput = ({
   className,
+  formClassName,
   accept,
   multiple,
   globalDrop,
@@ -462,8 +464,12 @@ export const PromptInput = ({
       />
       <form
         className={cn(
-          "w-full divide-y overflow-hidden rounded-xl border bg-background shadow-sm",
-          className
+          "relative isolate w-full overflow-hidden rounded-3xl border border-white/45 bg-white/30 shadow-[inset_0_1px_1px_rgb(255_255_255/0.82),inset_0_-1px_1px_rgb(255_255_255/0.28),0_14px_42px_rgb(0_0_0/0.14)] backdrop-blur-2xl backdrop-saturate-[1.8]",
+          "before:pointer-events-none before:absolute before:inset-0 before:rounded-[inherit] before:bg-[linear-gradient(135deg,rgb(255_255_255/0.42),rgb(255_255_255/0.08)_42%,rgb(255_255_255/0.2)),radial-gradient(120%_90%_at_14%_0%,rgb(255_255_255/0.46),transparent_48%)]",
+          "after:pointer-events-none after:absolute after:inset-px after:rounded-[calc(1.5rem-1px)] after:border after:border-white/24 after:shadow-[inset_0_0_24px_rgb(255_255_255/0.14)]",
+          "focus-within:border-white/55 focus-within:bg-white/38 dark:border-white/15 dark:bg-white/10 dark:focus-within:bg-white/15",
+          className,
+          formClassName
         )}
         onSubmit={handleSubmit}
         {...props}
@@ -488,7 +494,7 @@ export type PromptInputTextareaProps = ComponentProps<typeof Textarea>;
 export const PromptInputTextarea = ({
   onChange,
   className,
-  placeholder = "What would you like to know?",
+  placeholder = "Ask Anything",
   ...props
 }: PromptInputTextareaProps) => {
   const attachments = usePromptInputAttachments();
@@ -541,10 +547,11 @@ export const PromptInputTextarea = ({
   return (
     <Textarea
       className={cn(
-        "w-full resize-none rounded-none border-none p-3 shadow-none outline-none ring-0",
+        "w-full resize-none rounded-none border-none px-5 pt-4 pb-2 text-base leading-6 shadow-none outline-none ring-0 md:text-base",
         "field-sizing-content bg-transparent dark:bg-transparent",
-        "max-h-48 min-h-16",
+        "max-h-40 min-h-14",
         "focus-visible:ring-0",
+        "placeholder:text-zinc-500/80 dark:placeholder:text-white/45",
         className
       )}
       name="message"
@@ -566,7 +573,7 @@ export const PromptInputToolbar = ({
   ...props
 }: PromptInputToolbarProps) => (
   <div
-    className={cn("flex items-center justify-between p-1", className)}
+    className={cn("flex min-h-11 items-center justify-between gap-2 px-3 pb-3 pt-0", className)}
     {...props}
   />
 );
@@ -579,8 +586,7 @@ export const PromptInputTools = ({
 }: PromptInputToolsProps) => (
   <div
     className={cn(
-      "flex items-center gap-1",
-      "[&_button:first-child]:rounded-bl-xl",
+      "flex min-w-0 flex-1 items-center gap-1.5",
       className
     )}
     {...props}
@@ -681,7 +687,10 @@ export const PromptInputSubmit = ({
   return (
     <Button
       aria-label="Submit"
-      className={cn("gap-1.5 rounded-lg", className)}
+      className={cn(
+        "size-9 shrink-0 gap-1.5 rounded-full bg-zinc-950 text-white opacity-100 shadow-none hover:bg-zinc-950 disabled:bg-zinc-300 disabled:text-zinc-500 disabled:opacity-100 dark:bg-white dark:text-zinc-950 dark:hover:bg-white dark:disabled:bg-white/20 dark:disabled:text-white/45",
+        className
+      )}
       size={size}
       type="submit"
       variant={variant}
@@ -708,8 +717,8 @@ export const PromptInputModelSelectTrigger = ({
 }: PromptInputModelSelectTriggerProps) => (
   <SelectTrigger
     className={cn(
-      "border-none bg-transparent font-medium text-muted-foreground shadow-none transition-colors",
-      'hover:bg-accent hover:text-foreground [&[aria-expanded="true"]]:bg-accent [&[aria-expanded="true"]]:text-foreground',
+      "h-9 min-w-30 rounded-full border-none bg-zinc-950/5 px-3 text-sm font-medium text-zinc-800 shadow-none transition-colors hover:bg-zinc-950/5 dark:bg-white/10 dark:text-white/85 dark:hover:bg-white/10",
+      '[&[aria-expanded="true"]]:bg-zinc-950/10 [&[aria-expanded="true"]]:text-zinc-950 dark:[&[aria-expanded="true"]]:bg-white/15 dark:[&[aria-expanded="true"]]:text-white',
       className
     )}
     {...props}
@@ -762,10 +771,10 @@ export const PromptInputSearchToggle = ({
     type="button"
     onClick={() => onToggle(!enabled)}
     className={cn(
-      "flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors",
+      "flex h-9 items-center gap-1.5 rounded-full px-3 text-sm font-medium transition-colors",
       enabled
-        ? "bg-primary text-primary-foreground"
-        : "text-muted-foreground hover:bg-accent hover:text-foreground",
+        ? "bg-zinc-950 text-white hover:bg-zinc-950 hover:text-white dark:bg-white dark:text-zinc-950 dark:hover:bg-white dark:hover:text-zinc-950"
+        : "bg-zinc-950/5 text-zinc-800 hover:bg-zinc-950/5 hover:text-zinc-800 dark:bg-white/10 dark:text-white/85 dark:hover:bg-white/10 dark:hover:text-white/85",
       className
     )}
   >
