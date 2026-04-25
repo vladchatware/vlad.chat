@@ -546,7 +546,7 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
         </div>
       </div >
 
-      <div className="fixed bottom-0 left-0 right-0 px-4 py-2 md:px-72">
+      <div className="fixed bottom-0 left-0 right-0 z-40 bg-background px-4 pb-[calc(0.5rem+env(safe-area-inset-bottom))] pt-2 md:px-72">
         {submitError && (
           <div className="mb-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
             <div className="flex items-center justify-between gap-3">

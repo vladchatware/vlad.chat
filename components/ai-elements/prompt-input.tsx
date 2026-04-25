@@ -464,10 +464,10 @@ export const PromptInput = ({
       />
       <form
         className={cn(
-          "relative isolate w-full overflow-hidden rounded-3xl border border-white/45 bg-white/30 shadow-[inset_0_1px_1px_rgb(255_255_255/0.82),inset_0_-1px_1px_rgb(255_255_255/0.28),0_14px_42px_rgb(0_0_0/0.14)] backdrop-blur-2xl backdrop-saturate-[1.8]",
-          "before:pointer-events-none before:absolute before:inset-0 before:rounded-[inherit] before:bg-[linear-gradient(135deg,rgb(255_255_255/0.42),rgb(255_255_255/0.08)_42%,rgb(255_255_255/0.2)),radial-gradient(120%_90%_at_14%_0%,rgb(255_255_255/0.46),transparent_48%)]",
-          "after:pointer-events-none after:absolute after:inset-px after:rounded-[calc(1.5rem-1px)] after:border after:border-white/24 after:shadow-[inset_0_0_24px_rgb(255_255_255/0.14)]",
-          "focus-within:border-white/55 focus-within:bg-white/38 dark:border-white/15 dark:bg-white/10 dark:focus-within:bg-white/15",
+          "relative isolate w-full overflow-hidden rounded-3xl border border-foreground/10 bg-background/40 text-foreground shadow-[inset_0_1px_1px_rgb(255_255_255/0.42),inset_0_-1px_1px_rgb(255_255_255/0.14),0_14px_42px_rgb(0_0_0/0.14)] backdrop-blur-2xl backdrop-saturate-[1.8]",
+          "before:pointer-events-none before:absolute before:inset-0 before:rounded-[inherit] before:bg-[linear-gradient(135deg,rgb(255_255_255/0.22),rgb(255_255_255/0.04)_42%,rgb(255_255_255/0.1)),radial-gradient(120%_90%_at_14%_0%,rgb(255_255_255/0.2),transparent_48%)]",
+          "after:pointer-events-none after:absolute after:inset-px after:rounded-[calc(1.5rem-1px)] after:shadow-[inset_0_0_24px_rgb(255_255_255/0.1)]",
+          "focus-within:border-foreground/15 focus-within:bg-background/50",
           className,
           formClassName
         )}
@@ -551,7 +551,7 @@ export const PromptInputTextarea = ({
         "field-sizing-content bg-transparent dark:bg-transparent",
         "max-h-40 min-h-14",
         "focus-visible:ring-0",
-        "placeholder:text-zinc-500/80 dark:placeholder:text-white/45",
+        "placeholder:text-muted-foreground/75",
         className
       )}
       name="message"
@@ -717,8 +717,8 @@ export const PromptInputModelSelectTrigger = ({
 }: PromptInputModelSelectTriggerProps) => (
   <SelectTrigger
     className={cn(
-      "h-9 min-w-30 rounded-full border-none bg-zinc-950/5 px-3 text-sm font-medium text-zinc-800 shadow-none transition-colors hover:bg-zinc-950/5 dark:bg-white/10 dark:text-white/85 dark:hover:bg-white/10",
-      '[&[aria-expanded="true"]]:bg-zinc-950/10 [&[aria-expanded="true"]]:text-zinc-950 dark:[&[aria-expanded="true"]]:bg-white/15 dark:[&[aria-expanded="true"]]:text-white',
+      "h-9 min-w-30 rounded-full border-none bg-foreground/5 px-3 text-sm font-medium text-foreground/75 shadow-none transition-colors hover:bg-foreground/5 hover:text-foreground",
+      '[&[aria-expanded="true"]]:bg-foreground/10 [&[aria-expanded="true"]]:text-foreground',
       className
     )}
     {...props}
@@ -773,8 +773,8 @@ export const PromptInputSearchToggle = ({
     className={cn(
       "flex h-9 items-center gap-1.5 rounded-full px-3 text-sm font-medium transition-colors",
       enabled
-        ? "bg-zinc-950 text-white hover:bg-zinc-950 hover:text-white dark:bg-white dark:text-zinc-950 dark:hover:bg-white dark:hover:text-zinc-950"
-        : "bg-zinc-950/5 text-zinc-800 hover:bg-zinc-950/5 hover:text-zinc-800 dark:bg-white/10 dark:text-white/85 dark:hover:bg-white/10 dark:hover:text-white/85",
+        ? "bg-foreground text-background hover:bg-foreground hover:text-background"
+        : "bg-foreground/5 text-foreground/75 hover:bg-foreground/5 hover:text-foreground",
       className
     )}
   >
