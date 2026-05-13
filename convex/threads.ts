@@ -21,15 +21,8 @@ import {
 import { getAuthUserId } from "@convex-dev/auth/server"
 import { agent } from "./agents/simple";
 import { z } from "zod/v3";
-import { gateway } from "ai";
+import { gateway, type ToolSet } from "ai";
 import { createMCPClient } from "@ai-sdk/mcp";
-
-const ALLOWED_MODELS = new Set([
-  "moonshotai/kimi-k2-thinking",
-  "openai/gpt-5.2-codex",
-  "xai/grok-4.1-fast-reasoning",
-  "deepseek/deepseek-v3.2-thinking",
-]);
 
 export const listThreads = query({
   args: {
@@ -127,14 +120,7 @@ function toUsageObject(usage: {
   };
 }
 
-function resolveModel(model: string) {
-  if (!ALLOWED_MODELS.has(model)) {
-    throw new Error(`Unsupported model: ${model}`);
-  }
-  return gateway.languageModel(model);
-}
-
-async function getMcpTools(searchEnabled: boolean) {
+async function getMcpTools(searchEnabled: boolean): Promise<ToolSet> {
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
   if (!siteUrl) {
     return {};
@@ -278,11 +264,11 @@ export const generateReply = action({
     const tools = await getMcpTools(searchEnabled);
     const result = await thread.streamText(
       {
-        model: resolveModel(model),
+        model: gateway.languageModel(model),
         prompt: text,
-        tools: tools as any,
+        tools,
         stopWhen: stepCountIs(8),
-      } as any,
+      },
       {
         saveStreamDeltas: true,
         storageOptions: { saveMessages: "all" },
@@ -315,7 +301,7 @@ export const generateReply = action({
       usageObject.outputTokens !== undefined;
     if (hasUsage || providerMetadata) {
       try {
-        await ctx.runAction((internal as any).posthog.captureLlmGeneration, {
+        await ctx.runAction(internal.posthog.captureLlmGeneration, {
           distinctId: userId,
           traceId: `${threadId}:${result.order}`,
           threadId,
