@@ -21,8 +21,41 @@ import {
 import { getAuthUserId } from "@convex-dev/auth/server"
 import { agent } from "./agents/simple";
 import { z } from "zod/v3";
-import { gateway, type ToolSet } from "ai";
+import {
+  gateway,
+  type LanguageModel,
+  type Output,
+  type StopCondition,
+  type StreamTextResult,
+  type ToolSet,
+} from "ai";
 import { createMCPClient } from "@ai-sdk/mcp";
+
+type TextOutput = Output.Output<string, string, never>;
+type AiV6StreamTextArgs<TOOLS extends ToolSet> = {
+  model: LanguageModel;
+  prompt: string;
+  tools?: TOOLS;
+  stopWhen?: StopCondition<TOOLS> | Array<StopCondition<TOOLS>>;
+};
+type AgentStreamOptions = {
+  saveStreamDeltas: true;
+  storageOptions: { saveMessages: "all" };
+};
+
+declare module "@convex-dev/agent" {
+  interface Thread<DefaultTools extends ToolSet> {
+    streamText<TOOLS extends ToolSet = DefaultTools>(
+      streamTextArgs: AiV6StreamTextArgs<TOOLS>,
+      options?: AgentStreamOptions,
+    ): Promise<
+      StreamTextResult<TOOLS, TextOutput> & {
+        order: number;
+        promptMessageId: string;
+      }
+    >;
+  }
+}
 
 export const listThreads = query({
   args: {
