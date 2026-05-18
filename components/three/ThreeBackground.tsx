@@ -18,10 +18,10 @@ function TorusKnot() {
     <mesh ref={meshRef}>
       <torusKnotGeometry args={[1.2, 0.4, 128, 32]} />
       <meshStandardMaterial
-        color="#6366f1"
+        color="#94a3b8"
         wireframe
         transparent
-        opacity={0.12}
+        opacity={0.035}
         depthWrite={false}
       />
     </mesh>
