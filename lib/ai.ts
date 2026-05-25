@@ -115,6 +115,22 @@ How to choose the single best purchase link:
 - If multiple links match, pick the one that most directly matches the chosen category and the user intent.
 `;
 
+// User-specific Notion write instructions — injected dynamically when the user
+// has connected their own Notion workspace via MCP OAuth
+export function userNotionInstruction(workspaceName?: string): string {
+  const ws = workspaceName || "Notion";
+  return `\n\nThe user has connected their Notion workspace "${ws}".
+
+You have user_notion_* MCP tools to read from and write to their workspace.
+Vlad's private Notion knowledge-base tools keep their original names.
+
+For requests that copy or pull Vlad template information into the user's workspace:
+1. First use Vlad's private Notion tools to retrieve the source information
+2. Then use user_notion_* tools to create or update content in the user's workspace
+
+Ask where to place it only if the destination is ambiguous.`;
+}
+
 // Lounge chat system prompt - for casual group chat
 export const loungeSystem = `${baseIdentity}
 

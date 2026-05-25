@@ -42,6 +42,20 @@ export default defineSchema({
     }),
     providerMetadata: v.optional(vProviderMetadata),
   }),
+  notionConnections: defineTable({
+    userId: v.id("users"),
+    accessToken: v.string(),
+    refreshToken: v.string(),
+    expiresAt: v.optional(v.number()),
+    tokenEndpoint: v.string(),
+    clientId: v.string(),
+    workspaceName: v.optional(v.string()),
+    workspaceIcon: v.optional(v.string()),
+    workspaceId: v.string(),
+    botId: v.string(),
+    scope: v.optional(v.string()),
+  })
+    .index("userId", ["userId"]),
   // Daily ephemeral group chat - cleared every day
   loungeMessages: defineTable({
     userId: v.optional(v.id("users")), // Optional for bot messages

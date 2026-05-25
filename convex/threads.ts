@@ -11,6 +11,7 @@ import {
 } from "./_generated/server.js";
 import { paginationOptsValidator } from "convex/server";
 import {
+  abortStream,
   getThreadMetadata,
   listUIMessages,
   stepCountIs,
@@ -20,6 +21,8 @@ import {
 } from "@convex-dev/agent";
 import { getAuthUserId } from "@convex-dev/auth/server"
 import { agent } from "./agents/simple";
+import { chatSystemInstructions } from "./agents/prompts";
+import { userNotionInstruction } from "@/lib/ai";
 import { z } from "zod/v3";
 import {
   gateway,
@@ -35,11 +38,13 @@ type TextOutput = Output.Output<string, string, never>;
 type AiV6StreamTextArgs<TOOLS extends ToolSet> = {
   model: LanguageModel;
   prompt: string;
+  system?: string;
   tools?: TOOLS;
   stopWhen?: StopCondition<TOOLS> | Array<StopCondition<TOOLS>>;
+  onError?: (event: { error: unknown }) => void | Promise<void>;
 };
 type AgentStreamOptions = {
-  saveStreamDeltas: true;
+  saveStreamDeltas?: boolean;
   storageOptions: { saveMessages: "all" };
 };
 
@@ -153,7 +158,67 @@ function toUsageObject(usage: {
   };
 }
 
-async function getMcpTools(searchEnabled: boolean): Promise<ToolSet> {
+function userFacingGenerationError(error: unknown) {
+  if (error instanceof ConvexError) {
+    return error;
+  }
+
+  const message = error instanceof Error ? error.message : String(error);
+  const text = `${message} ${JSON.stringify(error)}`;
+
+  if (
+    text.includes("Free credits temporarily have restricted access") ||
+    text.includes("Free credits temporarily have rate limits") ||
+    text.includes("no_providers_available") ||
+    text.includes("RestrictedModelsError") ||
+    text.includes("GatewayRateLimitError")
+  ) {
+    return new ConvexError(
+      "Vlad.chat is temporarily at AI capacity for this model. Your message was not charged. Please try another model or try again later.",
+    );
+  }
+
+  if (text.includes("AI_NoOutputGeneratedError")) {
+    return new ConvexError(
+      "The AI provider returned no response. Your message was not charged. Please try again or switch models.",
+    );
+  }
+
+  return error;
+}
+
+async function failPendingMessages(
+  ctx: ActionCtx | MutationCtx,
+  threadId: string,
+  error: string,
+) {
+  const pending = await ctx.runQuery(
+    components.agent.messages.listMessagesByThreadId,
+    {
+      threadId,
+      paginationOpts: { cursor: null, numItems: 20 },
+      order: "desc",
+      statuses: ["pending"],
+    },
+  );
+
+  await Promise.all(
+    pending.page.map((message) =>
+      ctx.runMutation(components.agent.messages.updateMessage, {
+        messageId: message._id,
+        patch: {
+          status: "failed",
+          error,
+        },
+      }),
+    ),
+  );
+}
+
+async function getMcpTools(
+  searchEnabled: boolean,
+  userNotionToken?: string,
+): Promise<ToolSet> {
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
   if (!siteUrl) {
     return {};
@@ -165,10 +230,37 @@ async function getMcpTools(searchEnabled: boolean): Promise<ToolSet> {
       url: `${siteUrl}/api/mcp`,
     },
   });
-  const notionTools = await notion.tools();
+  let tools: ToolSet = await notion.tools();
+
+  if (userNotionToken) {
+    try {
+      const userNotion = await createMCPClient({
+        transport: {
+          type: "http",
+          url: "https://mcp.notion.com/mcp",
+          headers: {
+            Authorization: `Bearer ${userNotionToken}`,
+          },
+        },
+      });
+      const userTools = await userNotion.tools();
+      const namespacedUserTools = Object.fromEntries(
+        Object.entries(userTools).map(([name, tool]) => [
+          `user_notion_${name}`,
+          {
+            ...tool,
+            description: `[User Notion workspace] ${tool.description ?? ""}`,
+          },
+        ]),
+      ) as ToolSet;
+      tools = { ...tools, ...namespacedUserTools };
+    } catch (error) {
+      console.error("Failed to connect to user Notion MCP:", error);
+    }
+  }
 
   if (!searchEnabled || !process.env.TVLY) {
-    return notionTools;
+    return tools;
   }
 
   try {
@@ -179,10 +271,66 @@ async function getMcpTools(searchEnabled: boolean): Promise<ToolSet> {
       },
     });
     const tavilyTools = await tavily.tools();
-    return { ...notionTools, ...tavilyTools };
+    return { ...tools, ...tavilyTools };
   } catch {
-    return notionTools;
+    return tools;
   }
+}
+
+async function getValidNotionToken(
+  ctx: ActionCtx,
+  conn: {
+    accessToken: string;
+    refreshToken: string;
+    expiresAt?: number;
+    tokenEndpoint: string;
+    clientId: string;
+  } | null,
+): Promise<string | null> {
+  if (!conn) return null;
+
+  const isExpired =
+    conn.expiresAt !== undefined &&
+    Math.floor(Date.now() / 1000) >= conn.expiresAt - 60;
+
+  if (isExpired) {
+    try {
+      const params = new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: conn.refreshToken,
+        client_id: conn.clientId,
+        resource: "https://mcp.notion.com/mcp",
+      });
+      const res = await fetch(conn.tokenEndpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json",
+        },
+        body: params.toString(),
+      });
+      if (!res.ok) {
+        console.error("Notion token refresh failed:", res.status);
+        return null;
+      }
+      const tokens = await res.json();
+      const expiresAt = tokens.expires_in
+        ? Math.floor(Date.now() / 1000) + tokens.expires_in
+        : undefined;
+
+      await ctx.runMutation(api.notion.updateTokens, {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token || conn.refreshToken,
+        expiresAt,
+      });
+      return tokens.access_token;
+    } catch (error) {
+      console.error("Notion token refresh error:", error);
+      return null;
+    }
+  }
+
+  return conn.accessToken;
 }
 
 async function getDefaultThreadForUser(
@@ -268,6 +416,7 @@ export const generateReply = action({
     searchEnabled: v.optional(v.boolean()),
   },
   handler: async (ctx, { prompt, model, searchEnabled = false }) => {
+    try {
     const userId = await getAuthUserId(ctx);
     if (!userId) {
       throw new ConvexError("Please sign in to continue.");
@@ -291,28 +440,60 @@ export const generateReply = action({
       throw new ConvexError("Your message is empty. Please type something first.");
     }
 
+    const notionConn = await ctx.runQuery(internal.notion.getConnectionForUser, {
+      userId,
+    });
+    const userNotionToken = await getValidNotionToken(ctx, notionConn);
+
+    const tools = await getMcpTools(searchEnabled, userNotionToken ?? undefined);
+
+    const notionInstruction = notionConn
+      ? userNotionInstruction(notionConn.workspaceName)
+      : "";
+
     const threadId = await getOrCreateDefaultThread(ctx, userId);
     const { thread } = await agent.continueThread(ctx, { threadId, userId });
 
-    const tools = await getMcpTools(searchEnabled);
     const result = await thread.streamText(
       {
         model: gateway.languageModel(model),
+        system: notionInstruction
+          ? `${chatSystemInstructions}${notionInstruction}`
+          : undefined,
         prompt: text,
         tools,
         stopWhen: stepCountIs(8),
+        onError: async () => {
+          await failPendingMessages(
+            ctx,
+            threadId,
+            "The AI provider failed before returning a response.",
+          );
+        },
       },
       {
-        saveStreamDeltas: true,
+        saveStreamDeltas: false,
         storageOptions: { saveMessages: "all" },
       },
     );
 
-    const [outputText, usage, providerMetadata] = await Promise.all([
-      result.text,
-      result.usage,
-      result.providerMetadata,
-    ]);
+    let outputText: string;
+    let usage: Awaited<typeof result.usage>;
+    let providerMetadata: Awaited<typeof result.providerMetadata>;
+    try {
+      [outputText, usage, providerMetadata] = await Promise.all([
+        result.text,
+        result.usage,
+        result.providerMetadata,
+      ]);
+    } catch (error) {
+      await failPendingMessages(
+        ctx,
+        threadId,
+        "The AI provider failed before returning a response.",
+      );
+      throw userFacingGenerationError(error);
+    }
     const usageObject = toUsageObject(usage);
 
     if (outputText) {
@@ -363,6 +544,69 @@ export const generateReply = action({
       order: result.order,
       promptMessageId: result.promptMessageId,
     };
+    } catch (error) {
+      throw userFacingGenerationError(error);
+    }
+  },
+});
+
+export const abortReply = mutation({
+  args: {
+    threadId: v.string(),
+    order: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    await authorizeThreadAccess(ctx, args.threadId, true);
+
+    let aborted = false;
+    if (args.order !== undefined) {
+      aborted = await abortStream(ctx, components.agent, {
+        threadId: args.threadId,
+        order: args.order,
+        reason: "User stopped generation",
+      });
+    }
+
+    const pending = await ctx.runQuery(
+      components.agent.messages.listMessagesByThreadId,
+      {
+        threadId: args.threadId,
+        paginationOpts: { cursor: null, numItems: 20 },
+        order: "desc",
+        statuses: ["pending"],
+      },
+    );
+
+    await Promise.all(
+      pending.page.map((message) =>
+        ctx.runMutation(components.agent.messages.updateMessage, {
+          messageId: message._id,
+          patch: {
+            status: "failed",
+            error: "User stopped generation",
+          },
+        }),
+      ),
+    );
+
+    return {
+      aborted,
+      failedPending: pending.page.length,
+    };
+  },
+});
+
+export const hasActiveStreams = query({
+  args: {
+    threadId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await authorizeThreadAccess(ctx, args.threadId, true);
+    const streams = await ctx.runQuery(components.agent.streams.list, {
+      threadId: args.threadId,
+      statuses: ["streaming"],
+    });
+    return streams.length > 0;
   },
 });
 
