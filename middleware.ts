@@ -1,6 +1,11 @@
 import { convexAuthNextjsMiddleware } from "@convex-dev/auth/nextjs/server";
 
-export default convexAuthNextjsMiddleware();
+export default convexAuthNextjsMiddleware(undefined, {
+  shouldHandleCode(request) {
+    const pathname = request.nextUrl.pathname;
+    return pathname !== "/api/notion/callback";
+  },
+});
 
 export const config = {
   // The following matcher runs middleware on all routes

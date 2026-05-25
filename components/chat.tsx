@@ -33,7 +33,9 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useUIMessages } from '@convex-dev/agent/react';
 import { Response } from '@/components/ai-elements/response';
 import { AlertCircleIcon, BarChart3Icon, CopyIcon, MessageCircleIcon, RefreshCcwIcon } from 'lucide-react';
+import { SiNotion } from '@icons-pack/react-simple-icons';
 import Link from 'next/link';
+import { cn } from '@/lib/utils';
 import {
   Source,
   Sources,
@@ -51,7 +53,7 @@ import { Suggestion, Suggestions } from '@/components/ai-elements/suggestion';
 import { Action, Actions } from '@/components/ai-elements/actions';
 import { GlassButton } from '@/components/ui/glass';
 import { useAuthActions } from '@convex-dev/auth/react'
-import { Authenticated, useAction, useQuery } from 'convex/react';
+import { Authenticated, useAction, useMutation, useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 
 const models = [
@@ -113,12 +115,47 @@ function shouldShowBottomLoader(params: {
   return isHistoryLoading
 }
 
+function getUserFacingErrorMessage(error: unknown) {
+  const data =
+    typeof error === 'object' && error !== null && 'data' in error
+      ? (error as { data?: { message?: string } }).data
+      : undefined
+
+  if (data?.message) {
+    return data.message
+  }
+
+  const message = error instanceof Error ? error.message : String(error)
+  if (
+    message.includes('Free credits temporarily have restricted access') ||
+    message.includes('Free credits temporarily have rate limits') ||
+    message.includes('GatewayRateLimitError') ||
+    message.includes('RestrictedModelsError') ||
+    message.includes('no_providers_available')
+  ) {
+    return 'Vlad.chat is temporarily at AI capacity for this model. Your message was not charged. Please try another model or try again later.'
+  }
+
+  const convexMessage = message.match(
+    /ConvexError: ([\s\S]*?)(?:\s+at\s|\s+Called by client|$)/,
+  )?.[1]?.trim()
+
+  if (convexMessage) {
+    return convexMessage
+  }
+
+  return message || 'Something went wrong while sending your message. Please try again.'
+}
+
 export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
   const isAuthenticated = useQuery(api.auth.isAuthenticated)
   const user = useQuery(api.users.viewer)
   const defaultThreadId = useQuery(api.threads.getDefaultThreadId)
   const generateReply = useAction(api.threads.generateReply)
+  const abortReply = useMutation(api.threads.abortReply)
   const { signIn } = useAuthActions()
+  const notionConn = useQuery(api.notion.getConnection)
+  const disconnectNotion = useMutation(api.notion.removeConnection)
 
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null)
   const [showSuggestions, setShowSuggestions] = useState(true)
@@ -199,14 +236,8 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
       setActiveThreadId(result.threadId)
     } catch (error) {
       console.error('Failed to generate reply', error)
-      const data =
-        typeof error === 'object' && error !== null && 'data' in error
-          ? (error as { data?: { message?: string } }).data
-          : undefined
       setSubmitError({
-        message: data?.message
-          || (error instanceof Error ? error.message : '')
-          || 'Something went wrong while sending your message. Please try again.',
+        message: getUserFacingErrorMessage(error),
       })
     } finally {
       setSubmitState('ready')
@@ -262,6 +293,18 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
     () => (messages ?? []).some((message) => message.status === 'streaming' || message.status === 'pending'),
     [messages],
   )
+  const activeStreamOrder = useMemo(() => {
+    if (!messages) {
+      return null
+    }
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const message = messages[i]
+      if (message.status === 'streaming' || message.status === 'pending') {
+        return message.order
+      }
+    }
+    return null
+  }, [messages])
   const submitStatus = (streamActive ? 'streaming' : submitState) as 'ready' | 'submitted' | 'streaming'
   const showBottomLoader = shouldShowBottomLoader({
     defaultThreadId,
@@ -280,6 +323,21 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
     setInput('');
     await sendPrompt(message.text)
   };
+
+  const handleStop = async () => {
+    if (!activeThreadId || activeStreamOrder === null) {
+      return
+    }
+
+    try {
+      await abortReply({
+        threadId: activeThreadId,
+        order: activeStreamOrder,
+      })
+    } catch (error) {
+      console.error('Failed to stop generation', error)
+    }
+  }
 
   const checkout = async () => {
     try {
@@ -381,7 +439,7 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                         : part.type)
 
                     const toolDisplayName = rawToolName?.includes('tavily')
-                      ? 'Tavily'
+                      ? 'Search'
                       : rawToolName?.includes('notion')
                         ? 'Notion'
                         : rawToolName
@@ -629,12 +687,58 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                 enabled={searchEnabled}
                 onToggle={setSearchEnabled}
               />
+              <button
+                type="button"
+                onClick={async () => {
+                  if (notionConn) {
+                    await disconnectNotion();
+                  } else {
+                    try {
+                      const res = await fetch('/api/notion/connect');
+                      const data = await res.json();
+                      if (data.authUrl) {
+                        window.open(
+                          data.authUrl,
+                          'notion-oauth',
+                          'width=700,height=800,menubar=no,toolbar=no,location=no,status=no',
+                        );
+                      }
+                    } catch (e) {
+                      console.error('Failed to start Notion OAuth', e);
+                    }
+                  }
+                }}
+                className={cn(
+                  "flex h-9 items-center gap-1.5 rounded-full px-3 text-sm font-medium transition-colors",
+                  notionConn
+                    ? "bg-foreground text-background hover:bg-foreground hover:text-background"
+                    : "bg-foreground/5 text-foreground/75 hover:bg-foreground/5 hover:text-foreground",
+                )}
+                title={
+                  notionConn
+                    ? `Notion: ${notionConn.workspaceName || "Connected"} — click to disconnect`
+                    : "Connect Notion"
+                }
+              >
+                <SiNotion className="size-4" />
+                {notionConn && (
+                  <span className="max-w-20 truncate">
+                    {notionConn.workspaceName || ""}
+                  </span>
+                )}
+              </button>
             </PromptInputTools>
             <div className="flex items-center gap-1">
               <PromptInputSubmit
+                onClick={(event) => {
+                  if (submitStatus === 'streaming') {
+                    event.preventDefault()
+                    void handleStop()
+                  }
+                }}
                 disabled={
                   (submitStatus === 'ready' && !input)
-                  || submitStatus === 'streaming'
+                  || submitStatus === 'submitted'
                 }
                 status={submitStatus}
               />
