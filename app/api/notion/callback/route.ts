@@ -61,6 +61,7 @@ function buildProvider(
   session: SessionData,
   userToken: string,
   notionMeta: { tokenEndpoint: string; clientId: string },
+  onTokensSaved?: () => void,
 ): OAuthClientProvider {
   return {
     get redirectUrl(): string {
@@ -86,7 +87,7 @@ function buildProvider(
         ? Math.floor(Date.now() / 1000) + tokens.expires_in
         : undefined;
 
-      const notionTokens: NotionTokenResponse = tokens as unknown as NotionTokenResponse;
+      const notionTokens = tokens as unknown as NotionTokenResponse;
 
       await fetchMutation(
         api.notion.saveConnection,
@@ -104,15 +105,13 @@ function buildProvider(
         },
         { token: userToken },
       );
+
+      onTokensSaved?.();
     },
 
-    async redirectToAuthorization(_authorizationUrl: URL): Promise<void> {
-      // Not used in callback mode
-    },
+    async redirectToAuthorization(_authorizationUrl: URL): Promise<void> {},
 
-    async saveCodeVerifier(_codeVerifier: string): Promise<void> {
-      // Already stored from connect phase
-    },
+    async saveCodeVerifier(_codeVerifier: string): Promise<void> {},
 
     async codeVerifier(): Promise<string> {
       return session.codeVerifier;
@@ -122,9 +121,7 @@ function buildProvider(
       return session.clientInfo;
     },
 
-    async saveClientInformation(_clientInformation: OAuthClientInformation): Promise<void> {
-      // Already stored from connect phase
-    },
+    async saveClientInformation(_clientInformation: OAuthClientInformation): Promise<void> {},
 
     async invalidateCredentials(_scope: "all" | "client" | "tokens" | "verifier"): Promise<void> {
       session.codeVerifier = "";
@@ -191,39 +188,17 @@ export async function GET(req: Request) {
       return closePopupHtml("Configuration error.");
     }
 
-    const notionMeta = {
-      tokenEndpoint: `${NOTION_MCP_URL}/token`,
-      clientId: session.clientInfo?.client_id || "",
-    };
-
     let savedConnection = false;
-    const provider = buildProvider(siteUrl, session, userToken, notionMeta);
-
-    provider.saveTokens = async (tokens: OAuthTokens) => {
-      savedConnection = true;
-      const expiresAt = tokens.expires_in
-        ? Math.floor(Date.now() / 1000) + tokens.expires_in
-        : undefined;
-
-      const notionTokens = tokens as unknown as NotionTokenResponse;
-
-      await fetchMutation(
-        api.notion.saveConnection,
-        {
-          accessToken: tokens.access_token,
-          refreshToken: tokens.refresh_token || "",
-          expiresAt,
-          tokenEndpoint: notionMeta.tokenEndpoint,
-          clientId: notionMeta.clientId,
-          workspaceName: notionTokens.workspace_name,
-          workspaceIcon: notionTokens.workspace_icon,
-          workspaceId: notionTokens.workspace_id || "",
-          botId: notionTokens.bot_id || "",
-          scope: tokens.scope,
-        },
-        { token: userToken },
-      );
-    };
+    const provider = buildProvider(
+      siteUrl,
+      session,
+      userToken,
+      {
+        tokenEndpoint: `${NOTION_MCP_URL}/token`,
+        clientId: session.clientInfo?.client_id || "",
+      },
+      () => { savedConnection = true; },
+    );
 
     const result = await auth(provider, {
       serverUrl: NOTION_MCP_URL,
