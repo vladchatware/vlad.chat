@@ -58,6 +58,10 @@ import { api } from '@/convex/_generated/api';
 
 const models = [
   {
+    name: "DeepSeek 4",
+    value: "deepseek/deepseek-v4-flash",
+  },
+  {
     name: "Kimi K2.6",
     value: "moonshotai/kimi-k2.6",
   },
@@ -69,10 +73,6 @@ const models = [
     name: "Grok 4.3",
     value: "xai/grok-4.3",
   },
-  {
-    name: "DeepSeek 4",
-    value: "deepseek/deepseek-v4-flash",
-  }
 ];
 
 const suggestions = [
