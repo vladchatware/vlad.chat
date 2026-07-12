@@ -62,17 +62,17 @@ const models = [
     value: "deepseek/deepseek-v4-flash",
   },
   {
-    name: "Kimi K2.6",
-    value: "moonshotai/kimi-k2.6",
+    name: "Fable 5",
+    value: "anthropic/claude-fable-5",
   },
   {
-    name: "GPT 5.5",
-    value: "openai/gpt-5.5",
+    name: "GPT 5.6 Sol",
+    value: "openai/gpt-5.6-sol",
   },
   {
-    name: "Grok 4.3",
-    value: "xai/grok-4.3",
-  },
+    name: "Grok 4.5",
+    value: "xai/grok-4.5",
+  }
 ];
 
 const suggestions = [
