@@ -23,7 +23,6 @@ vlad.chat is an AI-powered conversational interface for interacting with Vlad, h
 
 ## API Endpoints
 
-- [Chat API](https://vlad.chat/api/chat): POST endpoint for sending messages and receiving streaming AI responses
 - [MCP API](https://vlad.chat/api/mcp): Model Context Protocol endpoint for Notion workspace access
 - [Checkout API](https://vlad.chat/api/checkout_session): POST endpoint for Stripe payment processing
 
