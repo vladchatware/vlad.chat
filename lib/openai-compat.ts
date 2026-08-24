@@ -29,6 +29,7 @@ const messageSchema = z.discriminatedUnion("role", [
     role: z.literal("assistant"),
     content: z.string().nullable().optional(),
     name: z.string().optional(),
+    reasoning_content: z.string().nullable().optional(),
     tool_calls: z.array(toolCallSchema).optional(),
   }).strict(),
   z.object({
@@ -138,11 +139,12 @@ export function toAiPrompt(messages: ChatCompletionRequest["messages"]): {
       continue;
     }
     if (message.role === "assistant") {
-      if (!message.tool_calls?.length) {
+      const toolCalls = message.tool_calls ?? [];
+      if (!toolCalls.length && !message.reasoning_content) {
         modelMessages.push({ role: "assistant", content: message.content ?? "" });
         continue;
       }
-      for (const call of message.tool_calls) {
+      for (const call of toolCalls) {
         if (toolNames.has(call.id)) {
           throw new Error(`Duplicate assistant tool call id ${call.id}.`);
         }
@@ -151,8 +153,11 @@ export function toAiPrompt(messages: ChatCompletionRequest["messages"]): {
       modelMessages.push({
         role: "assistant",
         content: [
+          ...(message.reasoning_content
+            ? [{ type: "reasoning" as const, text: message.reasoning_content }]
+            : []),
           ...(message.content ? [{ type: "text" as const, text: message.content }] : []),
-          ...message.tool_calls.map((call) => ({
+          ...toolCalls.map((call) => ({
             type: "tool-call" as const,
             toolCallId: call.id,
             toolName: call.function.name,

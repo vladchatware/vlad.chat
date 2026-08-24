@@ -44,6 +44,35 @@ describe("OpenAI compatibility adapter", () => {
     });
   });
 
+  it("preserves reasoning content in assistant tool-call history", () => {
+    const request = chatCompletionRequestSchema.parse({
+      model: "model",
+      messages: [{
+        role: "assistant",
+        content: null,
+        reasoning_content: "Inspect the repository first.",
+        tool_calls: [{
+          id: "call_1",
+          type: "function",
+          function: { name: "read_file", arguments: '{"path":"README.md"}' },
+        }],
+      }],
+    });
+
+    expect(toAiPrompt(request.messages).messages[0]).toEqual({
+      role: "assistant",
+      content: [
+        { type: "reasoning", text: "Inspect the repository first." },
+        {
+          type: "tool-call",
+          toolCallId: "call_1",
+          toolName: "read_file",
+          input: { path: "README.md" },
+        },
+      ],
+    });
+  });
+
   it("rejects tool results that appear before their assistant call", () => {
     expect(() => toAiPrompt([
       { role: "tool", tool_call_id: "call_1", content: "contents" },
