@@ -71,6 +71,7 @@ export const chatCompletionRequestSchema = z.object({
   parallel_tool_calls: z.boolean().optional(),
   n: z.literal(1).optional(),
   user: z.string().optional(),
+  store: z.literal(false).optional(),
   reasoning_effort: z.enum(["none", "minimal", "low", "medium", "high", "xhigh"]).optional(),
   temperature: z.number().min(0).max(2).optional(),
   top_p: z.number().min(0).max(1).optional(),

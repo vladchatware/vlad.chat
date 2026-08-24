@@ -87,6 +87,14 @@ describe("OpenAI compatibility adapter", () => {
     }).max_completion_tokens).toBe(100);
   });
 
+  it("accepts explicit response-storage opt-out", () => {
+    expect(chatCompletionRequestSchema.parse({
+      model: "model",
+      messages: [{ role: "user", content: "hello" }],
+      store: false,
+    }).store).toBe(false);
+  });
+
   it("rejects unsupported request fields instead of silently ignoring them", () => {
     const result = chatCompletionRequestSchema.safeParse({
       model: "model",
