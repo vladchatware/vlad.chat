@@ -1,4 +1,4 @@
-import { streamText, UIMessage, convertToModelMessages, stepCountIs, smoothStream, gateway } from 'ai';
+import { streamText, UIMessage, convertToModelMessages, isStepCount, smoothStream, gateway } from 'ai';
 import { createMCPClient } from '@ai-sdk/mcp';
 import { system } from '@/lib/ai'
 import { api } from '@/convex/_generated/api';
@@ -6,10 +6,6 @@ import { convexAuthNextjsToken } from '@convex-dev/auth/nextjs/server';
 import { fetchMutation, fetchQuery } from "convex/nextjs"
 import { NextResponse } from 'next/server';
 import { stripe } from '@/lib/stripe';
-import { PostHog } from 'posthog-node';
-import { withTracing } from '@posthog/ai';
-
-const posthog = new PostHog(process.env.NEXT_PUBLIC_POSTHOG_KEY!, { host: process.env.NEXT_PUBLIC_POSTHOG_HOST! });
 
 export async function POST(req: Request) {
   const {
@@ -64,20 +60,19 @@ export async function POST(req: Request) {
     }
   }
 
-  const _model = withTracing(gateway.languageModel(model), posthog, {})
-
   const result = streamText({
-    model: _model,
+    model: gateway.languageModel(model),
     messages: await convertToModelMessages(messages),
     tools: tools as Parameters<typeof streamText>[0]['tools'],
-    stopWhen: stepCountIs(5),
-    system,
+    stopWhen: isStepCount(5),
+    instructions: system,
     experimental_transform: smoothStream(),
-    onFinish: async ({ usage, providerMetadata }) => {
+    telemetry: { functionId: 'chat' },
+    onEnd: async ({ usage, finalStep }) => {
       if (user.isAnonymous) {
         await fetchMutation(api.users.messages, {}, { token: await convexAuthNextjsToken() })
       } else {
-        await fetchMutation(api.users.usage, { usage, model, provider: 'AI Gateway', providerMetadata }, { token: await convexAuthNextjsToken() })
+        await fetchMutation(api.users.usage, { usage, model, provider: 'AI Gateway', providerMetadata: finalStep.providerMetadata }, { token: await convexAuthNextjsToken() })
       }
     },
   });

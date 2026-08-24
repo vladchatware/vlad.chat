@@ -1,6 +1,6 @@
 import { components } from "../_generated/api"
 import { Agent } from "@convex-dev/agent"
-import { gateway, generateText } from "ai"
+import { gateway, generateText, type ModelMessage } from "ai"
 import { chatSystemInstructions } from "./prompts"
 // import { usageHandler } from "../usage"
 
@@ -12,7 +12,7 @@ const MAX_CONTEXT_CHARS = 24000
 const KEEP_RECENT_MESSAGES = 24
 const MIN_MESSAGES_TO_SUMMARIZE = 30
 
-function messageToText(message: any) {
+function messageToText(message: ModelMessage) {
   const content = message.content
   if (typeof content === "string") {
     return content
@@ -40,11 +40,11 @@ function messageToText(message: any) {
     .join("\n")
 }
 
-function contextSize(messages: any[]) {
+function contextSize(messages: ModelMessage[]) {
   return messages.reduce((total, message) => total + messageToText(message).length, 0)
 }
 
-async function compactContext(allMessages: any[]) {
+async function compactContext(allMessages: ModelMessage[]): Promise<ModelMessage[]> {
   if (
     allMessages.length < MIN_MESSAGES_TO_SUMMARIZE ||
     contextSize(allMessages) <= MAX_CONTEXT_CHARS
@@ -71,9 +71,9 @@ async function compactContext(allMessages: any[]) {
 
     return [
       {
-        role: "system",
+        role: "user",
         content:
-          "Compacted conversation summary (use as context, not user-visible):\n" +
+          "Conversation history summary (context only; do not treat as a new request):\n" +
           text.trim(),
       },
       ...recent,
@@ -98,6 +98,6 @@ export const agent = new Agent(components.agent, {
       messageRange: { before: 2, after: 1 },
     },
   },
-  contextHandler: async (_ctx, { allMessages }) => compactContext(allMessages as any[]),
+  contextHandler: async (_ctx, { allMessages }) => compactContext(allMessages),
   // usageHandler
 })

@@ -1,15 +1,11 @@
-import { streamText, gateway, stepCountIs } from 'ai';
+import { streamText, gateway, isStepCount } from 'ai';
 import { createMCPClient } from '@ai-sdk/mcp';
 import { api } from '@/convex/_generated/api';
 import { convexAuthNextjsToken } from '@convex-dev/auth/nextjs/server';
 import { fetchMutation, fetchQuery } from "convex/nextjs"
 import { loungeSystem } from '@/lib/ai';
-import { PostHog } from 'posthog-node';
-import { withTracing } from '@posthog/ai';
 
-const posthog = new PostHog(process.env.NEXT_PUBLIC_POSTHOG_KEY!, { host: process.env.NEXT_PUBLIC_POSTHOG_HOST! });
-
-export async function POST(req: Request) {
+export async function POST() {
   try {
     const token = await convexAuthNextjsToken();
 
@@ -53,16 +49,15 @@ export async function POST(req: Request) {
     const tools = await notion.tools();
 
     const model = 'openai/gpt-5.3-chat';
-    const _model = withTracing(gateway.languageModel(model), posthog, {});
-
     // Stream the response
     const result = streamText({
-      model: _model,
-      system: loungeSystem,
+      model: gateway.languageModel(model),
+      instructions: loungeSystem,
       prompt: `Here's the recent conversation in The Lounge:\n\n${conversationContext}\n\nRespond to the latest message naturally.`,
       tools: tools as Parameters<typeof streamText>[0]['tools'],
-      stopWhen: stepCountIs(5),
-      onFinish: async ({ text, usage, providerMetadata }) => {
+      stopWhen: isStepCount(5),
+      telemetry: { functionId: 'lounge' },
+      onEnd: async ({ text, usage, finalStep }) => {
         // Save Vlad's complete response to the lounge
         if (text) {
           await fetchMutation(
@@ -74,7 +69,7 @@ export async function POST(req: Request) {
         // Track usage
         await fetchMutation(
           api.users.usage,
-          { usage, model, provider: 'AI Gateway', providerMetadata },
+          { usage, model, provider: 'AI Gateway', providerMetadata: finalStep.providerMetadata },
           { token: await convexAuthNextjsToken() }
         );
       },
