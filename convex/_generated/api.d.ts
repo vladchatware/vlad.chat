@@ -10,7 +10,9 @@
 
 import type * as agents_prompts from "../agents/prompts.js";
 import type * as agents_simple from "../agents/simple.js";
+import type * as apiKeys from "../apiKeys.js";
 import type * as auth from "../auth.js";
+import type * as billing from "../billing.js";
 import type * as crons from "../crons.js";
 import type * as http from "../http.js";
 import type * as lounge from "../lounge.js";
@@ -18,6 +20,7 @@ import type * as notion from "../notion.js";
 import type * as posthog from "../posthog.js";
 import type * as threads from "../threads.js";
 import type * as users from "../users.js";
+import type * as validators from "../validators.js";
 
 import type {
   ApiFromModules,
@@ -36,7 +39,9 @@ import type {
 declare const fullApi: ApiFromModules<{
   "agents/prompts": typeof agents_prompts;
   "agents/simple": typeof agents_simple;
+  apiKeys: typeof apiKeys;
   auth: typeof auth;
+  billing: typeof billing;
   crons: typeof crons;
   http: typeof http;
   lounge: typeof lounge;
@@ -44,6 +49,7 @@ declare const fullApi: ApiFromModules<{
   posthog: typeof posthog;
   threads: typeof threads;
   users: typeof users;
+  validators: typeof validators;
 }>;
 declare const fullApiWithMounts: typeof fullApi;
 

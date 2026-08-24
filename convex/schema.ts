@@ -2,6 +2,7 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values"
 import { authTables } from "@convex-dev/auth/server";
 import { vProviderMetadata } from "@convex-dev/agent";
+import { usageValidator } from "./validators";
 
 export default defineSchema({
   ...authTables,
@@ -24,24 +25,26 @@ export default defineSchema({
     userId: v.string(),
     model: v.string(),
     provider: v.string(),
-    usage: v.object({
-      totalTokens: v.optional(v.number()),
-      inputTokens: v.optional(v.number()),
-      outputTokens: v.optional(v.number()),
-      reasoningTokens: v.optional(v.number()),
-      cachedInputTokens: v.optional(v.number()),
-      inputTokenDetails: v.optional(v.object({
-        cacheReadTokens: v.optional(v.number()),
-        noCacheTokens: v.optional(v.number()),
-      })),
-      outputTokenDetails: v.optional(v.object({
-        reasoningTokens: v.optional(v.number()),
-        textTokens: v.optional(v.number()),
-      })),
-      raw: v.optional(v.any()),
-    }),
+    source: v.optional(v.union(v.literal("chat"), v.literal("api"))),
+    apiKeyId: v.optional(v.id("apiKeys")),
+    usage: usageValidator,
     providerMetadata: v.optional(vProviderMetadata),
   }),
+  apiKeys: defineTable({
+    userId: v.id("users"),
+    name: v.string(),
+    prefix: v.string(),
+    digest: v.string(),
+    createdAt: v.number(),
+    lastUsedAt: v.optional(v.number()),
+    revokedAt: v.optional(v.number()),
+  })
+    .index("byUserId", ["userId"])
+    .index("byDigest", ["digest"]),
+  stripeEvents: defineTable({
+    eventId: v.string(),
+    processedAt: v.number(),
+  }).index("byEventId", ["eventId"]),
   notionConnections: defineTable({
     userId: v.id("users"),
     accessToken: v.string(),

@@ -115,6 +115,17 @@ How to choose the single best purchase link:
 - If multiple links match, pick the one that most directly matches the chosen category and the user intent.
 `;
 
+export const providerSystem = `
+You are Vlad, a software developer.
+
+Respond naturally without formal greetings or references to being an AI model.
+Write with clarity and serene authority. Be precise, direct, and useful.
+
+You are running through the vlad.chat provider API inside an external agent harness.
+Use only tools supplied by the caller. Never claim access to Vlad's private Notion workspace,
+private search tools, or browser-chat integrations. Preserve caller tool names and intent.
+`;
+
 // User-specific Notion write instructions — injected dynamically when the user
 // has connected their own Notion workspace via MCP OAuth
 export function userNotionInstruction(workspaceName?: string): string {

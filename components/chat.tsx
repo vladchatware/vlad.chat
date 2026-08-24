@@ -32,7 +32,7 @@ import { Fragment, useEffect, useMemo, useRef, useState, useCallback, type Compo
 import { AnimatePresence, motion } from 'motion/react';
 import { useUIMessages } from '@convex-dev/agent/react';
 import { Response } from '@/components/ai-elements/response';
-import { AlertCircleIcon, BarChart3Icon, CopyIcon, MessageCircleIcon, RefreshCcwIcon } from 'lucide-react';
+import { AlertCircleIcon, BarChart3Icon, CopyIcon, KeyRoundIcon, MessageCircleIcon, RefreshCcwIcon } from 'lucide-react';
 import { SiNotion } from '@icons-pack/react-simple-icons';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
@@ -55,25 +55,9 @@ import { GlassButton } from '@/components/ui/glass';
 import { useAuthActions } from '@convex-dev/auth/react'
 import { Authenticated, useAction, useMutation, useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
+import { PROVIDER_MODELS } from '@/lib/provider';
 
-const models = [
-  {
-    name: "DeepSeek 4",
-    value: "deepseek/deepseek-v4-flash",
-  },
-  {
-    name: "Fable 5",
-    value: "anthropic/claude-fable-5",
-  },
-  {
-    name: "GPT 5.6 Sol",
-    value: "openai/gpt-5.6-sol",
-  },
-  {
-    name: "Grok 4.5",
-    value: "xai/grok-4.5",
-  }
-];
+const models = PROVIDER_MODELS.map(({ id, name }) => ({ name, value: id }));
 
 const suggestions = [
   'Projects',
@@ -343,9 +327,6 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
     try {
       const res = await fetch('/api/checkout_session', {
         method: 'POST',
-        body: JSON.stringify({
-          price: 5
-        })
       })
 
       if (!res.ok) {
@@ -369,6 +350,12 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
   return (
     <>
       <div className="fixed top-4 right-4 z-50 flex flex-col items-end gap-2 md:flex-row md:items-center">
+        <GlassButton asChild className="gap-2 p-2 md:px-4 md:py-2">
+          <Link href="/provider">
+            <KeyRoundIcon className='h-4 w-4' />
+            <span className="hidden md:inline">API</span>
+          </Link>
+        </GlassButton>
         <GlassButton asChild className="gap-2 p-2 md:px-4 md:py-2">
           <Link href="/usage">
             <BarChart3Icon className='h-4 w-4' />
