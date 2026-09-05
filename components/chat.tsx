@@ -58,20 +58,24 @@ import { api } from '@/convex/_generated/api';
 
 const models = [
   {
+    name: "GLM 5.3 Flash",
+    value: "zai/glm-5.3-flash",
+  },
+  {
+    name: "Fable 5.1",
+    value: "anthropic/claude-fable-5.1",
+  },
+  {
+    name: "GPT 5.6 Luna",
+    value: "openai/gpt-5.6-luna",
+  },
+  {
+    name: "Grok 4.6",
+    value: "xai/grok-4.6",
+  },
+  {
     name: "DeepSeek 4",
     value: "deepseek/deepseek-v4-flash",
-  },
-  {
-    name: "Fable 5",
-    value: "anthropic/claude-fable-5",
-  },
-  {
-    name: "GPT 5.6 Sol",
-    value: "openai/gpt-5.6-sol",
-  },
-  {
-    name: "Grok 4.5",
-    value: "xai/grok-4.5",
   }
 ];
 

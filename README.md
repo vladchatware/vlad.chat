@@ -203,10 +203,13 @@ The MCP (Model Context Protocol) server at `/api/mcp` provides tools for the AI 
 ### AI Models
 
 The application currently supports:
-- `openai/gpt-5-mini` (default)
-- `openai/gpt-5`
+- `zai/glm-5.3-flash` (default)
+- `anthropic/claude-fable-5.1`
+- `openai/gpt-5.6-luna`
+- `xai/grok-4.6`
+- `deepseek/deepseek-v4-flash`
 
-You can modify the available models in `app/page.tsx`.
+You can modify the available models in `components/chat.tsx`.
 
 ## Deployment
 

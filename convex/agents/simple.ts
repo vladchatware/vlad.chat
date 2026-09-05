@@ -4,9 +4,9 @@ import { gateway, generateText, type ModelMessage } from "ai"
 import { chatSystemInstructions } from "./prompts"
 // import { usageHandler } from "../usage"
 
-const DEFAULT_GATEWAY_MODEL = "deepseek/deepseek-v4-flash"
+const DEFAULT_GATEWAY_MODEL = "zai/glm-5.3-flash"
 const DEFAULT_EMBEDDING_MODEL = "openai/text-embedding-3-small"
-const DEFAULT_SUMMARY_MODEL = "moonshotai/kimi-k2.5"
+const DEFAULT_SUMMARY_MODEL = "moonshotai/kimi-k2.6"
 
 const MAX_CONTEXT_CHARS = 24000
 const KEEP_RECENT_MESSAGES = 24
