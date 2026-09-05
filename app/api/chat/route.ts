@@ -5,7 +5,6 @@ import { api } from '@/convex/_generated/api';
 import { convexAuthNextjsToken } from '@convex-dev/auth/nextjs/server';
 import { fetchMutation, fetchQuery } from "convex/nextjs"
 import { NextResponse } from 'next/server';
-import { stripe } from '@/lib/stripe';
 
 export async function POST(req: Request) {
   const {
@@ -18,14 +17,6 @@ export async function POST(req: Request) {
   if (!user) return new NextResponse('no user present in session', { status: 403 })
 
   if (!user.isAnonymous) {
-    if (!user.stripeId) {
-      const customer = await stripe.customers.create(({
-        email: user.email
-      }))
-      await fetchMutation(api.users.connect, { stripeId: customer.id }, { token: await convexAuthNextjsToken() })
-      user.stripeId = customer.id
-    }
-
     if (user.trialTokens <= 0 && user.tokens <= 0) {
       return new NextResponse('out of tokens', { status: 429 })
     }
