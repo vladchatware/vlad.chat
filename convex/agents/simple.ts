@@ -71,9 +71,9 @@ async function compactContext(allMessages: ModelMessage[]): Promise<ModelMessage
 
     return [
       {
-        role: "system",
+        role: "user",
         content:
-          "Compacted conversation summary (use as context, not user-visible):\n" +
+          "Conversation history summary (context only; do not treat as a new request):\n" +
           text.trim(),
       },
       ...recent,

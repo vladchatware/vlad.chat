@@ -14,7 +14,7 @@ import {
   abortStream,
   getThreadMetadata,
   listUIMessages,
-  stepCountIs,
+  isStepCount,
   syncStreams,
   vMessage,
   vStreamArgs,
@@ -26,41 +26,9 @@ import { userNotionInstruction } from "@/lib/ai";
 import { z } from "zod/v3";
 import {
   gateway,
-  type LanguageModel,
-  type Output,
-  type StopCondition,
-  type StreamTextResult,
   type ToolSet,
 } from "ai";
 import { createMCPClient } from "@ai-sdk/mcp";
-
-type TextOutput = Output.Output<string, string, never>;
-type AiV6StreamTextArgs<TOOLS extends ToolSet> = {
-  model: LanguageModel;
-  prompt: string;
-  system?: string;
-  tools?: TOOLS;
-  stopWhen?: StopCondition<TOOLS> | Array<StopCondition<TOOLS>>;
-  onError?: (event: { error: unknown }) => void | Promise<void>;
-};
-type AgentStreamOptions = {
-  saveStreamDeltas?: boolean;
-  storageOptions: { saveMessages: "all" };
-};
-
-declare module "@convex-dev/agent" {
-  interface Thread<DefaultTools extends ToolSet> {
-    streamText<TOOLS extends ToolSet = DefaultTools>(
-      streamTextArgs: AiV6StreamTextArgs<TOOLS>,
-      options?: AgentStreamOptions,
-    ): Promise<
-      StreamTextResult<TOOLS, TextOutput> & {
-        order: number;
-        promptMessageId: string;
-      }
-    >;
-  }
-}
 
 export const listThreads = query({
   args: {
@@ -115,7 +83,6 @@ export const updateThreadTitle = action({
       object: { title, summary },
     } = await thread.generateObject(
       {
-        mode: "json",
         schemaDescription:
           "Generate a title and summary for the thread. The title should be a single sentence that captures the main topic of the thread. The summary should be a short description of the thread that could be used to describe it to someone who hasn't read it.",
         schema: z.object({
@@ -150,8 +117,8 @@ function toUsageObject(usage: {
     totalTokens: usage?.totalTokens,
     inputTokens: usage?.inputTokens,
     outputTokens: usage?.outputTokens,
-    reasoningTokens: usage?.reasoningTokens,
-    cachedInputTokens: usage?.cachedInputTokens,
+    reasoningTokens: usage?.outputTokenDetails?.reasoningTokens,
+    cachedInputTokens: usage?.inputTokenDetails?.cacheReadTokens,
     inputTokenDetails: usage?.inputTokenDetails,
     outputTokenDetails: usage?.outputTokenDetails,
     raw: usage?.raw,
@@ -457,12 +424,12 @@ export const generateReply = action({
     const result = await thread.streamText(
       {
         model: gateway.languageModel(model),
-        system: notionInstruction
+        instructions: notionInstruction
           ? `${chatSystemInstructions}${notionInstruction}`
           : undefined,
         prompt: text,
         tools,
-        stopWhen: stepCountIs(8),
+        stopWhen: isStepCount(8),
         onError: async () => {
           await failPendingMessages(
             ctx,
@@ -479,13 +446,16 @@ export const generateReply = action({
 
     let outputText: string;
     let usage: Awaited<typeof result.usage>;
-    let providerMetadata: Awaited<typeof result.providerMetadata>;
+    let providerMetadata: Awaited<typeof result.finalStep>["providerMetadata"];
     try {
-      [outputText, usage, providerMetadata] = await Promise.all([
+      const [textResult, usageResult, finalStep] = await Promise.all([
         result.text,
         result.usage,
-        result.providerMetadata,
+        result.finalStep,
       ]);
+      outputText = textResult;
+      usage = usageResult;
+      providerMetadata = finalStep.providerMetadata;
     } catch (error) {
       await failPendingMessages(
         ctx,
