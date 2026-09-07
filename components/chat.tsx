@@ -471,7 +471,7 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                   return (
                     <motion.div
                       key={messageKey}
-                      className={(messages ?? []).length - 1 === messageIndex ? 'pb-46' : ''}
+                      className={(messages ?? []).length - 1 === messageIndex ? 'pb-52' : ''}
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       exit={{ opacity: 0 }}
@@ -579,7 +579,7 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                 })}
               </AnimatePresence>
               {showBottomLoader && (
-                <div className="pb-46 flex justify-center text-muted-foreground">
+                <div className="pb-52 flex justify-center text-muted-foreground">
                   <Shimmer as="span" duration={1.5} spread={1.3} className="text-sm">
                     Loading history...
                   </Shimmer>
@@ -732,6 +732,17 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
             </div>
           </PromptInputToolbar>
         </PromptInput>
+        <footer className="mt-1.5 flex items-center justify-center gap-2 text-[11px] text-muted-foreground/60">
+          <span>© {new Date().getFullYear()} Lusesi Co., Ltd.</span>
+          <span aria-hidden="true">•</span>
+          <Link href="/terms" className="transition-colors hover:text-foreground">
+            Terms
+          </Link>
+          <span aria-hidden="true">•</span>
+          <Link href="/privacy" className="transition-colors hover:text-foreground">
+            Privacy
+          </Link>
+        </footer>
       </div>
     </>
   );
