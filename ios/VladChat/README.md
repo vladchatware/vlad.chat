@@ -23,8 +23,9 @@ Tap Vlad's picture or name in the chat header to open Account. Anonymous users
 can link Google or Apple there; linked users see their identity and credit
 balances.
 
-Multiple Convex threads and attachment uploads are supported. StoreKit purchases
-remain follow-up slices.
+Multiple Convex threads and attachment uploads are supported. Linked accounts
+can buy credit packs from Account; StoreKit transactions are verified by the
+backend and redeemed idempotently.
 
 To enable Apple sign-in, enable Sign in with Apple on the app ID, create an
 Apple Services ID and key, then set `AUTH_APPLE_ID` and `AUTH_APPLE_SECRET` in
