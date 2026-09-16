@@ -356,6 +356,66 @@ export const getDefaultThreadId = query({
   },
 });
 
+const mobileMessageValidator = v.object({
+  id: v.string(),
+  role: v.string(),
+  text: v.string(),
+  status: v.string(),
+  order: v.number(),
+  createdAt: v.number(),
+});
+
+/**
+ * Small, stable transport shape for native clients.
+ *
+ * Agent UIMessage parts are intentionally flattened here. Swift should not need
+ * to mirror the AI SDK's dynamic tool/content union to render basic chat history.
+ */
+export const getMobileChat = query({
+  args: {},
+  returns: v.object({
+    threadId: v.union(v.string(), v.null()),
+    messages: v.array(mobileMessageValidator),
+    remainingMessages: v.union(v.number(), v.null()),
+  }),
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      return { threadId: null, messages: [], remainingMessages: null };
+    }
+
+    const [threadId, user] = await Promise.all([
+      getDefaultThreadForUser(ctx, userId),
+      ctx.db.get(userId),
+    ]);
+    if (!threadId) {
+      return {
+        threadId: null,
+        messages: [],
+        remainingMessages: user?.isAnonymous ? (user.trialMessages ?? 0) : null,
+      };
+    }
+
+    const result = await listUIMessages(ctx, components.agent, {
+      threadId,
+      paginationOpts: { cursor: null, numItems: 100 },
+    });
+
+    return {
+      threadId,
+      messages: result.page.map((message) => ({
+        id: message.key,
+        role: message.role,
+        text: message.text,
+        status: message.status,
+        order: message.order,
+        createdAt: message._creationTime,
+      })),
+      remainingMessages: user?.isAnonymous ? (user.trialMessages ?? 0) : null,
+    };
+  },
+});
+
 export const getUIMessages = query({
   args: {
     threadId: v.string(),

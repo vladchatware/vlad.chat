@@ -1,0 +1,4 @@
+#include "Base.xcconfig"
+
+// Production deployment used by App Store and TestFlight builds.
+VLAD_CONVEX_URL = https:/$()/lazy-ostrich-10.convex.cloud

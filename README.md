@@ -240,6 +240,12 @@ You can modify the available models in `components/chat.tsx`.
 
 ## Development
 
+### iOS app
+
+Native SwiftUI client lives in [`ios/VladChat`](ios/VladChat). It talks directly
+to Convex, so AI credentials and credit enforcement remain server-side. See its
+README for local Xcode configuration.
+
 ### Available Scripts
 
 - `bun run dev` - Start development server with Turbopack

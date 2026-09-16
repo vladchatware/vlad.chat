@@ -22,8 +22,10 @@ export default defineSchema({
     .index('stripeId', ['stripeId']),
   usage: defineTable({
     userId: v.string(),
+    apiKeyId: v.optional(v.string()),
     model: v.string(),
     provider: v.string(),
+    source: v.optional(v.string()),
     usage: v.object({
       totalTokens: v.optional(v.number()),
       inputTokens: v.optional(v.number()),
