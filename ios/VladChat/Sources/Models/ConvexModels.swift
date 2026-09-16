@@ -68,3 +68,8 @@ struct GenerationResult: Decodable, Sendable {
     let order: Double
     let promptMessageId: String
 }
+
+struct StoreRedemptionResult: Decodable, Sendable {
+    let tokensGranted: Double
+    let alreadyRedeemed: Bool
+}
