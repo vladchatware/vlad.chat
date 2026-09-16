@@ -29,6 +29,7 @@ import {
   type ToolSet,
 } from "ai";
 import { createMCPClient } from "@ai-sdk/mcp";
+import { mergeMobileStreamText } from "@/lib/mobile-stream";
 
 export const listThreads = query({
   args: {
@@ -401,16 +402,41 @@ export const getMobileChat = query({
       paginationOpts: { cursor: null, numItems: 100 },
     });
 
+    const messages = result.page.map((message) => ({
+      id: message.key,
+      role: message.role,
+      text: message.text,
+      status: message.status,
+      order: message.order,
+      createdAt: message._creationTime,
+    }));
+    const activeStreams = await syncStreams(ctx, components.agent, {
+      threadId,
+      streamArgs: { kind: "list" },
+    });
+    const streamMessages = activeStreams?.kind === "list"
+      ? activeStreams.messages
+      : [];
+    const activeDeltas = streamMessages.length
+      ? await syncStreams(ctx, components.agent, {
+          threadId,
+          streamArgs: {
+            kind: "deltas",
+            cursors: streamMessages.map(({ streamId }) => ({
+              streamId,
+              cursor: 0,
+            })),
+          },
+        })
+      : undefined;
+
     return {
       threadId,
-      messages: result.page.map((message) => ({
-        id: message.key,
-        role: message.role,
-        text: message.text,
-        status: message.status,
-        order: message.order,
-        createdAt: message._creationTime,
-      })),
+      messages: mergeMobileStreamText(
+        messages,
+        streamMessages,
+        activeDeltas?.kind === "deltas" ? activeDeltas.deltas : [],
+      ),
       remainingMessages: user?.isAnonymous ? (user.trialMessages ?? 0) : null,
     };
   },
@@ -499,7 +525,7 @@ export const generateReply = action({
         },
       },
       {
-        saveStreamDeltas: false,
+        saveStreamDeltas: true,
         storageOptions: { saveMessages: "all" },
       },
     );
