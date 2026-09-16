@@ -37,7 +37,6 @@
 		A1B2C3D4E5F60718293A4B5C /* InferenceStateGallery.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B5D /* InferenceStateGallery.swift */; };
 		A4CDE519CF14447809110045 /* ChatListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D47BDA3E80D5E451FF8E14C4 /* ChatListView.swift */; };
 		ADBE7C19239C867EFF1724C8 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BD9E62D28947946EFF6C9065 /* Assets.xcassets */; };
-		AF2316DF37791241130CBA55 /* OpenAI in Frameworks */ = {isa = PBXBuildFile; productRef = 21599E41039BE9E6BC5326B5 /* OpenAI */; };
 		B04A5C9623439CABC5B72A64 /* Color.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78176BBA98F98657AA17C093 /* Color.swift */; };
 		B0D1CCC056F0FAB73FE2E6DF /* SwiftMath in Frameworks */ = {isa = PBXBuildFile; productRef = 984D5BF62A263D86E42A5B16 /* SwiftMath */; };
 		BCED25AB65E09107868208BA /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C303574FDDFEFCABDDCF900 /* Constants.swift */; };
@@ -126,7 +125,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				797E7B038DEDF0B6F503D5B7 /* ConvexMobile in Frameworks */,
-				AF2316DF37791241130CBA55 /* OpenAI in Frameworks */,
 				7A2B3156AAC1F1B1C9772BE2 /* Textual in Frameworks */,
 				B0D1CCC056F0FAB73FE2E6DF /* SwiftMath in Frameworks */,
 			);
@@ -409,7 +407,6 @@
 			name = VladChat;
 			packageProductDependencies = (
 				009329F25B55CD4CF0271343 /* ConvexMobile */,
-				21599E41039BE9E6BC5326B5 /* OpenAI */,
 				0DFA1635E620E86004FE00D9 /* Textual */,
 				984D5BF62A263D86E42A5B16 /* SwiftMath */,
 			);
@@ -453,7 +450,6 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				B996CE46737476DFF4818061 /* XCRemoteSwiftPackageReference "convex-swift" */,
-				F3C5F8F702A8E6552658DDE2 /* XCRemoteSwiftPackageReference "openai-swift-fork" */,
 				0B261F600B327D4D89F5F7B4 /* XCRemoteSwiftPackageReference "SwiftMath" */,
 				29A345B0E549445465AFB71C /* XCRemoteSwiftPackageReference "textual" */,
 			);
@@ -871,14 +867,6 @@
 				version = 0.8.1;
 			};
 		};
-		F3C5F8F702A8E6552658DDE2 /* XCRemoteSwiftPackageReference "openai-swift-fork" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/tinfoilsh/openai-swift-fork.git";
-			requirement = {
-				kind = exactVersion;
-				version = 0.0.4;
-			};
-		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -891,11 +879,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 29A345B0E549445465AFB71C /* XCRemoteSwiftPackageReference "textual" */;
 			productName = Textual;
-		};
-		21599E41039BE9E6BC5326B5 /* OpenAI */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = F3C5F8F702A8E6552658DDE2 /* XCRemoteSwiftPackageReference "openai-swift-fork" */;
-			productName = OpenAI;
 		};
 		984D5BF62A263D86E42A5B16 /* SwiftMath */ = {
 			isa = XCSwiftPackageProductDependency;

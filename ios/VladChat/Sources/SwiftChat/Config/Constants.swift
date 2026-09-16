@@ -64,6 +64,5 @@ enum Constants {
         static let sampleRate: Double = 44100
         static let numberOfChannels: Int = 1
         static let recordingTimeoutSeconds: TimeInterval = 120
-        static let transcriptionModel = "whisper-1"
     }
 }

@@ -28,6 +28,7 @@ import { userNotionInstruction } from "@/lib/ai";
 import { isModelEnabled, isPremiumModel } from "@/lib/provider";
 import { z } from "zod/v3";
 import {
+  experimental_transcribe,
   gateway,
   type ModelMessage,
   type ToolSet,
@@ -633,6 +634,33 @@ export const generateMobileAttachmentUploadUrl = mutation({
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new ConvexError("Please sign in to continue.");
     return ctx.storage.generateUploadUrl();
+  },
+});
+
+export const transcribeMobileAudio = action({
+  args: { storageId: v.id("_storage") },
+  returns: v.string(),
+  handler: async (ctx, { storageId }) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new ConvexError("Please sign in to continue.");
+    try {
+      const blob = await ctx.storage.get(storageId);
+      if (!blob || blob.size === 0) {
+        throw new ConvexError("The recording is empty or unavailable.");
+      }
+      if (blob.size > 20 * 1024 * 1024) {
+        throw new ConvexError("The recording exceeds 20 MB.");
+      }
+      const result = await experimental_transcribe({
+        model: gateway.transcriptionModel("openai/whisper-1"),
+        audio: new Uint8Array(await blob.arrayBuffer()),
+      });
+      const text = result.text.trim();
+      if (!text) throw new ConvexError("No speech was detected.");
+      return text;
+    } finally {
+      await ctx.storage.delete(storageId).catch(() => undefined);
+    }
   },
 });
 
