@@ -18,7 +18,7 @@ Native SwiftUI client backed by same Convex deployment as vlad.chat.
 - Markdown, LaTeX, code blocks, citations, and attachment presentation from SwiftChat
 
 Google/account linking, StoreKit purchases, Convex attachment uploads, voice
-transcription, multi-thread mutations, and stream-delta decoding remain follow-up
+transcription and multi-thread mutations remain follow-up
 slices.
 
 ## SwiftChat source
