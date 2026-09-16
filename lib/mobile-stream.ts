@@ -22,11 +22,11 @@ type StreamDelta = {
 };
 
 /** Replaces pending assistant snapshots with text from active delta streams. */
-export function mergeMobileStreamText(
-  messages: MobileMessage[],
+export function mergeMobileStreamText<MESSAGE extends MobileMessage>(
+  messages: MESSAGE[],
   streams: ActiveStream[],
   deltas: StreamDelta[],
-): MobileMessage[] {
+): MESSAGE[] {
   const textByStreamId = new Map<string, string>();
   for (const delta of [...deltas].sort((left, right) => left.start - right.start)) {
     const text = delta.parts

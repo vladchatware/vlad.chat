@@ -76,16 +76,14 @@ final class ChatViewModel: ObservableObject {
             attachmentError = "Vlad is still connecting."
             return
         }
-        guard pendingAttachments.isEmpty else {
-            attachmentError = "Attachments need the Convex upload bridge before they can be sent."
-            return
-        }
+        let outgoingAttachments = pendingAttachments
 
         let optimistic = Message(
             id: "optimistic-\(UUID().uuidString)",
             role: .user,
             content: text,
-            timestamp: Date()
+            timestamp: Date(),
+            attachments: outgoingAttachments
         )
         if var chat = currentChat {
             chat.messages.append(optimistic)
@@ -94,10 +92,23 @@ final class ChatViewModel: ObservableObject {
         }
 
         isLoading = true
+        isProcessingAttachment = !outgoingAttachments.isEmpty
+        pendingAttachments = []
+        pendingImageThumbnails = [:]
         generationTask?.cancel()
         generationTask = Task { [weak self] in
             guard let self else { return }
+            defer {
+                isLoading = false
+                isProcessingAttachment = false
+            }
             do {
+                var uploadedAttachments: [UploadedAttachment] = []
+                for attachment in outgoingAttachments {
+                    uploadedAttachments.append(
+                        try await AttachmentUploadService.upload(attachment, using: client)
+                    )
+                }
                 var arguments: [String: ConvexEncodable?] = [
                     "prompt": text,
                     "model": currentModel.id,
@@ -106,15 +117,19 @@ final class ChatViewModel: ObservableObject {
                 if let selectedThreadId {
                     arguments["threadId"] = selectedThreadId
                 }
+                if !uploadedAttachments.isEmpty {
+                    let values: [ConvexEncodable?] = uploadedAttachments.map(\.convexValue)
+                    arguments["attachments"] = values
+                }
                 let _: GenerationResult = try await client.action(
                     "threads:generateReply",
                     with: arguments
                 )
             } catch {
                 removeMessage(id: optimistic.id)
+                pendingAttachments = outgoingAttachments
                 attachmentError = Self.userFacingMessage(for: error)
             }
-            isLoading = false
         }
     }
 
@@ -241,6 +256,8 @@ final class ChatViewModel: ObservableObject {
             pendingAttachments.append(Attachment(
                 type: .document,
                 fileName: fileName,
+                mimeType: Self.mimeType(for: url.pathExtension),
+                base64: data.base64EncodedString(),
                 textContent: String(data: data, encoding: .utf8),
                 fileSize: Int64(data.count),
                 processingState: .completed
@@ -284,7 +301,20 @@ final class ChatViewModel: ObservableObject {
                 id: item.id,
                 role: item.isUser ? .user : .assistant,
                 content: item.text,
-                timestamp: Date(timeIntervalSince1970: item.createdAt / 1_000)
+                timestamp: Date(timeIntervalSince1970: item.createdAt / 1_000),
+                attachments: item.attachments.map { attachment in
+                    let inlineBase64 = Self.inlineBase64(from: attachment.url)
+                    return Attachment(
+                        id: attachment.id,
+                        type: attachment.type == "image" ? .image : .document,
+                        fileName: attachment.fileName,
+                        mimeType: attachment.mimeType,
+                        base64: inlineBase64,
+                        thumbnailBase64: inlineBase64,
+                        url: inlineBase64 == nil ? attachment.url : nil,
+                        processingState: .completed
+                    )
+                }
             )
             message.isStreaming = item.status == "streaming"
             return message
@@ -329,5 +359,23 @@ final class ChatViewModel: ObservableObject {
             return String(text[range.upperBound...]).components(separatedBy: " at ").first ?? text
         }
         return text
+    }
+
+    private static func mimeType(for fileExtension: String) -> String {
+        switch fileExtension.lowercased() {
+        case "pdf": "application/pdf"
+        case "txt": "text/plain"
+        case "md": "text/markdown"
+        case "csv": "text/csv"
+        case "html", "htm": "text/html"
+        default: "application/octet-stream"
+        }
+    }
+
+    private static func inlineBase64(from url: String) -> String? {
+        guard url.hasPrefix("data:"),
+              let comma = url.firstIndex(of: ","),
+              url[..<comma].hasSuffix(";base64") else { return nil }
+        return String(url[url.index(after: comma)...])
     }
 }

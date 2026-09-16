@@ -47,7 +47,7 @@ struct MessageAttachmentIndicator: View {
                             .onTapGesture {
                                 let allImages = (viewModel.currentChat?.messages ?? [])
                                     .flatMap { $0.attachments }
-                                    .filter { $0.type == .image && $0.base64 != nil }
+                                    .filter { $0.type == .image && ($0.base64 != nil || $0.url != nil) }
                                 if let index = allImages.firstIndex(where: { $0.id == attachment.id }) {
                                     viewModel.imageViewerImages = allImages
                                     viewModel.imageViewerIndex = index
@@ -109,6 +109,16 @@ private struct ImageThumbnail: View {
                 .aspectRatio(contentMode: .fill)
                 .frame(width: size, height: size)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
+        } else if let urlString = attachment.url, let url = URL(string: urlString) {
+            AsyncImage(url: url) { image in
+                image
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            } placeholder: {
+                ProgressView()
+            }
+            .frame(width: size, height: size)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
         } else {
             RoundedRectangle(cornerRadius: 8)
                 .fill(Color.gray.opacity(0.3))
@@ -287,7 +297,17 @@ struct ZoomableImagePage: View {
         }
         .onAppear {
             let base64 = attachment.base64 ?? attachment.thumbnailBase64
-            guard let base64, let data = Data(base64Encoded: base64) else { return }
+            if let base64, let data = Data(base64Encoded: base64) {
+                decodedImage = UIImage(data: data)
+            }
+        }
+        .task(id: attachment.url) {
+            guard decodedImage == nil,
+                  let urlString = attachment.url,
+                  let url = URL(string: urlString),
+                  let (data, response) = try? await URLSession.shared.data(from: url),
+                  let httpResponse = response as? HTTPURLResponse,
+                  (200..<300).contains(httpResponse.statusCode) else { return }
             decodedImage = UIImage(data: data)
         }
     }
