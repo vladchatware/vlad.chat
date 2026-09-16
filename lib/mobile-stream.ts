@@ -78,6 +78,15 @@ export type MobileMessage = {
   createdAt: number;
   response?: MobileResponse;
   errorText?: string;
+  attachments?: MobileAttachment[];
+};
+
+type MobileAttachment = {
+  id: string;
+  type: "image" | "document";
+  fileName: string;
+  mimeType: string;
+  url: string;
 };
 
 type ActiveStream = {
