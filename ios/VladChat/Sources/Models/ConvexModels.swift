@@ -44,7 +44,17 @@ struct MobileChat: Decodable, Equatable, Sendable {
     let title: String
     let threads: [MobileThread]
     let messages: [ChatMessage]
+    let account: MobileAccount?
     let remainingMessages: Double?
+}
+
+struct MobileAccount: Decodable, Equatable, Sendable {
+    let isAnonymous: Bool
+    let name: String?
+    let email: String?
+    let trialMessages: Double
+    let trialTokens: Double
+    let tokens: Double
 }
 
 struct MobileThread: Decodable, Identifiable, Equatable, Sendable {

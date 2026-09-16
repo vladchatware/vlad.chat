@@ -389,6 +389,15 @@ const mobileThreadValidator = v.object({
   createdAt: v.number(),
 });
 
+const mobileAccountValidator = v.object({
+  isAnonymous: v.boolean(),
+  name: v.optional(v.string()),
+  email: v.optional(v.string()),
+  trialMessages: v.number(),
+  trialTokens: v.number(),
+  tokens: v.number(),
+});
+
 /**
  * Small, stable transport shape for native clients.
  *
@@ -402,6 +411,7 @@ export const getMobileChat = query({
     title: v.string(),
     threads: v.array(mobileThreadValidator),
     messages: v.array(mobileMessageValidator),
+    account: v.union(mobileAccountValidator, v.null()),
     remainingMessages: v.union(v.number(), v.null()),
   }),
   handler: async (ctx, args) => {
@@ -412,6 +422,7 @@ export const getMobileChat = query({
         title: "Vlad",
         threads: [],
         messages: [],
+        account: null,
         remainingMessages: null,
       };
     }
@@ -435,6 +446,7 @@ export const getMobileChat = query({
         title: "Vlad",
         threads,
         messages: [],
+        account: user ? mobileAccount(user) : null,
         remainingMessages: user?.isAnonymous ? (user.trialMessages ?? 0) : null,
       };
     }
@@ -508,10 +520,29 @@ export const getMobileChat = query({
           attachments: [],
         }),
       ),
+      account: user ? mobileAccount(user) : null,
       remainingMessages: user?.isAnonymous ? (user.trialMessages ?? 0) : null,
     };
   },
 });
+
+function mobileAccount(user: {
+  isAnonymous?: boolean;
+  name?: string;
+  email?: string;
+  trialMessages?: number;
+  trialTokens?: number;
+  tokens?: number;
+}) {
+  return {
+    isAnonymous: Boolean(user.isAnonymous),
+    ...(user.name === undefined ? {} : { name: user.name }),
+    ...(user.email === undefined ? {} : { email: user.email }),
+    trialMessages: user.trialMessages ?? 0,
+    trialTokens: user.trialTokens ?? 0,
+    tokens: user.tokens ?? 0,
+  };
+}
 
 export const createMobileThread = mutation({
   args: {},

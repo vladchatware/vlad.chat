@@ -6,8 +6,20 @@ import { MutationCtx } from "./_generated/server";
 export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
   providers: [Anonymous, Google],
   callbacks: {
+    async redirect({ redirectTo }) {
+      if (redirectTo.startsWith("vladchat://")) return redirectTo;
+      const siteUrl = process.env.SITE_URL;
+      if (siteUrl && redirectTo.startsWith(siteUrl)) return redirectTo;
+      throw new Error("Invalid authentication redirect URL");
+    },
     async afterUserCreatedOrUpdated(ctx: MutationCtx, { userId }) {
-      await ctx.db.patch(userId, { trialMessages: 10, trialTokens: 16000000, tokens: 0 })
+      const user = await ctx.db.get(userId);
+      if (!user) return;
+      await ctx.db.patch(userId, {
+        trialMessages: user.trialMessages ?? 10,
+        trialTokens: user.trialTokens ?? 16000000,
+        tokens: user.tokens ?? 0,
+      })
     }
   }
 });
