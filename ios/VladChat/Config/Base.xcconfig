@@ -1,0 +1,3 @@
+// Public Convex deployment URL. Override in untracked Local.xcconfig.
+VLAD_CONVEX_URL = https:/$()/replace-me.convex.cloud
+#include? "Local.xcconfig"

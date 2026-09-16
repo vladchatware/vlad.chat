@@ -1,0 +1,767 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		01373EED703076144AE16821 /* MessageInputView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58EF2E983BA939442D4912B4 /* MessageInputView.swift */; };
+		05452BC6090868E2DA679982 /* CameraPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A22C39F702AD1937842D4BD6 /* CameraPickerView.swift */; };
+		122820DAEECC63FC7D829067 /* ChatViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF21C3EBF79DDEC2291186BA /* ChatViewModel.swift */; };
+		1C3B74DCF5BF097B46AFCA34 /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3025EBF89C03C17CFD4FB9C /* ChatView.swift */; };
+		2414E3EF7A44652043036CF4 /* VladChatTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4873D1CB4ED597FD6B864158 /* VladChatTests.swift */; };
+		2B43C7A56F91502AF35237D2 /* DocumentPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFEC2B9736171C6FD41475F1 /* DocumentPickerView.swift */; };
+		2B9E925ED3F6BCCEE366C8A1 /* LaTeXMarkdownView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E3191D24B8CA7883D5F4BE3 /* LaTeXMarkdownView.swift */; };
+		36F309D91C67373039676DD1 /* ThinkingTextChunker.swift in Sources */ = {isa = PBXBuildFile; fileRef = C06AD2E66310DC33E15AE479 /* ThinkingTextChunker.swift */; };
+		3E37990548DAC6DA0C15236A /* ConvexConcurrency.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A12E43535CC3FD4E269DF80 /* ConvexConcurrency.swift */; };
+		3EB1BD302332E8F90F83B787 /* MessageAttachmentIndicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3EF9E9F7A5FBF3562E673BD4 /* MessageAttachmentIndicator.swift */; };
+		4D0329C35CC8212C2111C7F4 /* ThinkingSummaryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A38D1E3BB8B85596E30B9DC /* ThinkingSummaryService.swift */; };
+		5B743530CCEDFF18B04D5CC9 /* URLFetchBox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1FD65E6D34FD45F2E5681233 /* URLFetchBox.swift */; };
+		5BC7EE81108C69B10339E152 /* SettingsManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61C9C44E8F6C418EA197D704 /* SettingsManager.swift */; };
+		6F323DB6C6FFC5A666D16BDF /* ChatSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 987A5A35D14425EA045ACBF1 /* ChatSidebar.swift */; };
+		6FF230DA18213A2BFB7FE38C /* StreamingMarkdownChunker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93A28EFB29901B2DA5AAA406 /* StreamingMarkdownChunker.swift */; };
+		797E7B038DEDF0B6F503D5B7 /* ConvexMobile in Frameworks */ = {isa = PBXBuildFile; productRef = 009329F25B55CD4CF0271343 /* ConvexMobile */; };
+		79EC4A54FCE0CE4B97845936 /* Color+Hex.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F44F27F08B5272C8AB9EC8C /* Color+Hex.swift */; };
+		7A2B3156AAC1F1B1C9772BE2 /* Textual in Frameworks */ = {isa = PBXBuildFile; productRef = 0DFA1635E620E86004FE00D9 /* Textual */; };
+		86DCECDBD54739D5D8D499E0 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 267A2E26C109E7B230231923 /* KeychainStore.swift */; };
+		87BBCAA4C7CC728974EC6C60 /* MessageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB017A045EB0E831D8337685 /* MessageView.swift */; };
+		88B6E062DF6855D14D5C088C /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E1AF3C3E6958622F27A8087 /* AppConfig.swift */; };
+		8C8644934B7800B1A5BE7DB0 /* ChatModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A55061FA5619976004A5D058 /* ChatModels.swift */; };
+		8CF8B8FA8A8DF28A2967F0EF /* ConvexModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 608E17D6E91F466C95ED8B9F /* ConvexModels.swift */; };
+		9933692D39557A3BBC092003 /* VladChatApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8FC30CEB41B68299B76A47B /* VladChatApp.swift */; };
+		A4CDE519CF14447809110045 /* ChatListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D47BDA3E80D5E451FF8E14C4 /* ChatListView.swift */; };
+		ADBE7C19239C867EFF1724C8 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BD9E62D28947946EFF6C9065 /* Assets.xcassets */; };
+		AF2316DF37791241130CBA55 /* OpenAI in Frameworks */ = {isa = PBXBuildFile; productRef = 21599E41039BE9E6BC5326B5 /* OpenAI */; };
+		B04A5C9623439CABC5B72A64 /* Color.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78176BBA98F98657AA17C093 /* Color.swift */; };
+		B0D1CCC056F0FAB73FE2E6DF /* SwiftMath in Frameworks */ = {isa = PBXBuildFile; productRef = 984D5BF62A263D86E42A5B16 /* SwiftMath */; };
+		BCED25AB65E09107868208BA /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C303574FDDFEFCABDDCF900 /* Constants.swift */; };
+		BE0EAA6095538618D20ED7E2 /* AudioRecordingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5682F8B6C4D107A834B7336 /* AudioRecordingService.swift */; };
+		C082285A111B08E623D065EA /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 9A63E1CD2294F5D63A5EE291 /* Assets.xcassets */; };
+		C1BF75E1416CA53AA3B02E05 /* NetworkMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE2F2F42D1A563F9C5AEC08F /* NetworkMonitor.swift */; };
+		C382D7548367E52154539082 /* MessageTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0406B54D2766858ED20F26 /* MessageTableView.swift */; };
+		C6F8221993C3AB2EDB609478 /* WebSearchBox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DB20BBFDEF8331C24836A3E /* WebSearchBox.swift */; };
+		E6AECD2B654580310C2CD6BC /* AppConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = E310EDB0B0AB488B9B4A8020 /* AppConfiguration.swift */; };
+		F4AD256AE67F212AEC788E52 /* ConvexAnonymousAuthProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = B895AAB3CB42E5AB1B1342CB /* ConvexAnonymousAuthProvider.swift */; };
+		F826F7F015AA0765066BAF34 /* AttachmentModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 577CCE72EBAB6D238D8F7C5E /* AttachmentModels.swift */; };
+		FC1140931C7CDE4F9D830826 /* AttachmentPreviewBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = B11C62DE641D0FEA1C0A3A31 /* AttachmentPreviewBar.swift */; };
+		FFD5A890FF97FC9D685E2F6D /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D32504E42EA43906D3149B9 /* Theme.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		74AF7C25BDCDB4E09F89079F /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 9EB0E0CAB4F88B9685A7FFC7 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7A474298C6959339C14BE11A;
+			remoteInfo = VladChat;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		06811A58C68CB06B34D3A165 /* VladChat.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = VladChat.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		0DB20BBFDEF8331C24836A3E /* WebSearchBox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSearchBox.swift; sourceTree = "<group>"; };
+		1A12E43535CC3FD4E269DF80 /* ConvexConcurrency.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConvexConcurrency.swift; sourceTree = "<group>"; };
+		1D32504E42EA43906D3149B9 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		1FD65E6D34FD45F2E5681233 /* URLFetchBox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = URLFetchBox.swift; sourceTree = "<group>"; };
+		267A2E26C109E7B230231923 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
+		2A38D1E3BB8B85596E30B9DC /* ThinkingSummaryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThinkingSummaryService.swift; sourceTree = "<group>"; };
+		2C303574FDDFEFCABDDCF900 /* Constants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
+		3EF9E9F7A5FBF3562E673BD4 /* MessageAttachmentIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageAttachmentIndicator.swift; sourceTree = "<group>"; };
+		4873D1CB4ED597FD6B864158 /* VladChatTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VladChatTests.swift; sourceTree = "<group>"; };
+		4E1AF3C3E6958622F27A8087 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
+		4F44F27F08B5272C8AB9EC8C /* Color+Hex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Color+Hex.swift"; sourceTree = "<group>"; };
+		577CCE72EBAB6D238D8F7C5E /* AttachmentModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentModels.swift; sourceTree = "<group>"; };
+		57F4A83A18960EAB21DB81E4 /* Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Base.xcconfig; sourceTree = "<group>"; };
+		58EF2E983BA939442D4912B4 /* MessageInputView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageInputView.swift; sourceTree = "<group>"; };
+		5E3191D24B8CA7883D5F4BE3 /* LaTeXMarkdownView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaTeXMarkdownView.swift; sourceTree = "<group>"; };
+		608E17D6E91F466C95ED8B9F /* ConvexModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConvexModels.swift; sourceTree = "<group>"; };
+		61C9C44E8F6C418EA197D704 /* SettingsManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsManager.swift; sourceTree = "<group>"; };
+		78176BBA98F98657AA17C093 /* Color.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Color.swift; sourceTree = "<group>"; };
+		93A28EFB29901B2DA5AAA406 /* StreamingMarkdownChunker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingMarkdownChunker.swift; sourceTree = "<group>"; };
+		987A5A35D14425EA045ACBF1 /* ChatSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatSidebar.swift; sourceTree = "<group>"; };
+		9A63E1CD2294F5D63A5EE291 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A22C39F702AD1937842D4BD6 /* CameraPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPickerView.swift; sourceTree = "<group>"; };
+		A3025EBF89C03C17CFD4FB9C /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
+		A55061FA5619976004A5D058 /* ChatModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatModels.swift; sourceTree = "<group>"; };
+		AE2F2F42D1A563F9C5AEC08F /* NetworkMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkMonitor.swift; sourceTree = "<group>"; };
+		AF0406B54D2766858ED20F26 /* MessageTableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageTableView.swift; sourceTree = "<group>"; };
+		B11C62DE641D0FEA1C0A3A31 /* AttachmentPreviewBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentPreviewBar.swift; sourceTree = "<group>"; };
+		B895AAB3CB42E5AB1B1342CB /* ConvexAnonymousAuthProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConvexAnonymousAuthProvider.swift; sourceTree = "<group>"; };
+		B8D7A8F3EE458EEC0A6E9D4A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		B8FC30CEB41B68299B76A47B /* VladChatApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VladChatApp.swift; sourceTree = "<group>"; };
+		BD9E62D28947946EFF6C9065 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		BF21C3EBF79DDEC2291186BA /* ChatViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModel.swift; sourceTree = "<group>"; };
+		C06AD2E66310DC33E15AE479 /* ThinkingTextChunker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThinkingTextChunker.swift; sourceTree = "<group>"; };
+		D47BDA3E80D5E451FF8E14C4 /* ChatListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatListView.swift; sourceTree = "<group>"; };
+		D4FABECF89A5967AC65716A9 /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
+		E310EDB0B0AB488B9B4A8020 /* AppConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfiguration.swift; sourceTree = "<group>"; };
+		E5682F8B6C4D107A834B7336 /* AudioRecordingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioRecordingService.swift; sourceTree = "<group>"; };
+		EFEC2B9736171C6FD41475F1 /* DocumentPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentPickerView.swift; sourceTree = "<group>"; };
+		F14ED7C520AE25802C5EE7AF /* VladChatTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = VladChatTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		FB017A045EB0E831D8337685 /* MessageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageView.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		34C8DCB042E6E6F32B32CAF1 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				797E7B038DEDF0B6F503D5B7 /* ConvexMobile in Frameworks */,
+				AF2316DF37791241130CBA55 /* OpenAI in Frameworks */,
+				7A2B3156AAC1F1B1C9772BE2 /* Textual in Frameworks */,
+				B0D1CCC056F0FAB73FE2E6DF /* SwiftMath in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		04765CBCB29FD8615E96DB4B /* Auth */ = {
+			isa = PBXGroup;
+			children = (
+				B895AAB3CB42E5AB1B1342CB /* ConvexAnonymousAuthProvider.swift */,
+				267A2E26C109E7B230231923 /* KeychainStore.swift */,
+			);
+			path = Auth;
+			sourceTree = "<group>";
+		};
+		09F966065B193C8FDFA75722 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				9A63E1CD2294F5D63A5EE291 /* Assets.xcassets */,
+				B8D7A8F3EE458EEC0A6E9D4A /* Info.plist */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		0CC096B9336F3D70FB955C53 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				B11C62DE641D0FEA1C0A3A31 /* AttachmentPreviewBar.swift */,
+				A22C39F702AD1937842D4BD6 /* CameraPickerView.swift */,
+				D47BDA3E80D5E451FF8E14C4 /* ChatListView.swift */,
+				987A5A35D14425EA045ACBF1 /* ChatSidebar.swift */,
+				A3025EBF89C03C17CFD4FB9C /* ChatView.swift */,
+				EFEC2B9736171C6FD41475F1 /* DocumentPickerView.swift */,
+				5E3191D24B8CA7883D5F4BE3 /* LaTeXMarkdownView.swift */,
+				3EF9E9F7A5FBF3562E673BD4 /* MessageAttachmentIndicator.swift */,
+				58EF2E983BA939442D4912B4 /* MessageInputView.swift */,
+				AF0406B54D2766858ED20F26 /* MessageTableView.swift */,
+				FB017A045EB0E831D8337685 /* MessageView.swift */,
+				1FD65E6D34FD45F2E5681233 /* URLFetchBox.swift */,
+				0DB20BBFDEF8331C24836A3E /* WebSearchBox.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		1A66B734CDE71904B3A15B15 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				577CCE72EBAB6D238D8F7C5E /* AttachmentModels.swift */,
+				A55061FA5619976004A5D058 /* ChatModels.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		20B20AFB068E8D4E976F87E9 /* Tests */ = {
+			isa = PBXGroup;
+			children = (
+				4873D1CB4ED597FD6B864158 /* VladChatTests.swift */,
+			);
+			path = Tests;
+			sourceTree = "<group>";
+		};
+		35415D81DB0B42F4BDBA6B99 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				608E17D6E91F466C95ED8B9F /* ConvexModels.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		3DBF414C34B04D13D8655711 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				99B2896D0AFF66773151FA67 /* App */,
+				04765CBCB29FD8615E96DB4B /* Auth */,
+				F35D340C8E731DF8F9F67A0C /* Config */,
+				E0E28E323A94BAB6C1936F50 /* Convex */,
+				35415D81DB0B42F4BDBA6B99 /* Models */,
+				A24B218BD7C01E7D0F7C6DB7 /* SwiftChat */,
+				79982D5223196B71CFAC14F7 /* ViewModels */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		57AA725C10C74BA67551F554 /* Utilities */ = {
+			isa = PBXGroup;
+			children = (
+				AE2F2F42D1A563F9C5AEC08F /* NetworkMonitor.swift */,
+			);
+			path = Utilities;
+			sourceTree = "<group>";
+		};
+		79982D5223196B71CFAC14F7 /* ViewModels */ = {
+			isa = PBXGroup;
+			children = (
+				BF21C3EBF79DDEC2291186BA /* ChatViewModel.swift */,
+			);
+			path = ViewModels;
+			sourceTree = "<group>";
+		};
+		7D68E4ECEBBECB2BB3452799 /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				57F4A83A18960EAB21DB81E4 /* Base.xcconfig */,
+				D4FABECF89A5967AC65716A9 /* Release.xcconfig */,
+			);
+			path = Config;
+			sourceTree = "<group>";
+		};
+		99B2896D0AFF66773151FA67 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				B8FC30CEB41B68299B76A47B /* VladChatApp.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		A24B218BD7C01E7D0F7C6DB7 /* SwiftChat */ = {
+			isa = PBXGroup;
+			children = (
+				BD9E62D28947946EFF6C9065 /* Assets.xcassets */,
+				DAF596842F47A23F4132BE92 /* Config */,
+				A869AA592D672DCC6370BD16 /* Extensions */,
+				1A66B734CDE71904B3A15B15 /* Models */,
+				A50B76C585FC6B11379372CE /* Services */,
+				57AA725C10C74BA67551F554 /* Utilities */,
+				0CC096B9336F3D70FB955C53 /* Views */,
+			);
+			path = SwiftChat;
+			sourceTree = "<group>";
+		};
+		A34F0F5167106C672FBF95E5 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				06811A58C68CB06B34D3A165 /* VladChat.app */,
+				F14ED7C520AE25802C5EE7AF /* VladChatTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		A50B76C585FC6B11379372CE /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				E5682F8B6C4D107A834B7336 /* AudioRecordingService.swift */,
+				93A28EFB29901B2DA5AAA406 /* StreamingMarkdownChunker.swift */,
+				2A38D1E3BB8B85596E30B9DC /* ThinkingSummaryService.swift */,
+				C06AD2E66310DC33E15AE479 /* ThinkingTextChunker.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		A869AA592D672DCC6370BD16 /* Extensions */ = {
+			isa = PBXGroup;
+			children = (
+				78176BBA98F98657AA17C093 /* Color.swift */,
+				4F44F27F08B5272C8AB9EC8C /* Color+Hex.swift */,
+			);
+			path = Extensions;
+			sourceTree = "<group>";
+		};
+		B4F2B86B94DD9A92168046D5 = {
+			isa = PBXGroup;
+			children = (
+				7D68E4ECEBBECB2BB3452799 /* Config */,
+				09F966065B193C8FDFA75722 /* Resources */,
+				3DBF414C34B04D13D8655711 /* Sources */,
+				20B20AFB068E8D4E976F87E9 /* Tests */,
+				A34F0F5167106C672FBF95E5 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		DAF596842F47A23F4132BE92 /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				4E1AF3C3E6958622F27A8087 /* AppConfig.swift */,
+				2C303574FDDFEFCABDDCF900 /* Constants.swift */,
+				61C9C44E8F6C418EA197D704 /* SettingsManager.swift */,
+				1D32504E42EA43906D3149B9 /* Theme.swift */,
+			);
+			path = Config;
+			sourceTree = "<group>";
+		};
+		E0E28E323A94BAB6C1936F50 /* Convex */ = {
+			isa = PBXGroup;
+			children = (
+				1A12E43535CC3FD4E269DF80 /* ConvexConcurrency.swift */,
+			);
+			path = Convex;
+			sourceTree = "<group>";
+		};
+		F35D340C8E731DF8F9F67A0C /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				E310EDB0B0AB488B9B4A8020 /* AppConfiguration.swift */,
+			);
+			path = Config;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		5F4EFEE3BA068592B87D5F61 /* VladChatTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 2F16B520187BDABC80A40AA2 /* Build configuration list for PBXNativeTarget "VladChatTests" */;
+			buildPhases = (
+				00655B52FF1EE8B182122EA0 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				698F0B06E016B8F8622F9747 /* PBXTargetDependency */,
+			);
+			name = VladChatTests;
+			packageProductDependencies = (
+			);
+			productName = VladChatTests;
+			productReference = F14ED7C520AE25802C5EE7AF /* VladChatTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		7A474298C6959339C14BE11A /* VladChat */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = EA95085A888403ABB907B436 /* Build configuration list for PBXNativeTarget "VladChat" */;
+			buildPhases = (
+				0D5733CD4F5291F1E629D166 /* Sources */,
+				D131D9658151A5DF20D62359 /* Resources */,
+				34C8DCB042E6E6F32B32CAF1 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = VladChat;
+			packageProductDependencies = (
+				009329F25B55CD4CF0271343 /* ConvexMobile */,
+				21599E41039BE9E6BC5326B5 /* OpenAI */,
+				0DFA1635E620E86004FE00D9 /* Textual */,
+				984D5BF62A263D86E42A5B16 /* SwiftMath */,
+			);
+			productName = VladChat;
+			productReference = 06811A58C68CB06B34D3A165 /* VladChat.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		9EB0E0CAB4F88B9685A7FFC7 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					5F4EFEE3BA068592B87D5F61 = {
+						DevelopmentTeam = L6775788HZ;
+						ProvisioningStyle = Automatic;
+					};
+					7A474298C6959339C14BE11A = {
+						DevelopmentTeam = L6775788HZ;
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = C672A88A331ADC16401931C6 /* Build configuration list for PBXProject "VladChat" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = B4F2B86B94DD9A92168046D5;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				B996CE46737476DFF4818061 /* XCRemoteSwiftPackageReference "convex-swift" */,
+				F3C5F8F702A8E6552658DDE2 /* XCRemoteSwiftPackageReference "openai-swift-fork" */,
+				0B261F600B327D4D89F5F7B4 /* XCRemoteSwiftPackageReference "SwiftMath" */,
+				29A345B0E549445465AFB71C /* XCRemoteSwiftPackageReference "textual" */,
+			);
+			preferredProjectObjectVersion = 77;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				7A474298C6959339C14BE11A /* VladChat */,
+				5F4EFEE3BA068592B87D5F61 /* VladChatTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		D131D9658151A5DF20D62359 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				ADBE7C19239C867EFF1724C8 /* Assets.xcassets in Resources */,
+				C082285A111B08E623D065EA /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		00655B52FF1EE8B182122EA0 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				2414E3EF7A44652043036CF4 /* VladChatTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0D5733CD4F5291F1E629D166 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				88B6E062DF6855D14D5C088C /* AppConfig.swift in Sources */,
+				E6AECD2B654580310C2CD6BC /* AppConfiguration.swift in Sources */,
+				F826F7F015AA0765066BAF34 /* AttachmentModels.swift in Sources */,
+				FC1140931C7CDE4F9D830826 /* AttachmentPreviewBar.swift in Sources */,
+				BE0EAA6095538618D20ED7E2 /* AudioRecordingService.swift in Sources */,
+				05452BC6090868E2DA679982 /* CameraPickerView.swift in Sources */,
+				A4CDE519CF14447809110045 /* ChatListView.swift in Sources */,
+				8C8644934B7800B1A5BE7DB0 /* ChatModels.swift in Sources */,
+				6F323DB6C6FFC5A666D16BDF /* ChatSidebar.swift in Sources */,
+				1C3B74DCF5BF097B46AFCA34 /* ChatView.swift in Sources */,
+				122820DAEECC63FC7D829067 /* ChatViewModel.swift in Sources */,
+				79EC4A54FCE0CE4B97845936 /* Color+Hex.swift in Sources */,
+				B04A5C9623439CABC5B72A64 /* Color.swift in Sources */,
+				BCED25AB65E09107868208BA /* Constants.swift in Sources */,
+				F4AD256AE67F212AEC788E52 /* ConvexAnonymousAuthProvider.swift in Sources */,
+				3E37990548DAC6DA0C15236A /* ConvexConcurrency.swift in Sources */,
+				8CF8B8FA8A8DF28A2967F0EF /* ConvexModels.swift in Sources */,
+				2B43C7A56F91502AF35237D2 /* DocumentPickerView.swift in Sources */,
+				86DCECDBD54739D5D8D499E0 /* KeychainStore.swift in Sources */,
+				2B9E925ED3F6BCCEE366C8A1 /* LaTeXMarkdownView.swift in Sources */,
+				3EB1BD302332E8F90F83B787 /* MessageAttachmentIndicator.swift in Sources */,
+				01373EED703076144AE16821 /* MessageInputView.swift in Sources */,
+				C382D7548367E52154539082 /* MessageTableView.swift in Sources */,
+				87BBCAA4C7CC728974EC6C60 /* MessageView.swift in Sources */,
+				C1BF75E1416CA53AA3B02E05 /* NetworkMonitor.swift in Sources */,
+				5BC7EE81108C69B10339E152 /* SettingsManager.swift in Sources */,
+				6FF230DA18213A2BFB7FE38C /* StreamingMarkdownChunker.swift in Sources */,
+				FFD5A890FF97FC9D685E2F6D /* Theme.swift in Sources */,
+				4D0329C35CC8212C2111C7F4 /* ThinkingSummaryService.swift in Sources */,
+				36F309D91C67373039676DD1 /* ThinkingTextChunker.swift in Sources */,
+				5B743530CCEDFF18B04D5CC9 /* URLFetchBox.swift in Sources */,
+				9933692D39557A3BBC092003 /* VladChatApp.swift in Sources */,
+				C6F8221993C3AB2EDB609478 /* WebSearchBox.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		698F0B06E016B8F8622F9747 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7A474298C6959339C14BE11A /* VladChat */;
+			targetProxy = 74AF7C25BDCDB4E09F89079F /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		22ECC9BACA35A26F64908A10 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = chat.vlad.ios.tests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/VladChat.app/VladChat";
+			};
+			name = Debug;
+		};
+		517E584ABDB15943B9D4DC10 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = L6775788HZ;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MARKETING_VERSION = 0.1.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		59759602B5C4C524095F5784 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 57F4A83A18960EAB21DB81E4 /* Base.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = chat.vlad.ios;
+				PRODUCT_NAME = VladChat;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		B4AB53B18C3C96F65BE9671F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = L6775788HZ;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MARKETING_VERSION = 0.1.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		C34CB8E878092795DB17E995 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = D4FABECF89A5967AC65716A9 /* Release.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = chat.vlad.ios;
+				PRODUCT_NAME = VladChat;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		E8988C80AB606BA358B47B4D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = chat.vlad.ios.tests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/VladChat.app/VladChat";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		2F16B520187BDABC80A40AA2 /* Build configuration list for PBXNativeTarget "VladChatTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				22ECC9BACA35A26F64908A10 /* Debug */,
+				E8988C80AB606BA358B47B4D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		C672A88A331ADC16401931C6 /* Build configuration list for PBXProject "VladChat" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				517E584ABDB15943B9D4DC10 /* Debug */,
+				B4AB53B18C3C96F65BE9671F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		EA95085A888403ABB907B436 /* Build configuration list for PBXNativeTarget "VladChat" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				59759602B5C4C524095F5784 /* Debug */,
+				C34CB8E878092795DB17E995 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		0B261F600B327D4D89F5F7B4 /* XCRemoteSwiftPackageReference "SwiftMath" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/mgriebling/SwiftMath";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.7.3;
+			};
+		};
+		29A345B0E549445465AFB71C /* XCRemoteSwiftPackageReference "textual" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/tinfoilsh/textual";
+			requirement = {
+				branch = main;
+				kind = branch;
+			};
+		};
+		B996CE46737476DFF4818061 /* XCRemoteSwiftPackageReference "convex-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/get-convex/convex-swift";
+			requirement = {
+				kind = exactVersion;
+				version = 0.8.1;
+			};
+		};
+		F3C5F8F702A8E6552658DDE2 /* XCRemoteSwiftPackageReference "openai-swift-fork" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/tinfoilsh/openai-swift-fork.git";
+			requirement = {
+				kind = exactVersion;
+				version = 0.0.4;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		009329F25B55CD4CF0271343 /* ConvexMobile */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B996CE46737476DFF4818061 /* XCRemoteSwiftPackageReference "convex-swift" */;
+			productName = ConvexMobile;
+		};
+		0DFA1635E620E86004FE00D9 /* Textual */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 29A345B0E549445465AFB71C /* XCRemoteSwiftPackageReference "textual" */;
+			productName = Textual;
+		};
+		21599E41039BE9E6BC5326B5 /* OpenAI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F3C5F8F702A8E6552658DDE2 /* XCRemoteSwiftPackageReference "openai-swift-fork" */;
+			productName = OpenAI;
+		};
+		984D5BF62A263D86E42A5B16 /* SwiftMath */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0B261F600B327D4D89F5F7B4 /* XCRemoteSwiftPackageReference "SwiftMath" */;
+			productName = SwiftMath;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 9EB0E0CAB4F88B9685A7FFC7 /* Project object */;
+}
