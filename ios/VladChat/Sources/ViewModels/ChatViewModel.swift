@@ -38,6 +38,7 @@ final class ChatViewModel: ObservableObject {
     private var generationTask: Task<Void, Never>?
     private var hasStarted = false
     private var selectedThreadId: String?
+    private var messageOrders: [String: Double] = [:]
 
     init() {
         guard let model = AppConfig.shared.currentModel ?? AppConfig.shared.availableModels.first else {
@@ -130,6 +131,7 @@ final class ChatViewModel: ObservableObject {
                     with: arguments
                 )
             } catch {
+                guard !Task.isCancelled else { return }
                 removeMessage(id: optimistic.id)
                 pendingAttachments = outgoingAttachments
                 attachmentError = Self.userFacingMessage(for: error)
@@ -141,6 +143,22 @@ final class ChatViewModel: ObservableObject {
         generationTask?.cancel()
         generationTask = nil
         isLoading = false
+        guard let client, let selectedThreadId else { return }
+        let activeOrder = currentChat?.messages
+            .last(where: { $0.role == .assistant && $0.isStreaming })
+            .flatMap { messageOrders[$0.id] }
+        Task { [weak self] in
+            do {
+                var arguments: [String: ConvexEncodable?] = ["threadId": selectedThreadId]
+                if let activeOrder { arguments["order"] = activeOrder }
+                let _: AbortReplyResult = try await client.mutation(
+                    "threads:abortReply",
+                    with: arguments
+                )
+            } catch {
+                self?.attachmentError = Self.userFacingMessage(for: error)
+            }
+        }
     }
 
     func changeModel(to model: ModelType) {
@@ -217,17 +235,17 @@ final class ChatViewModel: ObservableObject {
 
     func editMessage(at index: Int, newContent: String) {
         guard messages.indices.contains(index), messages[index].role == .user else { return }
-        attachmentError = "Editing persisted Convex messages is not wired yet."
+        replaceMessages(from: index, with: newContent)
     }
 
     func regenerateLastResponse() {
-        guard let prompt = messages.last(where: { $0.role == .user })?.content else { return }
-        sendMessage(text: prompt)
+        guard let index = messages.lastIndex(where: { $0.role == .user }) else { return }
+        regenerateMessage(at: index)
     }
 
     func regenerateMessage(at index: Int) {
         guard messages.indices.contains(index), messages[index].role == .user else { return }
-        sendMessage(text: messages[index].content)
+        replaceMessages(from: index, with: messages[index].content)
     }
 
     func addImageAttachment(data: Data, fileName: String) {
@@ -346,6 +364,9 @@ final class ChatViewModel: ObservableObject {
 
     private func apply(_ mobileChat: MobileChat) {
         account = mobileChat.account
+        messageOrders = Dictionary(
+            uniqueKeysWithValues: mobileChat.messages.map { ($0.id, $0.order) }
+        )
         let mapped = mobileChat.messages.map { item in
             var message = Message(
                 id: item.id,
@@ -386,6 +407,43 @@ final class ChatViewModel: ObservableObject {
         }
         currentChat = chats.first(where: { $0.id == selectedId })
         scrollToBottomTrigger = UUID()
+    }
+
+    private func replaceMessages(from index: Int, with rawText: String) {
+        let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !isLoading,
+              !text.isEmpty,
+              messages.indices.contains(index),
+              let client,
+              let threadId = selectedThreadId,
+              let order = messageOrders[messages[index].id] else { return }
+
+        isLoading = true
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let _: DeleteMobileMessagesResult = try await client.action(
+                    "threads:deleteMobileMessagesFrom",
+                    with: ["threadId": threadId, "startOrder": order]
+                )
+                if var chat = currentChat {
+                    chat.messages.removeSubrange(index...)
+                    currentChat = chat
+                    replaceChat(chat)
+                }
+                let composingAttachments = pendingAttachments
+                let composingThumbnails = pendingImageThumbnails
+                pendingAttachments = []
+                pendingImageThumbnails = [:]
+                isLoading = false
+                sendMessage(text: text)
+                pendingAttachments = composingAttachments
+                pendingImageThumbnails = composingThumbnails
+            } catch {
+                isLoading = false
+                attachmentError = Self.userFacingMessage(for: error)
+            }
+        }
     }
 
     private func replaceChat(_ chat: Chat) {

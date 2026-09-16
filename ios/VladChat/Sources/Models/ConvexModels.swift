@@ -69,6 +69,15 @@ struct GenerationResult: Decodable, Sendable {
     let promptMessageId: String
 }
 
+struct AbortReplyResult: Decodable, Sendable {
+    let aborted: Bool
+    let failedPending: Double
+}
+
+struct DeleteMobileMessagesResult: Decodable, Sendable {
+    let deleted: Bool
+}
+
 struct StoreRedemptionResult: Decodable, Sendable {
     let tokensGranted: Double
     let alreadyRedeemed: Bool
