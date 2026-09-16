@@ -9,7 +9,7 @@
 import Foundation
 import Combine
 import AVFoundation
-import OpenAI
+import ConvexMobile
 
 /// Service for managing audio recording and transcription
 @MainActor
@@ -92,7 +92,10 @@ class AudioRecordingService: NSObject, ObservableObject {
 
     // MARK: - Transcription
 
-    func transcribe(fileURL: URL, client: OpenAI) async throws -> String {
+    func transcribe(
+        fileURL: URL,
+        client: ConvexClientWithAuth<ConvexAuthSession>
+    ) async throws -> String {
         isTranscribing = true
         defer {
             isTranscribing = false
@@ -107,21 +110,33 @@ class AudioRecordingService: NSObject, ObservableObject {
             throw AudioRecordingError.emptyRecording
         }
 
-        let query = AudioTranscriptionQuery(
-            file: audioData,
-            fileType: .m4a,
-            model: Constants.Audio.transcriptionModel,
-            responseFormat: .json
+        let uploadURLString: String = try await client.mutation(
+            "threads:generateMobileAttachmentUploadUrl"
         )
+        guard let uploadURL = URL(string: uploadURLString) else {
+            throw AudioRecordingError.transcriptionFailed("Invalid upload URL")
+        }
+        var request = URLRequest(url: uploadURL)
+        request.httpMethod = "POST"
+        request.setValue("audio/mp4", forHTTPHeaderField: "Content-Type")
+        request.httpBody = audioData
+        let (responseData, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200..<300).contains(httpResponse.statusCode) else {
+            throw AudioRecordingError.transcriptionFailed("Recording upload failed")
+        }
+        let uploaded = try JSONDecoder().decode(AttachmentUploadResponse.self, from: responseData)
+        let transcription: String = try await client.action(
+            "threads:transcribeMobileAudio",
+            with: ["storageId": uploaded.storageId]
+        )
+        let normalized = transcription.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        let result = try await client.audioTranscriptions(query: query)
-        let transcription = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard !transcription.isEmpty else {
+        guard !normalized.isEmpty else {
             throw AudioRecordingError.emptyTranscription
         }
 
-        return transcription
+        return normalized
     }
 
     // MARK: - Private Helpers
