@@ -393,6 +393,15 @@ const mobileMessageValidator = v.object({
   response: v.optional(mobileResponseValidator),
 });
 
+const mobileAccountValidator = v.object({
+  isAnonymous: v.boolean(),
+  name: v.optional(v.string()),
+  email: v.optional(v.string()),
+  trialMessages: v.number(),
+  trialTokens: v.number(),
+  tokens: v.number(),
+});
+
 /**
  * Small, stable transport shape for native clients.
  *
@@ -404,12 +413,13 @@ export const getMobileChat = query({
   returns: v.object({
     threadId: v.union(v.string(), v.null()),
     messages: v.array(mobileMessageValidator),
+    account: v.union(mobileAccountValidator, v.null()),
     remainingMessages: v.union(v.number(), v.null()),
   }),
   handler: async (ctx) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) {
-      return { threadId: null, messages: [], remainingMessages: null };
+      return { threadId: null, messages: [], account: null, remainingMessages: null };
     }
 
     const [threadId, user] = await Promise.all([
@@ -420,6 +430,7 @@ export const getMobileChat = query({
       return {
         threadId: null,
         messages: [],
+        account: user ? mobileAccount(user) : null,
         remainingMessages: user?.isAnonymous ? (user.trialMessages ?? 0) : null,
       };
     }
@@ -464,10 +475,29 @@ export const getMobileChat = query({
         streamMessages,
         activeDeltas?.kind === "deltas" ? activeDeltas.deltas : [],
       ),
+      account: user ? mobileAccount(user) : null,
       remainingMessages: user?.isAnonymous ? (user.trialMessages ?? 0) : null,
     };
   },
 });
+
+function mobileAccount(user: {
+  isAnonymous?: boolean;
+  name?: string;
+  email?: string;
+  trialMessages?: number;
+  trialTokens?: number;
+  tokens?: number;
+}) {
+  return {
+    isAnonymous: Boolean(user.isAnonymous),
+    ...(user.name === undefined ? {} : { name: user.name }),
+    ...(user.email === undefined ? {} : { email: user.email }),
+    trialMessages: user.trialMessages ?? 0,
+    trialTokens: user.trialTokens ?? 0,
+    tokens: user.tokens ?? 0,
+  };
+}
 
 export const getUIMessages = query({
   args: {

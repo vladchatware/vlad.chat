@@ -12,14 +12,14 @@ Native SwiftUI client backed by same Convex deployment as vlad.chat.
 ## Current slice
 
 - Anonymous Convex Auth session stored in Keychain
+- Google account linking for anonymous sessions
 - Reactive chat history from Convex
 - Server-owned AI generation, credits, tools, and model access
 - SwiftChat message renderer, sidebar, composer, model picker, and web-search UI
 - Markdown, LaTeX, code blocks, citations, and attachment presentation from SwiftChat
 
-Google/account linking, StoreKit purchases, Convex attachment uploads, voice
-transcription and multi-thread mutations remain follow-up
-slices.
+StoreKit purchases, Convex attachment uploads, voice transcription and
+multi-thread mutations remain follow-up slices.
 
 ## SwiftChat source
 
