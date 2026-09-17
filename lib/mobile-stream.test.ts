@@ -47,4 +47,31 @@ describe("mergeMobileStreamText", () => {
 
     expect(result[0]).toEqual(finalized);
   });
+
+  it("materializes a streaming assistant before its pending message exists", () => {
+    const userMessage = {
+      ...pendingMessage,
+      id: "user",
+      role: "user",
+      text: "Hello",
+      status: "success",
+    };
+    const result = mergeMobileStreamText(
+      [userMessage],
+      [{ streamId: "stream-1", order: 2, stepOrder: 0 }],
+      [{
+        streamId: "stream-1",
+        start: 0,
+        parts: [{ type: "text-delta", id: "text", delta: "Partial" }],
+      }],
+    );
+
+    expect(result).toHaveLength(2);
+    expect(result[1]).toMatchObject({
+      id: "stream:stream-1",
+      role: "assistant",
+      text: "Partial",
+      status: "streaming",
+    });
+  });
 });

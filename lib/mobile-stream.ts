@@ -40,16 +40,20 @@ export function mergeMobileStreamText(
   }
 
   const textByOrder = new Map<number, string>();
+  const firstStreamByOrder = new Map<number, ActiveStream>();
   for (const stream of [...streams].sort(
     (left, right) => left.order - right.order || left.stepOrder - right.stepOrder,
   )) {
+    if (!firstStreamByOrder.has(stream.order)) {
+      firstStreamByOrder.set(stream.order, stream);
+    }
     textByOrder.set(
       stream.order,
       `${textByOrder.get(stream.order) ?? ""}${textByStreamId.get(stream.streamId) ?? ""}`,
     );
   }
 
-  return messages.map((message) => {
+  const merged = messages.map((message) => {
     const streamedText = textByOrder.get(message.order);
     if (
       message.role !== "assistant" ||
@@ -60,4 +64,25 @@ export function mergeMobileStreamText(
     }
     return { ...message, text: streamedText, status: "streaming" };
   });
+
+  for (const [order, text] of textByOrder) {
+    const hasAssistantMessage = merged.some(
+      (message) => message.order === order && message.role === "assistant",
+    );
+    const stream = firstStreamByOrder.get(order);
+    if (!hasAssistantMessage && stream && text) {
+      const prompt = merged.find(
+        (message) => message.order === order && message.role === "user",
+      );
+      merged.push({
+        id: `stream:${stream.streamId}`,
+        role: "assistant",
+        text,
+        status: "streaming",
+        order,
+        createdAt: prompt?.createdAt ?? 0,
+      });
+    }
+  }
+  return merged;
 }
