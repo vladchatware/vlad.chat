@@ -26,7 +26,19 @@ export function mergeMobileStreamText<MESSAGE extends MobileMessage>(
   messages: MESSAGE[],
   streams: ActiveStream[],
   deltas: StreamDelta[],
-): MESSAGE[] {
+  createStreamingMessage: (stream: ActiveStream, text: string) => MESSAGE,
+): MESSAGE[];
+export function mergeMobileStreamText(
+  messages: MobileMessage[],
+  streams: ActiveStream[],
+  deltas: StreamDelta[],
+): MobileMessage[];
+export function mergeMobileStreamText(
+  messages: MobileMessage[],
+  streams: ActiveStream[],
+  deltas: StreamDelta[],
+  createStreamingMessage?: (stream: ActiveStream, text: string) => MobileMessage,
+): MobileMessage[] {
   const textByStreamId = new Map<string, string>();
   for (const delta of [...deltas].sort((left, right) => left.start - right.start)) {
     const text = delta.parts
@@ -74,14 +86,16 @@ export function mergeMobileStreamText<MESSAGE extends MobileMessage>(
       const prompt = merged.find(
         (message) => message.order === order && message.role === "user",
       );
-      merged.push({
-        id: `stream:${stream.streamId}`,
-        role: "assistant",
-        text,
-        status: "streaming",
-        order,
-        createdAt: prompt?.createdAt ?? 0,
-      });
+      merged.push(
+        createStreamingMessage?.(stream, text) ?? {
+          id: `stream:${stream.streamId}`,
+          role: "assistant",
+          text,
+          status: "streaming",
+          order,
+          createdAt: prompt?.createdAt ?? 0,
+        },
+      );
     }
   }
   return merged;
