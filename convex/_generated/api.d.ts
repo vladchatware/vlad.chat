@@ -16,6 +16,7 @@ import type * as http from "../http.js";
 import type * as lounge from "../lounge.js";
 import type * as notion from "../notion.js";
 import type * as posthog from "../posthog.js";
+import type * as storekit from "../storekit.js";
 import type * as threads from "../threads.js";
 import type * as users from "../users.js";
 
@@ -42,6 +43,7 @@ declare const fullApi: ApiFromModules<{
   lounge: typeof lounge;
   notion: typeof notion;
   posthog: typeof posthog;
+  storekit: typeof storekit;
   threads: typeof threads;
   users: typeof users;
 }>;
