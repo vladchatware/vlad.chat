@@ -311,6 +311,16 @@ final class ChatViewModel: ObservableObject {
         }
     }
 
+    func redeemStoreTransaction(_ transactionId: UInt64) async throws {
+        guard let client else {
+            throw StorePurchaseError.productUnavailable
+        }
+        let _: StoreRedemptionResult = try await client.action(
+            "storekit:redeemTransaction",
+            with: ["transactionId": String(transactionId)]
+        )
+    }
+
     private func subscribe(
         using client: ConvexClientWithAuth<ConvexAuthSession>,
         threadId: String? = nil

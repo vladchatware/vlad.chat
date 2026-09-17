@@ -9,6 +9,14 @@ Native SwiftUI client backed by same Convex deployment as vlad.chat.
 3. Run `xcodegen generate` from this directory after changing `project.yml`.
 4. Open `VladChat.xcodeproj` in Xcode.
 
+## StoreKit
+
+Create a consumable App Store Connect product named `chat.vlad.tokens.5` for
+the $5 / 16,666,666-token pack. Configure `APPLE_BUNDLE_ID`,
+`APPLE_ISSUER_ID`, `APPLE_KEY_ID`, and `APPLE_PRIVATE_KEY` in the Convex
+deployment so the backend can verify each transaction with Apple before
+granting credits. Transaction IDs are stored and credited idempotently.
+
 ## Current slice
 
 - Anonymous Convex Auth session stored in Keychain
@@ -17,7 +25,8 @@ Native SwiftUI client backed by same Convex deployment as vlad.chat.
 - SwiftChat message renderer, sidebar, composer, model picker, and web-search UI
 - Markdown, LaTeX, code blocks, citations, and attachment presentation from SwiftChat
 
-StoreKit purchases remain follow-up
+Streaming, multi-thread chat, attachments, voice transcription, Google account
+linking, and StoreKit credit purchases are wired end to end.
 slices.
 
 ## SwiftChat source

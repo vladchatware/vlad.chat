@@ -44,6 +44,17 @@ export default defineSchema({
     }),
     providerMetadata: v.optional(vProviderMetadata),
   }),
+  storeTransactions: defineTable({
+    transactionId: v.string(),
+    originalTransactionId: v.string(),
+    userId: v.id("users"),
+    productId: v.string(),
+    tokens: v.number(),
+    purchasedAt: v.number(),
+    environment: v.string(),
+  })
+    .index("transactionId", ["transactionId"])
+    .index("userId", ["userId"]),
   notionConnections: defineTable({
     userId: v.id("users"),
     accessToken: v.string(),
