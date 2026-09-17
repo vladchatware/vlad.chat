@@ -34,28 +34,40 @@ struct MessageAttachmentIndicator: View {
         .padding(.bottom, 4)
     }
 
-    @ViewBuilder
     private var imageGrid: some View {
         let size = Constants.Attachments.messageThumbnailSize
         let columns = Constants.Attachments.messageThumbnailColumns
         let rows = imageAttachments.chunked(into: columns)
-        VStack(alignment: .trailing, spacing: 4) {
-            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                HStack(spacing: 4) {
-                    ForEach(row) { attachment in
-                        ImageThumbnail(attachment: attachment, size: size)
-                            .onTapGesture {
-                                let allImages = (viewModel.currentChat?.messages ?? [])
-                                    .flatMap { $0.attachments }
-                                    .filter { $0.type == .image && ($0.base64 != nil || $0.url != nil) }
-                                if let index = allImages.firstIndex(where: { $0.id == attachment.id }) {
-                                    viewModel.imageViewerImages = allImages
-                                    viewModel.imageViewerIndex = index
-                                    viewModel.showImageViewer = true
-                                }
-                            }
-                    }
+        return VStack(alignment: .trailing, spacing: 4) {
+            ForEach(rows.indices, id: \.self) { index in
+                ImageAttachmentRow(attachments: rows[index], size: size) { attachment in
+                    openImageViewer(for: attachment)
                 }
+            }
+        }
+    }
+
+    private func openImageViewer(for attachment: Attachment) {
+        let allImages = (viewModel.currentChat?.messages ?? [])
+            .flatMap(\.attachments)
+            .filter { $0.type == .image && ($0.base64 != nil || $0.url != nil) }
+        guard let index = allImages.firstIndex(where: { $0.id == attachment.id }) else { return }
+        viewModel.imageViewerImages = allImages
+        viewModel.imageViewerIndex = index
+        viewModel.showImageViewer = true
+    }
+}
+
+private struct ImageAttachmentRow: View {
+    let attachments: [Attachment]
+    let size: CGFloat
+    let onSelect: (Attachment) -> Void
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(attachments) { attachment in
+                ImageThumbnail(attachment: attachment, size: size)
+                    .onTapGesture { onSelect(attachment) }
             }
         }
     }
