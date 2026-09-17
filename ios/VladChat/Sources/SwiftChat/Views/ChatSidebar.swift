@@ -17,6 +17,7 @@ struct ChatSidebar: View {
     @State private var editingTitle: String = ""
     @State private var deletingChatId: String? = nil
     @State private var showDeleteAlert: Bool = false
+    @State private var showAccount = false
 
     // Timer to update relative time strings
     @State private var timeUpdateTimer = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
@@ -53,6 +54,9 @@ struct ChatSidebar: View {
             .ignoresSafeArea(edges: .bottom)
             .onReceive(timeUpdateTimer) { _ in
                 currentTime = Date()
+            }
+            .sheet(isPresented: $showAccount) {
+                AccountView(viewModel: viewModel)
             }
             .alert("Delete Chat", isPresented: $showDeleteAlert) {
                 Button("Cancel", role: .cancel) {
@@ -133,6 +137,21 @@ struct ChatSidebar: View {
 
             Divider()
                 .background(Color.gray.opacity(0.3))
+
+            Button {
+                showAccount = true
+            } label: {
+                Label(
+                    viewModel.account?.isAnonymous == false
+                        ? (viewModel.account?.name ?? "Account")
+                        : "Account",
+                    systemImage: "person.crop.circle"
+                )
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+            }
+            .buttonStyle(.plain)
         }
         .frame(maxHeight: .infinity, alignment: .top)
     }

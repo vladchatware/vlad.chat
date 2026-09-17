@@ -27,10 +27,13 @@ final class ChatViewModel: ObservableObject {
     @Published var isProcessingAttachment = false
     @Published var attachmentError: String?
     @Published var pendingImageThumbnails: [String: String] = [:]
+    @Published var account: MobileAccount?
+    @Published var isLinkingAccount = false
 
     var messages: [Message] { currentChat?.messages ?? [] }
 
     private var client: ConvexClientWithAuth<ConvexAuthSession>?
+    private var authProvider: ConvexAnonymousAuthProvider?
     private var subscriptionTask: Task<Void, Never>?
     private var generationTask: Task<Void, Never>?
     private var hasStarted = false
@@ -55,6 +58,7 @@ final class ChatViewModel: ObservableObject {
         }
 
         let provider = ConvexAnonymousAuthProvider(deploymentURL: deploymentURL)
+        authProvider = provider
         let client = ConvexClientWithAuth(
             deploymentUrl: deploymentURL.absoluteString,
             authProvider: provider
@@ -282,6 +286,31 @@ final class ChatViewModel: ObservableObject {
         )
     }
 
+    func linkGoogleAccount() {
+        guard let client, let authProvider, account?.isAnonymous != false else { return }
+        isLinkingAccount = true
+        Task { [weak self] in
+            guard let self else { return }
+            defer { isLinkingAccount = false }
+            do {
+                let params: [String: ConvexEncodable?] = [
+                    "redirectTo": "vladchat://auth"
+                ]
+                let start: ConvexOAuthStartResponse = try await client.action(
+                    "auth:signIn",
+                    with: ["provider": "google", "params": params]
+                )
+                try await authProvider.completeGoogleSignIn(start)
+                if case .failure(let error) = await client.login() {
+                    throw error
+                }
+                subscribe(using: client, threadId: selectedThreadId)
+            } catch {
+                attachmentError = Self.userFacingMessage(for: error)
+            }
+        }
+    }
+
     private func subscribe(
         using client: ConvexClientWithAuth<ConvexAuthSession>,
         threadId: String? = nil
@@ -306,6 +335,7 @@ final class ChatViewModel: ObservableObject {
     }
 
     private func apply(_ mobileChat: MobileChat) {
+        account = mobileChat.account
         let mapped = mobileChat.messages.map { item in
             var message = Message(
                 id: item.id,
