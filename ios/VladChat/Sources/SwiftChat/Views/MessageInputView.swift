@@ -136,7 +136,7 @@ struct MessageInputView: View {
                                      shouldFocusInput: viewModel.shouldFocusInput,
                                      isLoading: viewModel.isLoading,
                                      onFocusHandled: { viewModel.shouldFocusInput = false },
-                                     onSendMessage: { text in viewModel.sendMessage(text: text) })
+                                     onSendMessage: submitMessage)
                         .frame(height: textHeight)
                         .padding(.horizontal)
 
@@ -183,7 +183,7 @@ struct MessageInputView: View {
                                      shouldFocusInput: viewModel.shouldFocusInput,
                                      isLoading: viewModel.isLoading,
                                      onFocusHandled: { viewModel.shouldFocusInput = false },
-                                     onSendMessage: { text in viewModel.sendMessage(text: text) })
+                                     onSendMessage: submitMessage)
                         .frame(height: textHeight)
                         .padding(.horizontal)
 
@@ -331,10 +331,17 @@ struct MessageInputView: View {
         if viewModel.isLoading {
             viewModel.cancelGeneration()
         } else if !messageText.isEmpty || !viewModel.pendingAttachments.isEmpty {
-            viewModel.sendMessage(text: messageText)
-            messageText = ""
-            textHeight = Layout.defaultHeight
+            submitMessage(messageText)
         }
+    }
+
+    private func submitMessage(_ text: String) {
+        guard !viewModel.isLoading else { return }
+        let hasText = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard hasText || !viewModel.pendingAttachments.isEmpty else { return }
+        viewModel.sendMessage(text: text)
+        messageText = ""
+        textHeight = Layout.defaultHeight
     }
 
     private func processSelectedPhotos() {
@@ -560,11 +567,11 @@ struct CustomTextEditor: UIViewRepresentable {
             uiView.text = placeholderText
             uiView.textColor = .lightGray
         } else if text.isEmpty && isCurrentlyEditing {
-            if uiView.text.isEmpty && uiView.textColor == .lightGray {
+            if uiView.textColor == .lightGray {
                 uiView.text = ""
                 uiView.textColor = UIColor { tc in tc.userInterfaceStyle == .dark ? .white : .black }
-            } else if !uiView.text.isEmpty && uiView.textColor != .lightGray {
-                self.text = uiView.text
+            } else if !uiView.text.isEmpty {
+                uiView.text = ""
             }
         } else if !text.isEmpty && uiView.textColor == .lightGray {
             uiView.text = text
