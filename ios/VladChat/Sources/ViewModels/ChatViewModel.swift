@@ -272,6 +272,16 @@ final class ChatViewModel: ObservableObject {
         pendingImageThumbnails[id] = nil
     }
 
+    func transcribeAudio(at fileURL: URL) async throws -> String {
+        guard let client else {
+            throw AudioRecordingError.transcriptionFailed("Vlad is still connecting.")
+        }
+        return try await AudioRecordingService.shared.transcribe(
+            fileURL: fileURL,
+            client: client
+        )
+    }
+
     private func subscribe(
         using client: ConvexClientWithAuth<ConvexAuthSession>,
         threadId: String? = nil

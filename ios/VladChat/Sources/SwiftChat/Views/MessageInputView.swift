@@ -304,8 +304,7 @@ struct MessageInputView: View {
             guard let fileURL = audioService.stopRecording() else { return }
             Task {
                 do {
-                    let client = AppConfig.shared.makeClient()
-                    let text = try await audioService.transcribe(fileURL: fileURL, client: client)
+                    let text = try await viewModel.transcribeAudio(at: fileURL)
                     messageText += (messageText.isEmpty ? "" : " ") + text
                 } catch {
                     viewModel.attachmentError = error.localizedDescription
