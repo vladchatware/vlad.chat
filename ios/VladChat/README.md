@@ -17,7 +17,7 @@ Native SwiftUI client backed by same Convex deployment as vlad.chat.
 - SwiftChat message renderer, sidebar, composer, model picker, and web-search UI
 - Markdown, LaTeX, code blocks, citations, and attachment presentation from SwiftChat
 
-Google/account linking, StoreKit purchases, Convex attachment uploads, voice
+Google/account linking, StoreKit purchases, voice
 transcription remain follow-up
 slices.
 

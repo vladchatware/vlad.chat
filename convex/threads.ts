@@ -26,10 +26,13 @@ import { userNotionInstruction } from "@/lib/ai";
 import { z } from "zod/v3";
 import {
   gateway,
+  type ModelMessage,
   type ToolSet,
+  type UserContent,
 } from "ai";
 import { createMCPClient } from "@ai-sdk/mcp";
 import { mergeMobileStreamText } from "@/lib/mobile-stream";
+import type { Id } from "./_generated/dataModel";
 
 export const listThreads = query({
   args: {
@@ -364,6 +367,19 @@ const mobileMessageValidator = v.object({
   status: v.string(),
   order: v.number(),
   createdAt: v.number(),
+  attachments: v.array(v.object({
+    id: v.string(),
+    type: v.union(v.literal("image"), v.literal("document")),
+    fileName: v.string(),
+    mimeType: v.string(),
+    url: v.string(),
+  })),
+});
+
+const mobileAttachmentInputValidator = v.object({
+  storageId: v.id("_storage"),
+  fileName: v.string(),
+  mimeType: v.string(),
 });
 
 const mobileThreadValidator = v.object({
@@ -438,6 +454,19 @@ export const getMobileChat = query({
       status: message.status,
       order: message.order,
       createdAt: message._creationTime,
+      attachments: message.parts.flatMap((part, index) =>
+        part.type === "file" && part.url
+          ? [{
+              id: `${message.key}:attachment:${index}`,
+              type: part.mediaType.startsWith("image/")
+                ? "image" as const
+                : "document" as const,
+              fileName: part.filename ?? `Attachment ${index + 1}`,
+              mimeType: part.mediaType,
+              url: part.url,
+            }]
+          : []
+      ),
     }));
     const activeStreams = await syncStreams(ctx, components.agent, {
       threadId,
@@ -467,6 +496,16 @@ export const getMobileChat = query({
         messages,
         streamMessages,
         activeDeltas?.kind === "deltas" ? activeDeltas.deltas : [],
+        (stream, text) => ({
+          id: `stream:${stream.streamId}`,
+          role: "assistant",
+          text,
+          status: "streaming",
+          order: stream.order,
+          createdAt: messages.find((message) => message.order === stream.order)
+            ?.createdAt ?? 0,
+          attachments: [],
+        }),
       ),
       remainingMessages: user?.isAnonymous ? (user.trialMessages ?? 0) : null,
     };
@@ -484,6 +523,16 @@ export const createMobileThread = mutation({
       title: "Untitled",
     });
     return threadId;
+  },
+});
+
+export const generateMobileAttachmentUploadUrl = mutation({
+  args: {},
+  returns: v.string(),
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new ConvexError("Please sign in to continue.");
+    return ctx.storage.generateUploadUrl();
   },
 });
 
@@ -538,8 +587,15 @@ export const generateReply = action({
     model: v.string(),
     searchEnabled: v.optional(v.boolean()),
     threadId: v.optional(v.string()),
+    attachments: v.optional(v.array(mobileAttachmentInputValidator)),
   },
-  handler: async (ctx, { prompt, model, searchEnabled = false, threadId: requestedThreadId }) => {
+  handler: async (ctx, {
+    prompt,
+    model,
+    searchEnabled = false,
+    threadId: requestedThreadId,
+    attachments = [],
+  }) => {
     try {
     const userId = await getAuthUserId(ctx);
     if (!userId) {
@@ -580,6 +636,7 @@ export const generateReply = action({
     }
     const threadId = requestedThreadId ?? await getOrCreateDefaultThread(ctx, userId);
     const { thread } = await agent.continueThread(ctx, { threadId, userId });
+    const modelPrompt = await mobileModelPrompt(ctx, text, attachments);
 
     const result = await thread.streamText(
       {
@@ -587,7 +644,7 @@ export const generateReply = action({
         instructions: notionInstruction
           ? `${chatSystemInstructions}${notionInstruction}`
           : undefined,
-        prompt: text,
+        prompt: modelPrompt,
         tools,
         stopWhen: isStepCount(8),
         onError: async () => {
@@ -669,16 +726,58 @@ export const generateReply = action({
       }
     }
 
+    await Promise.allSettled(
+      attachments.map(({ storageId }) => ctx.storage.delete(storageId)),
+    );
+
     return {
       threadId,
       order: result.order,
       promptMessageId: result.promptMessageId,
     };
     } catch (error) {
+      await Promise.allSettled(
+        attachments.map(({ storageId }) => ctx.storage.delete(storageId)),
+      );
       throw userFacingGenerationError(error);
     }
   },
 });
+
+async function mobileModelPrompt(
+  ctx: ActionCtx,
+  text: string,
+  attachments: Array<{
+    storageId: Id<"_storage">;
+    fileName: string;
+    mimeType: string;
+  }>,
+): Promise<string | ModelMessage[]> {
+  if (!attachments.length) return text;
+
+  const content: Exclude<UserContent, string> = text
+    ? [{ type: "text", text }]
+    : [];
+  for (const attachment of attachments) {
+    const blob = await ctx.storage.get(attachment.storageId);
+    if (!blob) {
+      throw new ConvexError(`Attachment '${attachment.fileName}' was not uploaded.`);
+    }
+    if (blob.size > 20 * 1024 * 1024) {
+      throw new ConvexError(`Attachment '${attachment.fileName}' exceeds 20 MB.`);
+    }
+    content.push({
+      type: "file",
+      data: {
+        type: "data",
+        data: new Uint8Array(await blob.arrayBuffer()),
+      },
+      filename: attachment.fileName,
+      mediaType: attachment.mimeType,
+    });
+  }
+  return [{ role: "user", content }];
+}
 
 export const abortReply = mutation({
   args: {

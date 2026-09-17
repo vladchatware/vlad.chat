@@ -22,10 +22,22 @@ type StreamDelta = {
 };
 
 /** Replaces pending assistant snapshots with text from active delta streams. */
+export function mergeMobileStreamText<MESSAGE extends MobileMessage>(
+  messages: MESSAGE[],
+  streams: ActiveStream[],
+  deltas: StreamDelta[],
+  createStreamingMessage: (stream: ActiveStream, text: string) => MESSAGE,
+): MESSAGE[];
 export function mergeMobileStreamText(
   messages: MobileMessage[],
   streams: ActiveStream[],
   deltas: StreamDelta[],
+): MobileMessage[];
+export function mergeMobileStreamText(
+  messages: MobileMessage[],
+  streams: ActiveStream[],
+  deltas: StreamDelta[],
+  createStreamingMessage?: (stream: ActiveStream, text: string) => MobileMessage,
 ): MobileMessage[] {
   const textByStreamId = new Map<string, string>();
   for (const delta of [...deltas].sort((left, right) => left.start - right.start)) {
@@ -74,14 +86,16 @@ export function mergeMobileStreamText(
       const prompt = merged.find(
         (message) => message.order === order && message.role === "user",
       );
-      merged.push({
-        id: `stream:${stream.streamId}`,
-        role: "assistant",
-        text,
-        status: "streaming",
-        order,
-        createdAt: prompt?.createdAt ?? 0,
-      });
+      merged.push(
+        createStreamingMessage?.(stream, text) ?? {
+          id: `stream:${stream.streamId}`,
+          role: "assistant",
+          text,
+          status: "streaming",
+          order,
+          createdAt: prompt?.createdAt ?? 0,
+        },
+      );
     }
   }
   return merged;
