@@ -534,6 +534,7 @@ export function mergeMobileStreamText(
   messages: MobileMessage[],
   streams: ActiveStream[],
   deltas: StreamDelta[],
+  createStreamingMessage?: (stream: ActiveStream, text: string) => MobileMessage,
 ): MobileMessage[] {
   const deltasByStream = new Map<string, StreamDelta[]>();
   for (const delta of deltas) {
@@ -651,12 +652,15 @@ export function mergeMobileStreamText(
         (message) => message.order === order && message.role === "user",
       );
       const assistant = {
-        id: `stream:${stream.streamId}`,
-        role: "assistant",
-        text: state.text,
-        status: "streaming",
-        order,
-        createdAt: prompt?.createdAt ?? 0,
+        ...(createStreamingMessage?.(stream, state.text) ?? {
+          id: `stream:${stream.streamId}`,
+          role: "assistant",
+          text: state.text,
+          status: "streaming",
+          order,
+          createdAt: prompt?.createdAt ?? 0,
+          attachments: [],
+        }),
         response: responseFor(state),
         ...(state.errorText ? { errorText: state.errorText } : {}),
       } satisfies MobileMessage;

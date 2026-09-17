@@ -579,6 +579,16 @@ export const getMobileChat = query({
         messages,
         streamMessages,
         activeDeltas?.kind === "deltas" ? activeDeltas.deltas : [],
+        (stream, text) => ({
+          id: `stream:${stream.streamId}`,
+          role: "assistant",
+          text,
+          status: "streaming",
+          order: stream.order,
+          createdAt: messages.find((message) => message.order === stream.order)
+            ?.createdAt ?? 0,
+          attachments: [],
+        }),
       ),
       account: user ? mobileAccount(user) : null,
       remainingMessages: user?.isAnonymous ? (user.trialMessages ?? 0) : null,
