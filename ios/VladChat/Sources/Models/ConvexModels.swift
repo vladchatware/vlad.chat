@@ -22,3 +22,12 @@ struct GenerationResult: Decodable, Sendable {
     let order: Double
     let promptMessageId: String
 }
+
+struct AbortReplyResult: Decodable, Sendable {
+    let aborted: Bool
+    let failedPending: Double
+}
+
+struct DeleteMobileMessagesResult: Decodable, Sendable {
+    let deleted: Bool
+}

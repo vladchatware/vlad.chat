@@ -614,13 +614,23 @@ export const abortReply = mutation({
   handler: async (ctx, args) => {
     await authorizeThreadAccess(ctx, args.threadId, true);
 
+    const activeStreams = await syncStreams(ctx, components.agent, {
+      threadId: args.threadId,
+      streamArgs: { kind: "list" },
+    });
+    const activeOrders = activeStreams?.kind === "list"
+      ? activeStreams.messages.map((message) => message.order)
+      : [];
+    const orders = args.order === undefined
+      ? [...new Set(activeOrders)]
+      : [args.order];
     let aborted = false;
-    if (args.order !== undefined) {
+    for (const order of orders) {
       aborted = await abortStream(ctx, components.agent, {
         threadId: args.threadId,
-        order: args.order,
+        order,
         reason: "User stopped generation",
-      });
+      }) || aborted;
     }
 
     const pending = await ctx.runQuery(
@@ -649,6 +659,39 @@ export const abortReply = mutation({
       aborted,
       failedPending: pending.page.length,
     };
+  },
+});
+
+export const deleteMobileMessagesFrom = action({
+  args: { threadId: v.string(), startOrder: v.number() },
+  returns: v.object({ deleted: v.boolean() }),
+  handler: async (ctx, { threadId, startOrder }) => {
+    await authorizeThreadAccess(ctx, threadId, true);
+
+    let nextOrder = startOrder;
+    let nextStepOrder = 0;
+    let isDone = false;
+    while (!isDone) {
+      const result = await agent.deleteMessageRange(ctx, {
+        threadId,
+        startOrder: nextOrder,
+        startStepOrder: nextStepOrder,
+        endOrder: Number.MAX_SAFE_INTEGER,
+      });
+      isDone = result.isDone;
+      const resumedOrder = result.lastOrder ?? nextOrder;
+      const resumedStepOrder = result.lastStepOrder ?? nextStepOrder;
+      if (
+        !isDone &&
+        resumedOrder === nextOrder &&
+        resumedStepOrder === nextStepOrder
+      ) {
+        throw new Error("Message deletion did not advance.");
+      }
+      nextOrder = resumedOrder;
+      nextStepOrder = resumedStepOrder;
+    }
+    return { deleted: true };
   },
 });
 
