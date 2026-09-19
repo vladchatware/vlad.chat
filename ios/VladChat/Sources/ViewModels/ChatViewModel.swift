@@ -255,6 +255,7 @@ final class ChatViewModel: ObservableObject {
                 timestamp: Date(timeIntervalSince1970: item.createdAt / 1_000)
             )
             message.isStreaming = item.status == "streaming"
+            message.responseActivity = item.response
             return message
         }
         let title = mapped.first(where: { $0.role == .user })?.content

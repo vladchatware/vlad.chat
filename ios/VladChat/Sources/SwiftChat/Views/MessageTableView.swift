@@ -572,6 +572,7 @@ class ObservableMessageWrapper: ObservableObject {
                             self.message.isThinking != message.isThinking ||
                             self.message.isCollapsed != message.isCollapsed ||
                             self.message.generationTimeSeconds != message.generationTimeSeconds ||
+                            self.message.responseActivity != message.responseActivity ||
                             self.message.streamError != message.streamError ||
                             self.isDarkMode != isDarkMode
 
@@ -629,6 +630,7 @@ class ObservableMessageWrapper: ObservableObject {
         (message.thoughts?.hashValue ?? 0) ^
         (message.contentChunks.hashValue) ^
         (message.thinkingChunks.hashValue) ^
+        (message.responseActivity?.hashValue ?? 0) ^
         isDarkMode.hashValue
     }
 }

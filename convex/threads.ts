@@ -357,6 +357,31 @@ export const getDefaultThreadId = query({
   },
 });
 
+const mobileToolValidator = v.object({
+  id: v.string(),
+  name: v.string(),
+  status: v.union(
+    v.literal("running"),
+    v.literal("completed"),
+    v.literal("failed"),
+    v.literal("stopped"),
+  ),
+  output: v.optional(v.string()),
+});
+
+const mobileResponseValidator = v.object({
+  phase: v.union(
+    v.literal("waiting"),
+    v.literal("thinking"),
+    v.literal("tool"),
+    v.literal("responding"),
+    v.literal("complete"),
+    v.literal("stopped"),
+    v.literal("failed"),
+  ),
+  tools: v.array(mobileToolValidator),
+});
+
 const mobileMessageValidator = v.object({
   id: v.string(),
   role: v.string(),
@@ -364,6 +389,7 @@ const mobileMessageValidator = v.object({
   status: v.string(),
   order: v.number(),
   createdAt: v.number(),
+  response: v.optional(mobileResponseValidator),
 });
 
 /**

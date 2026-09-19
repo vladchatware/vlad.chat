@@ -1,5 +1,34 @@
 import Foundation
 
+struct ResponseTool: Codable, Equatable, Hashable, Identifiable, Sendable {
+    enum Status: String, Codable, Sendable {
+        case running, completed, failed, stopped
+    }
+
+    let id: String
+    let name: String
+    let status: Status
+    let output: String?
+}
+
+struct ResponseActivity: Codable, Equatable, Hashable, Sendable {
+    enum Phase: String, Codable, Sendable {
+        case waiting, thinking, tool, responding, complete, stopped, failed
+    }
+
+    let phase: Phase
+    let tools: [ResponseTool]
+}
+
+extension ResponseActivity {
+    /// Tool rows always render; the bare thinking shimmer only covers the
+    /// phases before the answer starts streaming.
+    var isDisplayable: Bool {
+        if !tools.isEmpty { return true }
+        return phase == .waiting || phase == .thinking || phase == .tool
+    }
+}
+
 struct ChatMessage: Decodable, Identifiable, Equatable, Sendable {
     let id: String
     let role: String
@@ -7,6 +36,7 @@ struct ChatMessage: Decodable, Identifiable, Equatable, Sendable {
     let status: String
     let order: Double
     let createdAt: Double
+    let response: ResponseActivity?
 
     var isUser: Bool { role == "user" }
 }

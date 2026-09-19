@@ -342,6 +342,18 @@ struct MessageInputView: View {
         viewModel.sendMessage(text: text)
         messageText = ""
         textHeight = Layout.defaultHeight
+        dismissKeyboard()
+    }
+
+    /// Submitting a message ends the compose gesture: keyboard and input focus
+    /// are released so the response can stream without the input competing.
+    private func dismissKeyboard() {
+        UIApplication.shared.sendAction(
+            #selector(UIResponder.resignFirstResponder),
+            to: nil,
+            from: nil,
+            for: nil
+        )
     }
 
     private func processSelectedPhotos() {
