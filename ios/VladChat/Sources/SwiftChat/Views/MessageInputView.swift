@@ -334,13 +334,15 @@ struct MessageInputView: View {
         }
     }
 
-    private func submitMessage(_ text: String) {
-        guard !viewModel.isLoading else { return }
+    @discardableResult
+    private func submitMessage(_ text: String) -> Bool {
+        guard !viewModel.isLoading else { return false }
         let hasText = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        guard hasText || !viewModel.pendingAttachments.isEmpty else { return }
-        viewModel.sendMessage(text: text)
+        guard hasText || !viewModel.pendingAttachments.isEmpty else { return false }
+        guard viewModel.sendMessage(text: text) else { return false }
         messageText = ""
         textHeight = Layout.defaultHeight
+        return true
     }
 
     private func processSelectedPhotos() {
@@ -519,7 +521,7 @@ struct CustomTextEditor: UIViewRepresentable {
     var shouldFocusInput: Bool
     var isLoading: Bool
     var onFocusHandled: () -> Void
-    var onSendMessage: (String) -> Void
+    var onSendMessage: (String) -> Bool
 
     func makeUIView(context: Context) -> UITextView {
         let textView = UITextView()
@@ -604,7 +606,7 @@ struct CustomTextEditor: UIViewRepresentable {
                     let currentText = textView.text ?? ""
                     let trimmedText = currentText.trimmingCharacters(in: .whitespacesAndNewlines)
                     if !trimmedText.isEmpty && !parent.isLoading {
-                        parent.onSendMessage(trimmedText)
+                        guard parent.onSendMessage(trimmedText) else { return false }
                         textView.text = ""
                         parent.text = ""
                         parent.textHeight = MessageInputView.Layout.defaultHeight

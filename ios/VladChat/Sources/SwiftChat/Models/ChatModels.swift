@@ -237,6 +237,7 @@ struct Message: Identifiable, Codable, Equatable {
     var isThinking: Bool = false
     var timestamp: Date
     var isCollapsed: Bool = true
+    var responseActivity: ResponseActivity? = nil
     var isStreaming: Bool = false
     var streamError: String? = nil
     var isRequestError: Bool = false
@@ -287,6 +288,7 @@ struct Message: Identifiable, Codable, Equatable {
     enum CodingKeys: String, CodingKey {
         case id, role, content, thoughts, isThinking, timestamp, isCollapsed, isStreaming, streamError, isRequestError, generationTimeSeconds, webSearchState
         case webSearch // Alternative key used by React app
+        case responseActivity
         case urlFetches
         case attachments
         case annotations
@@ -313,6 +315,7 @@ struct Message: Identifiable, Codable, Equatable {
         }
 
         isCollapsed = try container.decodeIfPresent(Bool.self, forKey: .isCollapsed) ?? true
+        responseActivity = try container.decodeIfPresent(ResponseActivity.self, forKey: .responseActivity)
         isStreaming = try container.decodeIfPresent(Bool.self, forKey: .isStreaming) ?? false
         streamError = try container.decodeIfPresent(String.self, forKey: .streamError)
         isRequestError = try container.decodeIfPresent(Bool.self, forKey: .isRequestError) ?? false
@@ -335,6 +338,7 @@ struct Message: Identifiable, Codable, Equatable {
         try container.encode(isThinking, forKey: .isThinking)
         try container.encode(Self.iso8601Formatter.string(from: timestamp), forKey: .timestamp)
         try container.encode(isCollapsed, forKey: .isCollapsed)
+        try container.encodeIfPresent(responseActivity, forKey: .responseActivity)
         try container.encode(isStreaming, forKey: .isStreaming)
         try container.encodeIfPresent(streamError, forKey: .streamError)
         if isRequestError { try container.encode(isRequestError, forKey: .isRequestError) }

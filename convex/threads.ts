@@ -14,6 +14,7 @@ import {
   abortStream,
   getThreadMetadata,
   listUIMessages,
+  listMessages,
   isStepCount,
   syncStreams,
   vMessage,
@@ -32,7 +33,7 @@ import {
   type UserContent,
 } from "ai";
 import { createMCPClient } from "@ai-sdk/mcp";
-import { mergeMobileStreamText } from "@/lib/mobile-stream";
+import { mobileMessages, unfinishedMobileText, USER_STOPPED_GENERATION } from "@/lib/mobile-stream";
 import type { Id } from "./_generated/dataModel";
 
 export const listThreads = query({
@@ -368,6 +369,17 @@ const mobileMessageValidator = v.object({
   status: v.string(),
   order: v.number(),
   createdAt: v.number(),
+  response: v.optional(v.object({
+    phase: v.union(
+      v.literal("waiting"), v.literal("thinking"), v.literal("tool"),
+      v.literal("responding"), v.literal("complete"), v.literal("stopped"), v.literal("failed"),
+    ),
+    tools: v.array(v.object({
+      id: v.string(), name: v.string(),
+      status: v.union(v.literal("running"), v.literal("completed"), v.literal("failed"), v.literal("stopped")),
+    })),
+    error: v.optional(v.string()),
+  })),
   attachments: v.array(v.object({
     id: v.string(),
     type: v.union(v.literal("image"), v.literal("document")),
@@ -401,8 +413,7 @@ const mobileAccountValidator = v.object({
 /**
  * Small, stable transport shape for native clients.
  *
- * Agent UIMessage parts are intentionally flattened here. Swift should not need
- * to mirror the AI SDK's dynamic tool/content union to render basic chat history.
+ * Preserve response activity without exposing provider-specific tool inputs or outputs.
  */
 export const getMobileChat = query({
   args: { threadId: v.optional(v.string()) },
@@ -453,34 +464,13 @@ export const getMobileChat = query({
     await authorizeThreadAccess(ctx, threadId, true);
 
     const [result, metadata] = await Promise.all([
-      listUIMessages(ctx, components.agent, {
+      listMessages(ctx, components.agent, {
         threadId,
         paginationOpts: { cursor: null, numItems: 100 },
       }),
       getThreadMetadata(ctx, components.agent, { threadId }),
     ]);
 
-    const messages = result.page.map((message) => ({
-      id: message.key,
-      role: message.role,
-      text: message.text,
-      status: message.status,
-      order: message.order,
-      createdAt: message._creationTime,
-      attachments: message.parts.flatMap((part, index) =>
-        part.type === "file" && part.url
-          ? [{
-              id: `${message.key}:attachment:${index}`,
-              type: part.mediaType.startsWith("image/")
-                ? "image" as const
-                : "document" as const,
-              fileName: part.filename ?? `Attachment ${index + 1}`,
-              mimeType: part.mediaType,
-              url: part.url,
-            }]
-          : []
-      ),
-    }));
     const activeStreams = await syncStreams(ctx, components.agent, {
       threadId,
       streamArgs: { kind: "list" },
@@ -505,20 +495,9 @@ export const getMobileChat = query({
       threadId,
       title: metadata.title ?? "Untitled",
       threads,
-      messages: mergeMobileStreamText(
-        messages,
-        streamMessages,
+      messages: mobileMessages(
+        threadId, result.page, streamMessages,
         activeDeltas?.kind === "deltas" ? activeDeltas.deltas : [],
-        (stream, text) => ({
-          id: `stream:${stream.streamId}`,
-          role: "assistant",
-          text,
-          status: "streaming",
-          order: stream.order,
-          createdAt: messages.find((message) => message.order === stream.order)
-            ?.createdAt ?? 0,
-          attachments: [],
-        }),
       ),
       account: user ? mobileAccount(user) : null,
       remainingMessages: user?.isAnonymous ? (user.trialMessages ?? 0) : null,
@@ -886,35 +865,47 @@ export const abortReply = mutation({
     const activeOrders = activeStreams?.kind === "list"
       ? activeStreams.messages.map((message) => message.order)
       : [];
-    const orders = args.order === undefined
-      ? [...new Set(activeOrders)]
-      : [args.order];
+    const orders = [...new Set(activeOrders)].filter((order) =>
+      args.order === undefined || order === args.order
+    );
+    // An order may be reserved before its stream exists. The client keeps the
+    // stop intent and retries on the next snapshot; failing that reservation here
+    // would allow generation to start after an apparent successful stop.
+    if (!orders.length) return { aborted: false, failedPending: 0 };
+    const streams = activeStreams?.kind === "list"
+      ? activeStreams.messages.filter((stream) => orders.includes(stream.order)) : [];
+    const snapshot = await syncStreams(ctx, components.agent, {
+      threadId: args.threadId,
+      streamArgs: { kind: "deltas", cursors: streams.map((stream) => ({ streamId: stream.streamId, cursor: 0 })) },
+    });
+    const documents = await listMessages(ctx, components.agent, {
+      threadId: args.threadId, paginationOpts: { cursor: null, numItems: 100 },
+    });
+    const partialText = new Map(streams.map((stream) => [
+      stream.order,
+      unfinishedMobileText(documents.page, stream, snapshot?.kind === "deltas" ? snapshot.deltas : []),
+    ]));
     let aborted = false;
     for (const order of orders) {
       aborted = await abortStream(ctx, components.agent, {
         threadId: args.threadId,
         order,
-        reason: "User stopped generation",
+        reason: USER_STOPPED_GENERATION,
       }) || aborted;
     }
 
-    const pending = await ctx.runQuery(
-      components.agent.messages.listMessagesByThreadId,
-      {
-        threadId: args.threadId,
-        paginationOpts: { cursor: null, numItems: 20 },
-        order: "desc",
-        statuses: ["pending"],
-      },
+    const matchingPending = documents.page.filter((message) =>
+      message.status === "pending" && orders.includes(message.order)
     );
-
     await Promise.all(
-      pending.page.map((message) =>
+      matchingPending.map((message) =>
         ctx.runMutation(components.agent.messages.updateMessage, {
           messageId: message._id,
           patch: {
             status: "failed",
-            error: "User stopped generation",
+            error: USER_STOPPED_GENERATION,
+            // Keep the unfinished step after delta cleanup without duplicating saved text.
+            message: { role: "assistant", content: partialText.get(message.order) ?? "" },
           },
         }),
       ),
@@ -922,7 +913,7 @@ export const abortReply = mutation({
 
     return {
       aborted,
-      failedPending: pending.page.length,
+      failedPending: matchingPending.length,
     };
   },
 });

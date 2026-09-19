@@ -7,7 +7,25 @@ import UIKit
 final class ChatViewModel: ObservableObject {
     @Published var chats: [Chat] = []
     @Published var currentChat: Chat?
-    @Published var isLoading = false
+    var isLoading: Bool {
+        guard let chat = currentChat else { return false }
+        let awaitingAcceptance = outgoing[chat.id].map { $0.order == nil } ?? false
+        return awaitingAcceptance || editingThreadId == chat.id
+            || chat.messages.contains { $0.responseActivity?.phase.isActive == true || $0.isStreaming }
+    }
+    @Published private var outgoing: [String: OutgoingResponse] = [:]
+    @Published private var editingThreadId: String?
+    private var stopOrders: [String: Double] = [:]
+    private var stoppingThreads: Set<String> = []
+    private struct OutgoingResponse {
+        let id = UUID()
+        let user: Message
+        let placeholder: Message
+        let previousOrder: Double
+        var order: Double?
+        var submitted = false
+        var stopRequested = false
+    }
     @Published var thinkingSummary = ""
     @Published var webSearchSummary = ""
     @Published var scrollTargetMessageId: String?
@@ -24,7 +42,10 @@ final class ChatViewModel: ObservableObject {
     @Published var editRequestedForMessageIndex: Int?
     @Published var currentModel: ModelType
     @Published var pendingAttachments: [Attachment] = []
-    @Published var isProcessingAttachment = false
+    var isProcessingAttachment: Bool {
+        guard let threadId = currentChat?.id, let request = outgoing[threadId] else { return false }
+        return !request.submitted && !request.user.attachments.isEmpty
+    }
     @Published var attachmentError: String?
     @Published var pendingImageThumbnails: [String: String] = [:]
     @Published var account: MobileAccount?
@@ -35,10 +56,13 @@ final class ChatViewModel: ObservableObject {
     private var client: ConvexClientWithAuth<ConvexAuthSession>?
     private var authProvider: ConvexAnonymousAuthProvider?
     private var subscriptionTask: Task<Void, Never>?
-    private var generationTask: Task<Void, Never>?
     private var hasStarted = false
     private var selectedThreadId: String?
     private var messageOrders: [String: Double] = [:]
+    private var responseAliases: [String: String] = [:]
+    private var serverActivities: [String: ResponseActivity] = [:]
+    private var unsentMessages: [String: [Message]] = [:]
+    private var loadedThreadId: String?
 
     init() {
         guard let model = AppConfig.shared.currentModel ?? AppConfig.shared.availableModels.first else {
@@ -71,92 +95,180 @@ final class ChatViewModel: ObservableObject {
             attachmentError = "Could not create a secure Vlad session."
             return
         }
-        subscribe(using: client)
+        do {
+            let defaultThreads = client.subscribe(to: "threads:getDefaultThreadId", yielding: String?.self).values
+            for try await existing in defaultThreads {
+                let threadId: String
+                if let existing { threadId = existing }
+                else { threadId = try await client.mutation("threads:createMobileThread") }
+                selectedThreadId = threadId
+                currentChat = Chat.create(id: threadId, modelType: currentModel)
+                subscribe(using: client, threadId: threadId)
+                break
+            }
+        } catch {
+            attachmentError = Self.userFacingMessage(for: error)
+        }
     }
 
-    func sendMessage(text rawText: String) {
+    @discardableResult
+    func sendMessage(text rawText: String) -> Bool {
         let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !isLoading, (!text.isEmpty || !pendingAttachments.isEmpty) else { return }
-        guard let client else {
+        guard !isLoading, (!text.isEmpty || !pendingAttachments.isEmpty) else { return false }
+        guard let client, let threadId = selectedThreadId, loadedThreadId == threadId, currentChat?.id == threadId else {
             attachmentError = "Vlad is still connecting."
-            return
+            return false
         }
         let outgoingAttachments = pendingAttachments
-
-        let optimistic = Message(
-            id: "optimistic-\(UUID().uuidString)",
-            role: .user,
-            content: text,
-            timestamp: Date(),
-            attachments: outgoingAttachments
+        let model = currentModel.id
+        let searchEnabled = isWebSearchEnabled
+        let user = Message(role: .user, content: text, attachments: outgoingAttachments)
+        var placeholder = Message(role: .assistant, content: "")
+        placeholder.responseActivity = ResponseActivity(phase: .sending)
+        let request = OutgoingResponse(
+            user: user, placeholder: placeholder,
+            previousOrder: messageOrders.values.max() ?? -1
         )
-        if var chat = currentChat {
-            chat.messages.append(optimistic)
-            currentChat = chat
-            replaceChat(chat)
+        outgoing[threadId] = request
+        let unsentIDs = Set((unsentMessages.removeValue(forKey: threadId) ?? []).map(\.id))
+        updateChat(threadId) { chat in
+            chat.messages.removeAll { unsentIDs.contains($0.id) }
+            chat.messages.append(contentsOf: [user, placeholder])
         }
-
-        isLoading = true
-        isProcessingAttachment = !outgoingAttachments.isEmpty
         pendingAttachments = []
         pendingImageThumbnails = [:]
-        generationTask?.cancel()
-        generationTask = Task { [weak self] in
+
+        Task { [weak self] in
             guard let self else { return }
             defer {
-                isLoading = false
-                isProcessingAttachment = false
+                if outgoing[threadId]?.id == request.id { outgoing[threadId] = nil }
             }
             do {
                 var uploadedAttachments: [UploadedAttachment] = []
                 for attachment in outgoingAttachments {
+                    guard outgoing[threadId]?.stopRequested != true else {
+                        finishLocalResponse(threadId, request: request, phase: .stopped)
+                        return
+                    }
                     uploadedAttachments.append(
                         try await AttachmentUploadService.upload(attachment, using: client)
                     )
                 }
-                var arguments: [String: ConvexEncodable?] = [
-                    "prompt": text,
-                    "model": currentModel.id,
-                    "searchEnabled": isWebSearchEnabled,
-                ]
-                if let selectedThreadId {
-                    arguments["threadId"] = selectedThreadId
+                guard outgoing[threadId]?.stopRequested != true else {
+                    finishLocalResponse(threadId, request: request, phase: .stopped)
+                    return
                 }
+                var arguments: [String: ConvexEncodable?] = [
+                    "prompt": text, "model": model, "searchEnabled": searchEnabled,
+                    "threadId": threadId,
+                ]
                 if !uploadedAttachments.isEmpty {
                     let values: [ConvexEncodable?] = uploadedAttachments.map(\.convexValue)
                     arguments["attachments"] = values
                 }
-                let _: GenerationResult = try await client.action(
-                    "threads:generateReply",
-                    with: arguments
-                )
+                outgoing[threadId]?.submitted = true
+                updateChat(threadId) { chat in
+                    if let index = chat.messages.firstIndex(where: { $0.id == placeholder.id }) {
+                        chat.messages[index].responseActivity?.phase = .waiting
+                    }
+                }
+                let _: GenerationResult = try await client.action("threads:generateReply", with: arguments)
             } catch {
-                guard !Task.isCancelled else { return }
-                removeMessage(id: optimistic.id)
-                pendingAttachments = outgoingAttachments
-                attachmentError = Self.userFacingMessage(for: error)
+                guard outgoing[threadId]?.id == request.id else { return }
+                // Server snapshots own accepted response state. Only pre-acceptance failures
+                // need a local error row; never erase the user's sent text.
+                if outgoing[threadId]?.order == nil {
+                    finishLocalResponse(threadId, request: request, phase: .failed,
+                                        error: Self.userFacingMessage(for: error))
+                } else if currentChat?.id == threadId && outgoing[threadId]?.stopRequested != true {
+                    attachmentError = Self.userFacingMessage(for: error)
+                }
+            }
+        }
+        return true
+    }
+
+    func cancelGeneration() {
+        guard let threadId = selectedThreadId else { return }
+        if outgoing[threadId] != nil {
+            outgoing[threadId]?.stopRequested = true
+            updateChat(threadId) { chat in
+                if let index = chat.messages.lastIndex(where: { $0.role == .assistant }) {
+                    chat.messages[index].responseActivity?.phase = .stopping
+                }
+            }
+            // Before acceptance, retain the request and stop as soon as its order arrives.
+            if outgoing[threadId]?.submitted == true {
+                stopResponse(threadId, order: outgoing[threadId]?.order)
+            }
+        } else if let message = messages.last(where: { $0.responseActivity?.phase.isActive == true }),
+                  let order = messageOrders[message.id] {
+            stopResponse(threadId, order: order)
+        }
+    }
+
+    private func stopResponse(_ threadId: String, order: Double?) {
+        if let order { stopOrders[threadId] = order }
+        guard let client, !stoppingThreads.contains(threadId) else { return }
+        stoppingThreads.insert(threadId)
+        let request = outgoing[threadId]
+        Task { [weak self] in
+            guard let self else { return }
+            defer {
+                stoppingThreads.remove(threadId)
+                stopOrders[threadId] = nil
+            }
+            do {
+                // Keep stop intent alive even if the user switches conversations
+                // before the server creates the response stream.
+                let updates = client.subscribe(
+                    to: "threads:getMobileChat", with: ["threadId": threadId], yielding: MobileChat.self
+                ).values
+                for try await snapshot in updates {
+                    let responseOrder = order ?? outgoing[threadId]?.order ?? request.flatMap { request in
+                        snapshot.messages.first(where: { $0.isUser && $0.order > request.previousOrder })?.order
+                    }
+                    guard let responseOrder else {
+                        if outgoing[threadId] == nil { return }
+                        continue
+                    }
+                    if let response = snapshot.messages.first(where: { !$0.isUser && $0.order == responseOrder }),
+                       response.status == "success" || response.status == "failed" {
+                        return
+                    }
+                    let result: AbortReplyResult = try await client.mutation(
+                        "threads:abortReply", with: ["threadId": threadId, "order": responseOrder]
+                    )
+                    if result.aborted || result.failedPending > 0 { return }
+                }
+            } catch {
+                outgoing[threadId]?.stopRequested = false
+                updateChat(threadId) { chat in
+                    for index in chat.messages.indices where chat.messages[index].responseActivity?.phase == .stopping {
+                        chat.messages[index].responseActivity = serverActivities[chat.messages[index].id]
+                            ?? ResponseActivity(phase: .waiting)
+                    }
+                }
+                if currentChat?.id == threadId { attachmentError = Self.userFacingMessage(for: error) }
             }
         }
     }
 
-    func cancelGeneration() {
-        generationTask?.cancel()
-        generationTask = nil
-        isLoading = false
-        guard let client, let selectedThreadId else { return }
-        let activeOrder = currentChat?.messages
-            .last(where: { $0.role == .assistant && $0.isStreaming })
-            .flatMap { messageOrders[$0.id] }
-        Task { [weak self] in
-            do {
-                var arguments: [String: ConvexEncodable?] = ["threadId": selectedThreadId]
-                if let activeOrder { arguments["order"] = activeOrder }
-                let _: AbortReplyResult = try await client.mutation(
-                    "threads:abortReply",
-                    with: arguments
-                )
-            } catch {
-                self?.attachmentError = Self.userFacingMessage(for: error)
+    private func updateChat(_ threadId: String, _ update: (inout Chat) -> Void) {
+        guard var chat = currentChat?.id == threadId ? currentChat : chats.first(where: { $0.id == threadId }) else { return }
+        update(&chat)
+        replaceChat(chat)
+        if currentChat?.id == threadId { currentChat = chat }
+    }
+
+    private func finishLocalResponse(_ threadId: String, request: OutgoingResponse,
+                                     phase: ResponsePhase, error: String? = nil) {
+        var response = request.placeholder
+        response.responseActivity = ResponseActivity(phase: phase, error: error)
+        unsentMessages[threadId] = [request.user, response]
+        updateChat(threadId) { chat in
+            if let index = chat.messages.firstIndex(where: { $0.id == request.placeholder.id }) {
+                chat.messages[index] = response
             }
         }
     }
@@ -192,6 +304,8 @@ final class ChatViewModel: ObservableObject {
     func selectChat(_ chat: Chat) {
         guard selectedThreadId != chat.id, let client else { return }
         selectedThreadId = chat.id
+        loadedThreadId = nil
+        messageOrders = [:]
         currentChat = chat
         subscribe(using: client, threadId: chat.id)
     }
@@ -239,8 +353,17 @@ final class ChatViewModel: ObservableObject {
     }
 
     func regenerateLastResponse() {
-        guard let index = messages.lastIndex(where: { $0.role == .user }) else { return }
-        regenerateMessage(at: index)
+        guard !isLoading, let index = messages.lastIndex(where: { $0.role == .user }) else { return }
+        if messageOrders[messages[index].id] == nil, let threadId = currentChat?.id {
+            let user = messages[index]
+            updateChat(threadId) { $0.messages.removeSubrange(index...) }
+            let draftAttachments = pendingAttachments
+            pendingAttachments = user.attachments
+            sendMessage(text: user.content)
+            pendingAttachments = draftAttachments
+        } else {
+            regenerateMessage(at: index)
+        }
     }
 
     func regenerateMessage(at index: Int) {
@@ -357,19 +480,29 @@ final class ChatViewModel: ObservableObject {
                     self?.apply(mobileChat)
                 }
             } catch {
+                guard !Task.isCancelled else { return }
                 self?.attachmentError = Self.userFacingMessage(for: error)
             }
         }
     }
 
-    private func apply(_ mobileChat: MobileChat) {
+    func apply(_ mobileChat: MobileChat) {
+        loadedThreadId = mobileChat.threadId
         account = mobileChat.account
+        if let threadId = mobileChat.threadId, var request = outgoing[threadId], request.submitted {
+            request.order = request.order ?? mobileChat.messages
+                .first(where: { $0.isUser && $0.order > request.previousOrder })?.order
+            outgoing[threadId] = request
+            if let response = mobileChat.messages.first(where: { !$0.isUser && $0.order == request.order }) {
+                responseAliases[response.id] = request.placeholder.id
+            }
+        }
         messageOrders = Dictionary(
-            uniqueKeysWithValues: mobileChat.messages.map { ($0.id, $0.order) }
+            uniqueKeysWithValues: mobileChat.messages.map { (responseAliases[$0.id] ?? $0.id, $0.order) }
         )
-        let mapped = mobileChat.messages.map { item in
+        var mapped = mobileChat.messages.map { item in
             var message = Message(
-                id: item.id,
+                id: responseAliases[item.id] ?? item.id,
                 role: item.isUser ? .user : .assistant,
                 content: item.text,
                 timestamp: Date(timeIntervalSince1970: item.createdAt / 1_000),
@@ -387,10 +520,47 @@ final class ChatViewModel: ObservableObject {
                     )
                 }
             )
-            message.isStreaming = item.status == "streaming"
+            message.responseActivity = item.response ?? ResponseActivity(
+                phase: item.status == "streaming" || item.status == "pending" ? .waiting
+                    : item.status == "failed" ? .failed : .complete
+            )
+            if item.isUser { message.responseActivity = nil }
+            message.isStreaming = message.responseActivity?.phase.isActive == true
+            serverActivities[message.id] = message.responseActivity
             return message
         }
         let selectedId = mobileChat.threadId
+        if let selectedId, outgoing[selectedId] == nil {
+            mapped.append(contentsOf: unsentMessages[selectedId] ?? [])
+        }
+        if let selectedId, let request = outgoing[selectedId] {
+            let acceptedOrder = request.order
+            let hasResponse = acceptedOrder.map { order in
+                mobileChat.messages.contains { !$0.isUser && $0.order == order }
+            } ?? false
+            if !hasResponse {
+                if acceptedOrder == nil { mapped.append(request.user) }
+                var placeholder = request.placeholder
+                placeholder.responseActivity?.phase = request.stopRequested ? .stopping
+                    : request.submitted ? .waiting : .sending
+                mapped.append(placeholder)
+            }
+            if request.stopRequested, let acceptedOrder,
+               mobileChat.messages.contains(where: { !$0.isUser && $0.order == acceptedOrder && $0.response?.phase.isActive == true }) {
+                stopResponse(selectedId, order: acceptedOrder)
+            }
+        }
+        if let selectedId, let order = stopOrders[selectedId] {
+            if mobileChat.messages.contains(where: { !$0.isUser && $0.order == order && $0.response?.phase.isActive == false }) {
+                stopOrders[selectedId] = nil
+                outgoing[selectedId]?.stopRequested = false
+            } else {
+                stopResponse(selectedId, order: order)
+                if let index = mapped.firstIndex(where: { messageOrders[$0.id] == order && $0.role == .assistant }) {
+                    mapped[index].responseActivity?.phase = .stopping
+                }
+            }
+        }
         if selectedThreadId == nil {
             selectedThreadId = selectedId
         }
@@ -418,7 +588,7 @@ final class ChatViewModel: ObservableObject {
               let threadId = selectedThreadId,
               let order = messageOrders[messages[index].id] else { return }
 
-        isLoading = true
+        editingThreadId = threadId
         Task { [weak self] in
             guard let self else { return }
             do {
@@ -426,21 +596,23 @@ final class ChatViewModel: ObservableObject {
                     "threads:deleteMobileMessagesFrom",
                     with: ["threadId": threadId, "startOrder": order]
                 )
-                if var chat = currentChat {
-                    chat.messages.removeSubrange(index...)
-                    currentChat = chat
-                    replaceChat(chat)
+                updateChat(threadId) { $0.messages.removeSubrange(index...) }
+                let remainingIDs = Set(messages.map(\.id))
+                messageOrders = messageOrders.filter { remainingIDs.contains($0.key) }
+                guard currentChat?.id == threadId else {
+                    editingThreadId = nil
+                    return
                 }
                 let composingAttachments = pendingAttachments
                 let composingThumbnails = pendingImageThumbnails
                 pendingAttachments = []
                 pendingImageThumbnails = [:]
-                isLoading = false
+                editingThreadId = nil
                 sendMessage(text: text)
                 pendingAttachments = composingAttachments
                 pendingImageThumbnails = composingThumbnails
             } catch {
-                isLoading = false
+                editingThreadId = nil
                 attachmentError = Self.userFacingMessage(for: error)
             }
         }

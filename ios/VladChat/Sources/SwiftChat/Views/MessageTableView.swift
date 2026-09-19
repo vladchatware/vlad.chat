@@ -119,7 +119,7 @@ struct MessageTableView: UIViewRepresentable {
             context.coordinator.lastMessageCount = messages.count
             context.coordinator.heightCache.removeAll()
             tableView.reloadData()
-        } else if isLoading && !messages.isEmpty {
+        } else if !messages.isEmpty {
             // During streaming, update the last message wrapper directly
             if let lastMessage = messages.last,
                let wrapper = context.coordinator.messageWrappers[lastMessage.id] {
@@ -133,7 +133,7 @@ struct MessageTableView: UIViewRepresentable {
                 // stale multiplier and each queue a +10 increment, causing it to
                 // explode to thousands.
                 let screenHeight = UIScreen.main.bounds.height
-                let needsBufferExtension = wrapper.extendBufferIfNeeded(screenHeight: screenHeight)
+                let needsBufferExtension = isLoading && wrapper.extendBufferIfNeeded(screenHeight: screenHeight)
 
                 let coordinator = context.coordinator
                 DispatchQueue.main.async {
@@ -566,6 +566,8 @@ class ObservableMessageWrapper: ObservableObject {
 
     func update(message: Message, isDarkMode: Bool, isLastMessage: Bool, isLoading: Bool, isArchived: Bool, showArchiveSeparator: Bool, messageIndex: Int) {
         let contentChanged = self.message.content != message.content ||
+                            self.message.responseActivity != message.responseActivity ||
+                            self.message.isStreaming != message.isStreaming ||
                             self.message.thoughts != message.thoughts ||
                             self.message.contentChunks != message.contentChunks ||
                             self.message.thinkingChunks != message.thinkingChunks ||
@@ -626,6 +628,7 @@ class ObservableMessageWrapper: ObservableObject {
 
     func getCacheKey() -> Int {
         message.content.hashValue ^
+        (message.responseActivity?.hashValue ?? 0) ^
         (message.thoughts?.hashValue ?? 0) ^
         (message.contentChunks.hashValue) ^
         (message.thinkingChunks.hashValue) ^
