@@ -415,6 +415,7 @@ struct MessageTableView: UIViewRepresentable {
             let targetInset: CGFloat
 
             if parent.isLoading, let lastMessage = parent.messages.last,
+               lastMessage.role == .assistant,
                let wrapper = messageWrappers[lastMessage.id], wrapper.actualContentHeight > 0 {
 
                 let screenHeight = UIScreen.main.bounds.height
@@ -649,6 +650,13 @@ struct ObservableMessageCell: View {
         )
     }
 
+    /// The streaming buffer only makes sense for an assistant reply that is
+    /// actually streaming. Reserving 50 screens behind a user message left the
+    /// viewport parked in empty space before the reply row existed.
+    private var reservesStreamingBuffer: Bool {
+        wrapper.isLoading && wrapper.isLastMessage && wrapper.message.role == .assistant
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             if wrapper.showArchiveSeparator {
@@ -668,7 +676,7 @@ struct ObservableMessageCell: View {
             }
 
             ZStack(alignment: .topLeading) {
-                if wrapper.isLoading && wrapper.isLastMessage {
+                if reservesStreamingBuffer {
                     Color.clear
                         .frame(height: bufferHeight)
                 }
@@ -688,10 +696,17 @@ struct ObservableMessageCell: View {
                     view.frame(maxWidth: 900)
                         .frame(maxWidth: .infinity)
                 }
-                .if(wrapper.isLoading && wrapper.isLastMessage) { view in
+                .if(reservesStreamingBuffer) { view in
                     view.background(
                         GeometryReader { geometry in
                             Color.clear
+                                // Seed the measurement on appear: onChange does not fire
+                                // for the initial layout, so without this the inset stays
+                                // 0 and the viewport rests inside the transparent spacer.
+                                .onAppear {
+                                    wrapper.actualContentHeight = geometry.size.height
+                                    coordinator?.updateContentInset()
+                                }
                                 .onChange(of: geometry.size.height) { _, newHeight in
                                     wrapper.actualContentHeight = newHeight
                                     // Re-apply the cancelled-out streaming buffer as soon
