@@ -29,6 +29,7 @@ struct MessageView: View {
     @State private var showUserMessageActions = false
     @State private var showThoughtsSheet = false
     @State private var showURLFetchSheet = false
+    @State private var selectedTool: ResponseTool?
 
     var body: some View {
         HStack {
@@ -54,6 +55,8 @@ struct MessageView: View {
                     isLoading &&
                     isLastMessage {
                     VStack(alignment: .leading, spacing: 4) {
+                        responseActivitySection
+
                         if !message.urlFetches.isEmpty {
                             URLFetchBox(urlFetches: message.urlFetches, isDarkMode: isDarkMode, onTap: { showURLFetchSheet = true })
                         }
@@ -69,8 +72,9 @@ struct MessageView: View {
                             )
                         }
 
-                        // Show loading dots if no web search or search is complete
-                        if message.webSearchState == nil || message.webSearchState?.status != .searching {
+                        // Show loading dots only before any tool activity or web search
+                        if message.responseActivity?.isDisplayable != true,
+                           message.webSearchState == nil || message.webSearchState?.status != .searching {
                             LoadingDotsView(isDarkMode: isDarkMode)
                                 .padding(.horizontal)
                         }
@@ -81,6 +85,8 @@ struct MessageView: View {
                 // If the message is thinking or has thoughts, display them in a thinking box
                 else if message.isThinking || message.thoughts != nil {
                     VStack(alignment: .leading, spacing: 4) {
+                        responseActivitySection
+
                         if !message.urlFetches.isEmpty {
                             URLFetchBox(urlFetches: message.urlFetches, isDarkMode: isDarkMode, onTap: { showURLFetchSheet = true })
                         }
@@ -188,6 +194,8 @@ struct MessageView: View {
                         }
                     } else {
                         VStack(alignment: .leading, spacing: 4) {
+                            responseActivitySection
+
                             if !message.urlFetches.isEmpty {
                                 URLFetchBox(urlFetches: message.urlFetches, isDarkMode: isDarkMode, onTap: { showURLFetchSheet = true })
                             }
@@ -363,6 +371,11 @@ struct MessageView: View {
                 .presentationDetents([.medium, .large])
                 .presentationBackground(isDarkMode ? Color(hex: "161616") : Color(UIColor.systemGroupedBackground))
         }
+        .sheet(item: $selectedTool) { tool in
+            ToolOutputSheet(tool: tool, isDarkMode: isDarkMode)
+                .presentationDetents([.medium, .large])
+                .presentationBackground(isDarkMode ? Color(hex: "161616") : Color(UIColor.systemGroupedBackground))
+        }
         .environment(\.openURL, OpenURLAction { url in
             if url.scheme == "cite" {
                 let path = url.absoluteString.dropFirst(5)
@@ -381,6 +394,21 @@ struct MessageView: View {
             }
             return .systemAction
         })
+    }
+
+    @ViewBuilder
+    private var responseActivitySection: some View {
+        if message.role == .assistant,
+           let activity = message.responseActivity,
+           activity.isDisplayable,
+           isLoading && isLastMessage {
+            AssistantActivityView(
+                activity: activity,
+                isDarkMode: isDarkMode,
+                isStreaming: true,
+                onSelectTool: { selectedTool = $0 }
+            )
+        }
     }
 
     private func copyMessagePart(_ text: String) {
@@ -981,6 +1009,157 @@ struct InlineLoadingDotsView: View {
             }
         }
         .foregroundColor(isDarkMode ? .white.opacity(0.8) : Color.black.opacity(0.7))
+    }
+}
+
+struct AssistantActivityView: View {
+    let activity: ResponseActivity
+    let isDarkMode: Bool
+    let isStreaming: Bool
+    let onSelectTool: (ResponseTool) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if activity.tools.isEmpty {
+                if activity.phase == .waiting || activity.phase == .thinking || activity.phase == .tool {
+                    thinkingShimmer
+                }
+            } else {
+                ForEach(activity.tools) { tool in
+                    Button {
+                        onSelectTool(tool)
+                    } label: {
+                        ToolCallRow(tool: tool, isDarkMode: isDarkMode, isStreaming: isStreaming)
+                    }
+                    .buttonStyle(NoHighlightButtonStyle())
+                }
+                if activity.phase == .thinking || activity.phase == .waiting {
+                    thinkingShimmer
+                }
+            }
+        }
+        .padding(.horizontal)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var thinkingShimmer: some View {
+        HStack(spacing: 6) {
+            Text(phaseLabel)
+                .font(.system(size: 15))
+                .foregroundColor(isDarkMode ? .white.opacity(0.8) : Color.black.opacity(0.7))
+            InlineLoadingDotsView(isDarkMode: isDarkMode)
+        }
+        .modifier(TextPulseAnimation())
+    }
+
+    private var phaseLabel: String {
+        switch activity.phase {
+        case .thinking: return "Thinking"
+        case .tool: return "Using tools"
+        case .responding: return "Responding"
+        default: return "Thinking"
+        }
+    }
+}
+
+struct ToolCallRow: View {
+    let tool: ResponseTool
+    let isDarkMode: Bool
+    let isStreaming: Bool
+
+    private var symbol: String {
+        switch tool.status {
+        case .running: return "wrench.and.screwdriver"
+        case .completed: return "checkmark.circle"
+        case .failed: return "xmark.octagon"
+        case .stopped: return "stop.circle"
+        }
+    }
+
+    private var tint: Color {
+        switch tool.status {
+        case .running: return isDarkMode ? .white.opacity(0.7) : Color.black.opacity(0.6)
+        case .completed: return .green
+        case .failed: return .red
+        case .stopped: return .orange
+        }
+    }
+
+    private var displayName: String {
+        tool.name.replacingOccurrences(of: "_", with: " ")
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: symbol)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(tint)
+                .frame(width: 18)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(displayName)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(isDarkMode ? .white.opacity(0.9) : Color.black.opacity(0.8))
+                    if tool.status == .running {
+                        InlineLoadingDotsView(isDarkMode: isDarkMode)
+                    }
+                }
+
+                if let output = tool.output, !output.isEmpty {
+                    Text(preview(output))
+                        .font(.system(size: 12))
+                        .foregroundColor(isDarkMode ? .white.opacity(0.55) : Color.black.opacity(0.55))
+                        .lineLimit(3)
+                        .truncationMode(.tail)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(isDarkMode ? Color.white.opacity(0.06) : Color.black.opacity(0.04))
+        )
+        .contentShape(Rectangle())
+    }
+
+    /// Inline preview is capped; the full (server-truncated) result is shown in the sheet.
+    private func preview(_ text: String) -> String {
+        let collapsed = text.replacingOccurrences(of: "\n", with: " ")
+        return collapsed.count <= ToolCallRow.previewLimit
+            ? collapsed
+            : String(collapsed.prefix(ToolCallRow.previewLimit)) + "…"
+    }
+
+    static let previewLimit = 500
+}
+
+struct ToolOutputSheet: View {
+    let tool: ResponseTool
+    let isDarkMode: Bool
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                Text(tool.output ?? "No output yet.")
+                    .font(.system(.body, design: .monospaced))
+                    .foregroundColor(isDarkMode ? .white.opacity(0.9) : Color.black.opacity(0.8))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(16)
+            }
+            .navigationTitle(tool.name.replacingOccurrences(of: "_", with: " "))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
     }
 }
 

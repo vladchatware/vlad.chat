@@ -415,6 +415,7 @@ struct MessageTableView: UIViewRepresentable {
             let targetInset: CGFloat
 
             if parent.isLoading, let lastMessage = parent.messages.last,
+               lastMessage.role == .assistant,
                let wrapper = messageWrappers[lastMessage.id], wrapper.actualContentHeight > 0 {
 
                 let screenHeight = UIScreen.main.bounds.height
@@ -572,6 +573,7 @@ class ObservableMessageWrapper: ObservableObject {
                             self.message.isThinking != message.isThinking ||
                             self.message.isCollapsed != message.isCollapsed ||
                             self.message.generationTimeSeconds != message.generationTimeSeconds ||
+                            self.message.responseActivity != message.responseActivity ||
                             self.message.streamError != message.streamError ||
                             self.isDarkMode != isDarkMode
 
@@ -629,6 +631,7 @@ class ObservableMessageWrapper: ObservableObject {
         (message.thoughts?.hashValue ?? 0) ^
         (message.contentChunks.hashValue) ^
         (message.thinkingChunks.hashValue) ^
+        (message.responseActivity?.hashValue ?? 0) ^
         isDarkMode.hashValue
     }
 }
@@ -645,6 +648,13 @@ struct ObservableMessageCell: View {
             screenHeight * wrapper.bufferMultiplier,
             Constants.StreamingBuffer.maxCellHeight
         )
+    }
+
+    /// The streaming buffer only makes sense for an assistant reply that is
+    /// actually streaming. Reserving 50 screens behind a user message left the
+    /// viewport parked in empty space before the reply row existed.
+    private var reservesStreamingBuffer: Bool {
+        wrapper.isLoading && wrapper.isLastMessage && wrapper.message.role == .assistant
     }
 
     var body: some View {
@@ -666,7 +676,7 @@ struct ObservableMessageCell: View {
             }
 
             ZStack(alignment: .topLeading) {
-                if wrapper.isLoading && wrapper.isLastMessage {
+                if reservesStreamingBuffer {
                     Color.clear
                         .frame(height: bufferHeight)
                 }
@@ -686,12 +696,23 @@ struct ObservableMessageCell: View {
                     view.frame(maxWidth: 900)
                         .frame(maxWidth: .infinity)
                 }
-                .if(wrapper.isLoading && wrapper.isLastMessage) { view in
+                .if(reservesStreamingBuffer) { view in
                     view.background(
                         GeometryReader { geometry in
                             Color.clear
+                                // Seed the measurement on appear: onChange does not fire
+                                // for the initial layout, so without this the inset stays
+                                // 0 and the viewport rests inside the transparent spacer.
+                                .onAppear {
+                                    wrapper.actualContentHeight = geometry.size.height
+                                    coordinator?.updateContentInset()
+                                }
                                 .onChange(of: geometry.size.height) { _, newHeight in
                                     wrapper.actualContentHeight = newHeight
+                                    // Re-apply the cancelled-out streaming buffer as soon
+                                    // as the real content height is known, otherwise the
+                                    // viewport briefly rests in the transparent spacer.
+                                    coordinator?.updateContentInset()
                                 }
                         }
                     )
