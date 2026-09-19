@@ -46,8 +46,13 @@ struct MessageView: View {
             }
 
             VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 2) {
+                if let activity = message.responseActivity, message.role == .assistant {
+                    ResponseActivityView(activity: activity, canRetry: isLastMessage && !viewModel.isLoading) {
+                        viewModel.regenerateLastResponse()
+                    }
+                }
                 // Show the loading dots for a fresh streaming assistant response (but not if we have thoughts or are thinking)
-                if message.role == .assistant &&
+                if message.responseActivity == nil && message.role == .assistant &&
                     message.content.isEmpty &&
                     message.thoughts == nil &&
                     !message.isThinking &&
@@ -1433,5 +1438,90 @@ private struct SourcesSheetView: View {
             }
         }
         .preferredColorScheme(isDarkMode ? .dark : .light)
+    }
+}
+
+/// Always reflects server activity; thinking is shown only for reasoning events.
+private struct ResponseActivityView: View {
+    let activity: ResponseActivity
+    let canRetry: Bool
+    let retry: () -> Void
+    @State private var isExpanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if activity.phase != .complete {
+                HStack(spacing: 8) {
+                    if activity.phase.isActive {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: activity.phase == .failed ? "exclamationmark.circle" : "stop.circle")
+                    }
+                    phaseLabel
+                }
+                .accessibilityElement(children: .combine)
+            }
+            if !activity.tools.isEmpty {
+                DisclosureGroup(isExpanded: $isExpanded) {
+                    ForEach(activity.tools) { tool in
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: toolSymbol(tool.status)).accessibilityHidden(true)
+                            Text(tool.name.replacingOccurrences(of: "_", with: " "))
+                            Spacer(minLength: 8)
+                            toolLabel(tool.status)
+                        }
+                        .accessibilityElement(children: .combine)
+                        .padding(.vertical, 4)
+                    }
+                } label: {
+                    Text("Tools · \(activity.tools.count)")
+                }
+                .onAppear { isExpanded = activity.phase.isActive }
+                .onChange(of: activity.phase.isActive) { _, active in isExpanded = active }
+            }
+            if let error = activity.error, activity.phase == .failed {
+                Text(error)
+            }
+            if canRetry && (activity.phase == .failed || activity.phase == .stopped) {
+                Button("Try again", action: retry)
+                    .frame(minHeight: 44)
+            }
+        }
+        .font(.subheadline)
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.bottom, activity.phase == .complete && activity.tools.isEmpty ? 0 : 8)
+    }
+
+    @ViewBuilder private var phaseLabel: some View {
+        switch activity.phase {
+        case .sending: Text("Sending…")
+        case .waiting: Text("Working…")
+        case .thinking: Text("Thinking…")
+        case .tool: Text("Using tools…")
+        case .responding: Text("Responding…")
+        case .stopping: Text("Stopping…")
+        case .complete: Text("Complete")
+        case .stopped: Text("Stopped")
+        case .failed: Text("Response failed")
+        }
+    }
+
+    @ViewBuilder private func toolLabel(_ status: ResponseTool.Status) -> some View {
+        switch status {
+        case .running: Text("Running")
+        case .completed: Text("Done")
+        case .failed: Text("Failed")
+        case .stopped: Text("Stopped")
+        }
+    }
+
+    private func toolSymbol(_ status: ResponseTool.Status) -> String {
+        switch status {
+        case .running: "gearshape"
+        case .completed: "checkmark.circle"
+        case .failed: "exclamationmark.circle"
+        case .stopped: "stop.circle"
+        }
     }
 }
