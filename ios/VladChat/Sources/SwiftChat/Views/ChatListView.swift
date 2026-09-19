@@ -111,11 +111,10 @@ struct ChatListView: View {
                 if hasUserMessage || wasInitialLoad {
                     userHasScrolled = false
                     viewModel.isScrollInteractionActive = false
-                    if hasUserMessage && viewModel.isLoading {
-                        scrollToUserTrigger = UUID()
-                    } else {
-                        scrollTrigger = UUID()
-                    }
+                    // Stay anchored at the bottom. Pinning the sent message to the
+                    // top created an empty viewport that the next stream update
+                    // immediately scrolled away from, which read as a vertical jump.
+                    scrollTrigger = UUID()
                 }
             }
         }
@@ -123,15 +122,14 @@ struct ChatListView: View {
             userHasScrolled = false
             viewModel.isScrollInteractionActive = false
 
-            let isNewEmptyChat = viewModel.currentChat?.isBlankChat ?? true
+            // Never blank the table on an in-place refresh. The first server
+            // snapshot changes createdAt for the same conversation, and hiding
+            // the table there caused a full-screen flash before the reply painted.
+            tableOpacity = 1.0
+            isAtBottom = true
 
-            if !isNewEmptyChat {
-                tableOpacity = 0
+            if !(viewModel.currentChat?.isBlankChat ?? true) {
                 scrollTrigger = UUID()
-                isAtBottom = true
-            } else {
-                tableOpacity = 1.0
-                isAtBottom = true
             }
         }
         .onChange(of: viewModel.scrollToBottomTrigger) { _, _ in

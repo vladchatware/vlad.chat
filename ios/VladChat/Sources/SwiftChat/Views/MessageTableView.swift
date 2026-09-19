@@ -694,6 +694,10 @@ struct ObservableMessageCell: View {
                             Color.clear
                                 .onChange(of: geometry.size.height) { _, newHeight in
                                     wrapper.actualContentHeight = newHeight
+                                    // Re-apply the cancelled-out streaming buffer as soon
+                                    // as the real content height is known, otherwise the
+                                    // viewport briefly rests in the transparent spacer.
+                                    coordinator?.updateContentInset()
                                 }
                         }
                     )
