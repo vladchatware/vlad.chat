@@ -111,12 +111,13 @@ final class ChatViewModel: ObservableObject {
         }
     }
 
-    func sendMessage(text rawText: String) {
+    @discardableResult
+    func sendMessage(text rawText: String) -> Bool {
         let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !isLoading, (!text.isEmpty || !pendingAttachments.isEmpty) else { return }
+        guard !isLoading, (!text.isEmpty || !pendingAttachments.isEmpty) else { return false }
         guard let client, let threadId = selectedThreadId, loadedThreadId == threadId, currentChat?.id == threadId else {
             attachmentError = "Vlad is still connecting."
-            return
+            return false
         }
         let outgoingAttachments = pendingAttachments
         let model = currentModel.id
@@ -184,6 +185,7 @@ final class ChatViewModel: ObservableObject {
                 }
             }
         }
+        return true
     }
 
     func cancelGeneration() {
@@ -196,29 +198,51 @@ final class ChatViewModel: ObservableObject {
                 }
             }
             // Before acceptance, retain the request and stop as soon as its order arrives.
-            if let order = outgoing[threadId]?.order { stopResponse(threadId, order: order) }
+            if outgoing[threadId]?.submitted == true {
+                stopResponse(threadId, order: outgoing[threadId]?.order)
+            }
         } else if let message = messages.last(where: { $0.responseActivity?.phase.isActive == true }),
                   let order = messageOrders[message.id] {
             stopResponse(threadId, order: order)
         }
     }
 
-    private func stopResponse(_ threadId: String, order: Double) {
-        stopOrders[threadId] = order
+    private func stopResponse(_ threadId: String, order: Double?) {
+        if let order { stopOrders[threadId] = order }
         guard let client, !stoppingThreads.contains(threadId) else { return }
         stoppingThreads.insert(threadId)
+        let request = outgoing[threadId]
         Task { [weak self] in
             guard let self else { return }
-            do {
-                let result: AbortReplyResult = try await client.mutation(
-                    "threads:abortReply", with: ["threadId": threadId, "order": order]
-                )
-                stoppingThreads.remove(threadId)
-                if result.aborted || result.failedPending > 0 { stopOrders[threadId] = nil }
-            } catch {
-                outgoing[threadId]?.stopRequested = false
+            defer {
                 stoppingThreads.remove(threadId)
                 stopOrders[threadId] = nil
+            }
+            do {
+                // Keep stop intent alive even if the user switches conversations
+                // before the server creates the response stream.
+                let updates = client.subscribe(
+                    to: "threads:getMobileChat", with: ["threadId": threadId], yielding: MobileChat.self
+                ).values
+                for try await snapshot in updates {
+                    let responseOrder = order ?? outgoing[threadId]?.order ?? request.flatMap { request in
+                        snapshot.messages.first(where: { $0.isUser && $0.order > request.previousOrder })?.order
+                    }
+                    guard let responseOrder else {
+                        if outgoing[threadId] == nil { return }
+                        continue
+                    }
+                    if let response = snapshot.messages.first(where: { !$0.isUser && $0.order == responseOrder }),
+                       response.status == "success" || response.status == "failed" {
+                        return
+                    }
+                    let result: AbortReplyResult = try await client.mutation(
+                        "threads:abortReply", with: ["threadId": threadId, "order": responseOrder]
+                    )
+                    if result.aborted || result.failedPending > 0 { return }
+                }
+            } catch {
+                outgoing[threadId]?.stopRequested = false
                 updateChat(threadId) { chat in
                     for index in chat.messages.indices where chat.messages[index].responseActivity?.phase == .stopping {
                         chat.messages[index].responseActivity = serverActivities[chat.messages[index].id]

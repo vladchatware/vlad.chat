@@ -11,6 +11,14 @@ struct VladChatTests {
 
 struct ResponseLifecycleTests {
     @MainActor
+    @Test func rejectsSubmissionBeforeConnectionWithoutChangingMessages() {
+        let model = ChatViewModel()
+        #expect(!model.sendMessage(text: "Keep this draft"))
+        #expect(model.messages.isEmpty)
+        #expect(!model.isLoading)
+    }
+
+    @MainActor
     @Test func restoresActivityWithoutALocalGenerationTask() {
         let model = ChatViewModel()
         model.apply(snapshot(phase: .thinking))
