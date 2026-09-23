@@ -38,7 +38,7 @@ struct MessageTableView: UIViewRepresentable {
         tableView.rowHeight = UITableView.automaticDimension
         tableView.showsVerticalScrollIndicator = true
         tableView.contentInsetAdjustmentBehavior = .automatic
-        tableView.clipsToBounds = true
+        tableView.clipsToBounds = false
 
         if #available(iOS 15.0, *) {
             tableView.isPrefetchingEnabled = true
