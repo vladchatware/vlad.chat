@@ -47,44 +47,44 @@ struct ChatListView: View {
         )
         .opacity(tableOpacity)
         .background(Color.chatBackground(isDarkMode: isDarkMode))
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            VStack(spacing: 8) {
-                if userHasScrolled && !messages.isEmpty && !isKeyboardVisible {
-                    Group {
-                        if #available(iOS 26, *) {
-                            Button(action: jumpToLatest) {
-                                Image(systemName: "arrow.down")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .frame(width: Constants.UI.scrollToBottomButtonSize, height: Constants.UI.scrollToBottomButtonSize)
-                            }
-                            .buttonStyle(.glass)
-                            .clipShape(Circle())
-                        } else {
-                            Button(action: jumpToLatest) {
-                                Image(systemName: "arrow.down.circle.fill")
-                                    .font(.system(size: 24))
-                                    .foregroundColor(.white)
-                                    .padding(8)
-                                    .background(Color.gray.opacity(0.8))
-                                    .clipShape(Circle())
-                            }
+        .overlay(alignment: .bottom) {
+            if userHasScrolled && !messages.isEmpty && !isKeyboardVisible {
+                Group {
+                    if #available(iOS 26, *) {
+                        Button(action: jumpToLatest) {
+                            Image(systemName: "arrow.down")
+                                .font(.system(size: 12, weight: .semibold))
+                                .frame(width: Constants.UI.scrollToBottomButtonSize, height: Constants.UI.scrollToBottomButtonSize)
+                        }
+                        .buttonStyle(.glass)
+                        .clipShape(Circle())
+                    } else {
+                        Button(action: jumpToLatest) {
+                            Image(systemName: "arrow.down.circle.fill")
+                                .font(.system(size: 24))
+                                .foregroundColor(.white)
+                                .padding(8)
+                                .background(Color.gray.opacity(0.8))
+                                .clipShape(Circle())
                         }
                     }
-                    .transition(.opacity)
                 }
-
-                MessageInputView(
-                    messageText: $messageText,
-                    viewModel: viewModel,
-                    isKeyboardVisible: isKeyboardVisible
-                )
-                .environmentObject(viewModel)
-                .if(UIDevice.current.userInterfaceIdiom == .pad) { view in
-                    HStack {
-                        Spacer()
-                        view.frame(maxWidth: 600)
-                        Spacer()
-                    }
+                .padding(.bottom, 8)
+                .transition(.opacity)
+            }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            MessageInputView(
+                messageText: $messageText,
+                viewModel: viewModel,
+                isKeyboardVisible: isKeyboardVisible
+            )
+            .environmentObject(viewModel)
+            .if(UIDevice.current.userInterfaceIdiom == .pad) { view in
+                HStack {
+                    Spacer()
+                    view.frame(maxWidth: 600)
+                    Spacer()
                 }
             }
         }
