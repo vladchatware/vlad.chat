@@ -1,4 +1,10 @@
-import type { UIMessageChunk } from "ai";
+import { isToolUIPart } from "ai";
+import type {
+  UIMessageChunk,
+  UIMessagePart,
+  UIDataTypes,
+  UITools,
+} from "ai";
 
 export type ResponsePhase =
   | "waiting"
@@ -9,19 +15,58 @@ export type ResponsePhase =
   | "stopped"
   | "failed";
 
-export type MobileToolStatus = "running" | "completed" | "failed" | "stopped";
+export type MobileToolStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "failed"
+  | "stopped";
 
 export type MobileTool = {
   id: string;
   name: string;
   status: MobileToolStatus;
+  title?: string;
+  inputSummary?: string;
   /** Streamed tool result text, already truncated to MAX_TOOL_OUTPUT_CHARS. */
   output?: string;
+  outputTruncated?: boolean;
+  errorText?: string;
 };
+
+export type MobileTextPart = {
+  id: string;
+  type: "text" | "reasoning";
+  text: string;
+  state: "streaming" | "done";
+};
+
+export type MobileSourcePart = {
+  id: string;
+  type: "source";
+  sourceId: string;
+  url: string;
+  title?: string;
+};
+
+export type MobileToolPart = {
+  id: string;
+  type: "tool";
+  tool: MobileTool;
+};
+
+export type MobileResponsePart =
+  | MobileTextPart
+  | MobileSourcePart
+  | MobileToolPart;
 
 export type MobileResponse = {
   phase: ResponsePhase;
+  /** Ordered, provider-independent presentation parts. */
+  parts: MobileResponsePart[];
+  /** Compatibility projection for clients that only render tool rows. */
   tools: MobileTool[];
+  errorText?: string;
 };
 
 export type MobileMessage = {
@@ -32,6 +77,7 @@ export type MobileMessage = {
   order: number;
   createdAt: number;
   response?: MobileResponse;
+  errorText?: string;
 };
 
 type ActiveStream = {
@@ -89,72 +135,277 @@ type OrderState = {
   text: string;
   phase: ResponsePhase;
   tools: Map<string, MobileTool>;
+  parts: MobileResponsePart[];
+  errorText?: string;
 };
 
-function setTool(state: OrderState, tool: MobileTool) {
+function createOrderState(): OrderState {
+  return { text: "", phase: "waiting", tools: new Map(), parts: [] };
+}
+
+function upsertToolPart(state: OrderState, tool: MobileTool) {
   const existing = state.tools.get(tool.id);
-  state.tools.set(tool.id, {
+  const nextTool = {
     ...tool,
     name: tool.name || existing?.name || "Tool",
     output: tool.output ?? existing?.output,
-  });
+    outputTruncated: tool.outputTruncated ?? existing?.outputTruncated,
+    errorText: tool.errorText ?? existing?.errorText,
+    inputSummary: tool.inputSummary ?? existing?.inputSummary,
+    title: tool.title ?? existing?.title,
+  } satisfies MobileTool;
+  state.tools.set(tool.id, nextTool);
+
+  const partIndex = state.parts.findIndex(
+    (part): part is MobileToolPart => part.type === "tool" && part.id === tool.id,
+  );
+  const nextPart: MobileToolPart = { id: tool.id, type: "tool", tool: nextTool };
+  if (partIndex === -1) {
+    state.parts.push(nextPart);
+  } else {
+    state.parts[partIndex] = nextPart;
+  }
+}
+
+function hasOpenTools(state: OrderState): boolean {
+  return [...state.tools.values()].some(
+    (tool) => tool.status === "pending" || tool.status === "running",
+  );
+}
+
+function settleOpenTools(
+  state: OrderState,
+  status: Extract<MobileToolStatus, "failed" | "stopped">,
+  errorText?: string,
+) {
+  for (const tool of state.tools.values()) {
+    if (tool.status !== "pending" && tool.status !== "running") {
+      continue;
+    }
+    upsertToolPart(state, {
+      ...tool,
+      status,
+      ...(tool.errorText || !errorText ? {} : { errorText }),
+    });
+  }
+}
+
+function upsertTextPart(
+  state: OrderState,
+  type: MobileTextPart["type"],
+  id: string,
+  text: string,
+  partState: MobileTextPart["state"],
+) {
+  const partId = `${type}:${id}`;
+  const partIndex = state.parts.findIndex(
+    (part): part is MobileTextPart => part.type === type && part.id === partId,
+  );
+  const nextPart: MobileTextPart = {
+    id: partId,
+    type,
+    text,
+    state: partState,
+  };
+  if (partIndex === -1) {
+    state.parts.push(nextPart);
+  } else {
+    state.parts[partIndex] = nextPart;
+  }
+}
+
+function appendTextPart(
+  state: OrderState,
+  type: MobileTextPart["type"],
+  id: string,
+  delta: string,
+) {
+  const partId = `${type}:${id}`;
+  const existing = state.parts.find(
+    (part): part is MobileTextPart => part.type === type && part.id === partId,
+  );
+  upsertTextPart(state, type, id, `${existing?.text ?? ""}${delta}`, "streaming");
+}
+
+function addSourcePart(
+  state: OrderState,
+  sourceId: string,
+  url: string,
+  title?: string,
+) {
+  if (state.parts.some((part) => part.type === "source" && part.id === sourceId)) {
+    return;
+  }
+  state.parts.push({ id: sourceId, type: "source", sourceId, url, title });
+}
+
+function storedPartID(state: OrderState, type: MobileTextPart["type"]): string {
+  const index = state.parts.filter((part) => part.type === type).length;
+  return `stored:${type}:${index}`;
+}
+
+function summarizeToolInput(input: unknown): string | undefined {
+  if (typeof input === "string") {
+    return input.trim() || undefined;
+  }
+  if (!input || typeof input !== "object") {
+    return undefined;
+  }
+
+  const record = input as Record<string, unknown>;
+  for (const key of ["query", "searchQuery", "url", "title"]) {
+    if (typeof record[key] === "string" && record[key].trim()) {
+      return record[key].trim();
+    }
+  }
+
+  const scalarFields = Object.entries(record)
+    .filter(([, value]) =>
+      typeof value === "string" ||
+      typeof value === "number" ||
+      typeof value === "boolean",
+    )
+    .slice(0, 6)
+    .map(([key, value]) => `${key}: ${String(value)}`)
+    .join(", ");
+
+  return scalarFields ? scalarFields.slice(0, 500) : undefined;
+}
+
+function toolOutputFields(output: unknown): Pick<MobileTool, "output" | "outputTruncated"> {
+  const text = toolOutputText(output);
+  return {
+    output: truncateToolOutput(text),
+    outputTruncated: text.length > MAX_TOOL_OUTPUT_CHARS,
+  };
 }
 
 /**
  * Folds a single stream chunk into the response state for its order.
  *
- * Tool activity intentionally carries only a name, status and (truncated)
- * result text, mirroring the web client's projection without leaking
- * provider-specific inputs.
+ * Tool activity carries display-safe metadata and a bounded result preview,
+ * mirroring the web client's visible states without leaking provider-specific
+ * inputs wholesale.
  */
 function applyPart(state: OrderState, part: UIMessageChunk) {
   switch (part.type) {
+    case "text-start":
+      upsertTextPart(state, "text", part.id, "", "streaming");
+      break;
     case "text-delta":
       state.text += part.delta;
       state.phase = "responding";
+      appendTextPart(state, "text", part.id, part.delta);
       break;
+    case "text-end": {
+      const existing = state.parts.find(
+        (candidate): candidate is MobileTextPart =>
+          candidate.type === "text" && candidate.id === `text:${part.id}`,
+      );
+      upsertTextPart(state, "text", part.id, existing?.text ?? "", "done");
+      break;
+    }
     case "reasoning-start":
+      upsertTextPart(state, "reasoning", part.id, "", "streaming");
+      state.phase = "thinking";
+      break;
     case "reasoning-delta":
+      appendTextPart(state, "reasoning", part.id, part.delta);
       if (!state.text) state.phase = "thinking";
       break;
-    case "reasoning-end":
-    case "text-end":
+    case "reasoning-end": {
+      const existing = state.parts.find(
+        (candidate): candidate is MobileTextPart =>
+          candidate.type === "reasoning" && candidate.id === `reasoning:${part.id}`,
+      );
+      upsertTextPart(state, "reasoning", part.id, existing?.text ?? "", "done");
+      break;
+    }
     case "start-step":
+      if (!state.text && !hasOpenTools(state)) {
+        state.phase = "thinking";
+      }
+      break;
     case "finish-step":
-      if (!state.text) state.phase = "waiting";
       break;
     case "tool-input-start":
+      upsertToolPart(state, {
+        id: part.toolCallId,
+        name: part.toolName,
+        status: "pending",
+        title: part.title,
+      });
+      state.phase = "tool";
+      break;
     case "tool-input-available":
-      setTool(state, { id: part.toolCallId, name: part.toolName, status: "running" });
-      if (!state.text) state.phase = "tool";
+      upsertToolPart(state, {
+        id: part.toolCallId,
+        name: part.toolName,
+        status: "running",
+        inputSummary: summarizeToolInput(part.input),
+        title: part.title,
+      });
+      state.phase = "tool";
       break;
     case "tool-input-error":
-      setTool(state, { id: part.toolCallId, name: part.toolName, status: "failed" });
-      if (!state.text) state.phase = "waiting";
+      upsertToolPart(state, {
+        id: part.toolCallId,
+        name: part.toolName,
+        status: "failed",
+        inputSummary: summarizeToolInput(part.input),
+        errorText: part.errorText,
+        title: part.title,
+      });
+      state.phase = "failed";
       break;
     case "tool-output-available":
-      setTool(state, {
+      upsertToolPart(state, {
         id: part.toolCallId,
         name: state.tools.get(part.toolCallId)?.name ?? "Tool",
         status: part.preliminary ? "running" : "completed",
-        output: truncateToolOutput(toolOutputText(part.output)),
+        ...toolOutputFields(part.output),
       });
-      if (!state.text) state.phase = "waiting";
+      state.phase = part.preliminary ? "tool" : state.text ? "responding" : "tool";
       break;
     case "tool-output-error":
-    case "tool-output-denied":
-      setTool(state, {
+      upsertToolPart(state, {
         id: part.toolCallId,
         name: state.tools.get(part.toolCallId)?.name ?? "Tool",
         status: "failed",
+        errorText: part.errorText,
       });
-      if (!state.text) state.phase = "waiting";
+      state.phase = "failed";
+      break;
+    case "tool-output-denied":
+      upsertToolPart(state, {
+        id: part.toolCallId,
+        name: state.tools.get(part.toolCallId)?.name ?? "Tool",
+        status: "failed",
+        errorText: "Tool use was denied.",
+      });
+      state.phase = "failed";
+      break;
+    case "source-url":
+      addSourcePart(state, part.sourceId, part.url, part.title);
       break;
     case "abort":
       state.phase = "stopped";
+      state.errorText = part.reason ?? "Generation stopped.";
+      settleOpenTools(state, "stopped", state.errorText);
       break;
     case "error":
       state.phase = "failed";
+      state.errorText = part.errorText;
+      settleOpenTools(state, "failed", state.errorText ?? "Generation failed.");
+      break;
+    case "finish":
+      if (hasOpenTools(state)) {
+        state.phase = "failed";
+        state.errorText ??= "Tool did not return a final result.";
+        settleOpenTools(state, "failed", state.errorText);
+      } else if (state.phase !== "failed" && state.phase !== "stopped") {
+        state.phase = "complete";
+      }
       break;
     default:
       break;
@@ -172,7 +423,101 @@ function responseFor(state: OrderState): MobileResponse {
   ) {
     phase = "tool";
   }
-  return { phase, tools };
+  return {
+    phase,
+    parts: state.parts,
+    tools,
+    ...(state.errorText ? { errorText: state.errorText } : {}),
+  };
+}
+
+type MobileUIMessagePart = UIMessagePart<UIDataTypes, UITools>;
+type MobileToolUIPart = Extract<MobileUIMessagePart, { toolCallId: string }>;
+
+function toolName(part: MobileToolUIPart): string {
+  return part.type === "dynamic-tool" ? part.toolName : part.type.slice(5);
+}
+
+function projectStoredPart(state: OrderState, part: MobileUIMessagePart) {
+  switch (part.type) {
+    case "text":
+      state.text += part.text;
+      if (state.phase !== "failed" && state.phase !== "stopped") {
+        state.phase = "responding";
+      }
+      upsertTextPart(state, "text", storedPartID(state, "text"), part.text, part.state ?? "done");
+      return;
+    case "reasoning":
+      if (!state.text && state.phase !== "failed" && state.phase !== "stopped") {
+        state.phase = "thinking";
+      }
+      upsertTextPart(state, "reasoning", storedPartID(state, "reasoning"), part.text, part.state ?? "done");
+      return;
+    case "source-url":
+      addSourcePart(state, part.sourceId, part.url, part.title);
+      return;
+    default:
+      if (isToolUIPart(part)) {
+        const toolPart = part as MobileToolUIPart;
+        const hasInput = "input" in toolPart;
+        const hasOutput = "output" in toolPart;
+        const hasError = "errorText" in toolPart;
+        const status: MobileToolStatus =
+          toolPart.state === "input-streaming" ? "pending" :
+          toolPart.state === "input-available" ||
+          toolPart.state === "approval-requested" ||
+          toolPart.state === "approval-responded" ? "running" :
+          toolPart.state === "output-available" ? "completed" : "failed";
+        const output = hasOutput ? toolPart.output : undefined;
+        upsertToolPart(state, {
+          id: toolPart.toolCallId,
+          name: toolName(toolPart),
+          status,
+          title: toolPart.title,
+          inputSummary: hasInput ? summarizeToolInput(toolPart.input) : undefined,
+          ...(hasOutput ? toolOutputFields(output) : {}),
+          errorText: hasError ? toolPart.errorText : undefined,
+        });
+        if (status !== "failed" && state.phase !== "failed" && state.phase !== "stopped") {
+          state.phase = "tool";
+        }
+        if (status === "failed") {
+          state.phase = "failed";
+          state.errorText ??= toolPart.errorText ?? "Tool failed.";
+        }
+      }
+  }
+}
+
+/** Projects persisted UI message parts through the same contract as live deltas. */
+export function projectStoredResponse(
+  parts: readonly MobileUIMessagePart[],
+  status: string,
+  errorText?: string,
+): MobileResponse {
+  const state = createOrderState();
+  for (const part of parts) {
+    projectStoredPart(state, part);
+  }
+  if (status === "failed") {
+    state.phase = "failed";
+    settleOpenTools(state, "failed", errorText ?? "Generation failed.");
+  } else if (status === "stopped") {
+    state.phase = "stopped";
+    settleOpenTools(state, "stopped", errorText ?? "Generation stopped.");
+  } else if (status === "success" && hasOpenTools(state)) {
+    state.phase = "failed";
+    state.errorText ??= "Tool did not return a final result.";
+    settleOpenTools(state, "failed", state.errorText);
+  } else if (
+    status === "success" &&
+    state.phase !== "failed" &&
+    state.phase !== "stopped"
+  ) {
+    state.phase = "complete";
+  }
+  state.errorText = errorText ?? state.errorText ?? (status === "failed" ? "Generation failed." : undefined);
+  return responseFor(state);
 }
 
 /** Hydrates pending assistant rows from active stream deltas. */
@@ -202,7 +547,7 @@ export function mergeMobileStreamText(
     }
     let state = states.get(stream.order);
     if (!state) {
-      state = { text: "", phase: "waiting", tools: new Map() };
+      state = createOrderState();
       states.set(stream.order, state);
     }
     const parts = (deltasByStream.get(stream.streamId) ?? [])
@@ -212,11 +557,21 @@ export function mergeMobileStreamText(
     for (const part of parts) {
       applyPart(state, part);
     }
+    // A durable stream row is created before provider output is available.
+    // Keep that interval visible as active thinking instead of exposing the
+    // transport's internal waiting state to the native client.
+    if (state.phase === "waiting") {
+      state.phase = "thinking";
+    }
   }
 
   const merged = messages.map((message) => {
     const state = states.get(message.order);
-    if (message.role !== "assistant" || !state || message.status !== "pending") {
+    if (
+      message.role !== "assistant" ||
+      !state ||
+      (message.status !== "pending" && message.status !== "streaming")
+    ) {
       return message;
     }
     return {
@@ -224,6 +579,7 @@ export function mergeMobileStreamText(
       text: state.text,
       status: "streaming",
       response: responseFor(state),
+      ...(state.errorText ? { errorText: state.errorText } : {}),
     };
   });
 
@@ -244,6 +600,7 @@ export function mergeMobileStreamText(
         order,
         createdAt: prompt?.createdAt ?? 0,
         response: responseFor(state),
+        ...(state.errorText ? { errorText: state.errorText } : {}),
       });
     }
   }
