@@ -36,6 +36,10 @@ yarn-error.log*
 # vercel
 .vercel
 
+# Local iOS configuration
+ios/VladChat/Config/Local.xcconfig
+**/xcuserdata/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
