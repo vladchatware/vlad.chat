@@ -139,7 +139,7 @@ Give one coordinator responsibility for scroll policy. Distinguish following lat
 - While following latest, preserve the latest visible content as it grows, coalescing scroll adjustment with layout. Avoid starting overlapping animations per token.
 - User upward drag disables follow immediately; incoming updates and delayed callbacks cannot reset it. Resume after explicit Jump to latest or user-driven return to the bottom.
 - While reading history, preserve first visible message/part ID and its within-viewport offset through updates, keyboard changes, tool expansion elsewhere, and finalization. Initial acceptance tolerance: 2 points when the anchored content itself is unchanged and geometry permits.
-- Keep Jump to latest available while detached, including with keyboard visible when space permits; it must not overlap composer or content.
+- Keep Jump to latest as a bottom-centered overlay floating over the transcript (original design; its glass refracts the content behind it), available while detached, including with keyboard visible when space permits. It must not overlap the composer itself.
 - Keyboard presentation/dismissal respects current follow mode. Store/remove actual observer tokens. Repeated appear/disappear cycles produce one callback per keyboard event.
 - Remove the 50-screen reservation and compensating negative inset approach in favor of real measured layout and bounded safe-area/composer insets. If a measured performance limitation requires temporary space reservation, document evidence and bound it to the viewport rather than dozens of screens.
 - No blank viewport, rebound, or surprise bottom snap when streaming starts/stops, a synthetic ID is replaced, app resumes, or device rotates.
