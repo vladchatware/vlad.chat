@@ -38,7 +38,7 @@ struct WebSearchBox: View {
     private var headerContent: some View {
         switch webSearchState.status {
         case .searching:
-            HStack(spacing: 8) {
+            HStack(spacing: Theme.Dimensions.relatedItemSpacing) {
                 SearchingDotsView(isDarkMode: isDarkMode)
                 if let summary = webSearchSummary, !summary.isEmpty {
                     Text(summary)
@@ -60,9 +60,9 @@ struct WebSearchBox: View {
             }
 
         case .completed:
-            HStack(spacing: 8) {
+            HStack(spacing: Theme.Dimensions.relatedItemSpacing) {
                 Image(systemName: "globe")
-                    .foregroundColor(.blue)
+                    .foregroundColor(isDarkMode ? .white.opacity(0.72) : .black.opacity(0.62))
                     .font(.system(size: 14))
 
                 if webSearchState.sources.isEmpty {
@@ -79,7 +79,7 @@ struct WebSearchBox: View {
             }
 
         case .failed:
-            HStack(spacing: 8) {
+            HStack(spacing: Theme.Dimensions.relatedItemSpacing) {
                 Image(systemName: "xmark.circle.fill")
                     .foregroundColor(.red)
                     .font(.system(size: 14))
@@ -89,7 +89,7 @@ struct WebSearchBox: View {
             }
 
         case .blocked:
-            HStack(spacing: 8) {
+            HStack(spacing: Theme.Dimensions.relatedItemSpacing) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundColor(.orange)
                     .font(.system(size: 14))
@@ -132,7 +132,7 @@ struct SearchingDotsView: View {
                     .modifier(PulsingAnimation(delay: 0.15 * Double(index)))
             }
         }
-        .foregroundColor(.blue)
+        .foregroundColor(isDarkMode ? .white.opacity(0.72) : .black.opacity(0.62))
     }
 }
 

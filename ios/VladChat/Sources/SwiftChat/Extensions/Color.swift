@@ -10,9 +10,6 @@ import SwiftUI
 import UIKit
 
 extension Color {
-    // Accent colors
-    static let accentPrimary = Color(red: 16/255, green: 185/255, blue: 129/255) // #10B981
-
     // Brand colors
     static let brandDark = Color(hex: "061820")
     static let brandLight = Color(hex: "EEF3F3")
@@ -48,17 +45,6 @@ extension Color {
     static let userMessageForegroundDark = Color.white
     static let userMessageForegroundLight = Color.black
 
-
-    // Adaptive accent color for buttons/links that works in both light and dark mode
-    static let adaptiveAccent = Color(UIColor { traitCollection in
-        if traitCollection.userInterfaceStyle == .dark {
-            // White in dark mode for better visibility
-            return .white
-        } else {
-            // Use the green accent in light mode
-            return UIColor(Color.accentPrimary)
-        }
-    })
 
     // Convenience helpers for common surfaces
     static func chatSurface(isDarkMode: Bool) -> Color {

@@ -8,6 +8,7 @@
 
 import SwiftUI
 import Combine
+import QuartzCore
 
 struct MessageTableView: UIViewRepresentable {
     let archivedMessagesStartIndex: Int
@@ -37,7 +38,7 @@ struct MessageTableView: UIViewRepresentable {
         tableView.rowHeight = UITableView.automaticDimension
         tableView.showsVerticalScrollIndicator = true
         tableView.contentInsetAdjustmentBehavior = .automatic
-        tableView.clipsToBounds = false
+        tableView.clipsToBounds = true
 
         if #available(iOS 15.0, *) {
             tableView.isPrefetchingEnabled = true
@@ -55,16 +56,10 @@ struct MessageTableView: UIViewRepresentable {
         if keyboardHeightChanged {
             let wasAtBottom = context.coordinator.parent.isAtBottom
             context.coordinator.lastKeyboardHeight = keyboardHeight
-            context.coordinator.isKeyboardTransitioning = true
 
             if wasAtBottom && keyboardHeight > 0 {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                     context.coordinator.scrollToBottom(animated: true)
-                    context.coordinator.isKeyboardTransitioning = false
-                }
-            } else {
-                DispatchQueue.main.async {
-                    context.coordinator.isKeyboardTransitioning = false
                 }
             }
         }
@@ -76,35 +71,49 @@ struct MessageTableView: UIViewRepresentable {
         // Detect ID conversion (temp → permanent) by checking if message IDs match
         // This is more reliable than checking wrappers since wrappers only exist for rendered cells
         let currentMessageIds = Set(viewModel.messages.map { $0.id })
+        let currentMessageSequence = viewModel.messages.map { $0.id }
         let isIdConversion = chatIdChanged && !currentMessageIds.isEmpty &&
             currentMessageIds == context.coordinator.lastMessageIds
+        let preservedMessageIdentities = context.coordinator.reconcileMessageIdentities(
+            from: context.coordinator.lastMessageSequence,
+            to: viewModel.messages
+        )
 
         if chatIdChanged {
             context.coordinator.lastChatId = currentChatId
 
-            if !isIdConversion {
+            if !isIdConversion && !preservedMessageIdentities {
                 context.coordinator.messageWrappers.removeAll()
                 context.coordinator.shownMessageIds.removeAll()
+            } else if preservedMessageIdentities {
+                context.coordinator.messageWrappers = context.coordinator.messageWrappers.filter {
+                    currentMessageIds.contains($0.key)
+                }
             }
             context.coordinator.lastMessageIds = currentMessageIds
+            context.coordinator.lastMessageSequence = currentMessageSequence
         } else if currentMessageIds != context.coordinator.lastMessageIds {
             // Message IDs changed without chat ID changing (e.g., regenerate)
             let idsWereReplaced = !currentMessageIds.isEmpty &&
                                   !context.coordinator.lastMessageIds.isEmpty &&
                                   currentMessageIds.isDisjoint(with: context.coordinator.lastMessageIds)
 
-            if idsWereReplaced {
+            if idsWereReplaced && !preservedMessageIdentities {
                 // All message IDs are different - clear stale wrappers
                 context.coordinator.messageWrappers.removeAll()
                 context.coordinator.shownMessageIds.removeAll()
                 context.coordinator.heightCache.removeAll()
             }
             context.coordinator.lastMessageIds = currentMessageIds
+            context.coordinator.lastMessageSequence = currentMessageSequence
             tableView.reloadData()
         }
 
         let isDarkModeChanged = context.coordinator.lastIsDarkMode != isDarkMode
         let messageCountChanged = context.coordinator.lastMessageCount != messages.count
+        let showsWaitingRow = context.coordinator.showsWaitingRow
+        let waitingRowChanged = context.coordinator.lastShowsWaitingRow != showsWaitingRow
+        context.coordinator.lastShowsWaitingRow = showsWaitingRow
 
         if isDarkModeChanged {
             context.coordinator.lastIsDarkMode = isDarkMode
@@ -115,44 +124,33 @@ struct MessageTableView: UIViewRepresentable {
             }
         }
 
-        if messageCountChanged || (chatIdChanged && !isIdConversion) {
+        if messageCountChanged || waitingRowChanged || (chatIdChanged && !isIdConversion) {
             context.coordinator.lastMessageCount = messages.count
             context.coordinator.heightCache.removeAll()
             tableView.reloadData()
-        } else if isLoading && !messages.isEmpty {
-            // During streaming, update the last message wrapper directly
+            context.coordinator.scheduleFollowLatestIfNeeded()
+        } else if !messages.isEmpty {
+            // Reconcile the last row for both streaming and terminal snapshots.
+            // A reconnect can deliver new content after local loading is already false.
             if let lastMessage = messages.last,
                let wrapper = context.coordinator.messageWrappers[lastMessage.id] {
 
                 let isArchived = messages.count - 1 < archivedMessagesStartIndex
                 let showArchiveSeparator = messages.count - 1 == archivedMessagesStartIndex && archivedMessagesStartIndex > 0
 
-                // Update multiplier synchronously to prevent race condition:
-                // updateUIView is called on every streaming token, and if we defer
-                // the update to DispatchQueue.main.async, many calls will read the
-                // stale multiplier and each queue a +10 increment, causing it to
-                // explode to thousands.
-                let screenHeight = UIScreen.main.bounds.height
-                let needsBufferExtension = wrapper.extendBufferIfNeeded(screenHeight: screenHeight)
-
                 let coordinator = context.coordinator
-                DispatchQueue.main.async {
-                    guard let currentMessage = coordinator.parent.messages.last else { return }
-
-                    wrapper.update(
-                        message: currentMessage,
-                        isDarkMode: coordinator.parent.isDarkMode,
-                        isLastMessage: true,
-                        isLoading: coordinator.parent.isLoading,
-                        isArchived: isArchived,
-                        showArchiveSeparator: showArchiveSeparator,
-                        messageIndex: coordinator.parent.messages.count - 1
-                    )
-
-                    if needsBufferExtension && !coordinator.isKeyboardTransitioning {
-                        tableView.beginUpdates()
-                        tableView.endUpdates()
-                    }
+                coordinator.invalidateHeight(for: lastMessage.id)
+                let didUpdate = wrapper.update(
+                    message: lastMessage,
+                    isDarkMode: isDarkMode,
+                    isLastMessage: true,
+                    isLoading: isLoading,
+                    isArchived: isArchived,
+                    showArchiveSeparator: showArchiveSeparator,
+                    messageIndex: messages.count - 1
+                )
+                if didUpdate {
+                    coordinator.scheduleFollowLatestIfNeeded()
                 }
             }
         }
@@ -176,9 +174,6 @@ struct MessageTableView: UIViewRepresentable {
                     messageIndex: messages.count - 1
                 )
 
-                DispatchQueue.main.async {
-                    wrapper.resetBuffer()
-                }
             }
 
             DispatchQueue.main.async {
@@ -251,12 +246,14 @@ struct MessageTableView: UIViewRepresentable {
         var lastScrollTrigger: UUID?
         var lastScrollToUserTrigger: UUID?
         var lastMessageCount: Int = 0
+        var lastShowsWaitingRow = false
         var lastIsLoading: Bool = false
         var cellReuseIdentifierSuffix: String = ""
         var lastKeyboardHeight: CGFloat = 0
         var lastIsDarkMode: Bool = false
         var lastChatId: String? = nil
         var lastMessageIds: Set<String> = []
+        var lastMessageSequence: [String] = []
         private var isDragging = false
         private var isUpdatingContentInset = false
         var messageWrappers: [String: ObservableMessageWrapper] = [:]
@@ -268,10 +265,24 @@ struct MessageTableView: UIViewRepresentable {
         var heightCache: [IndexPath: CGFloat] = [:]
         var messageHeightCache: [String: CGFloat] = [:]
         var shownMessageIds: Set<String> = []
-        var isKeyboardTransitioning = false
+        private var followLatestScheduled = false
+        private var lastFollowLatestAt: TimeInterval = 0
+        private var followLatestDisplayLink: CADisplayLink?
+        private lazy var followLatestDisplayLinkTarget = FollowLatestDisplayLinkTarget(coordinator: self)
+
+        private static let followLatestResponse: TimeInterval = 0.2
+        private static let maximumFollowLatestSpeed: CGFloat = 300
+
+        var showsWaitingRow: Bool {
+            parent.isLoading && parent.messages.last?.role == .user
+        }
 
         init(_ parent: MessageTableView) {
             self.parent = parent
+        }
+
+        deinit {
+            followLatestDisplayLink?.invalidate()
         }
 
         func getOrCreateWrapper(for message: Message, isDarkMode: Bool, isLastMessage: Bool, isLoading: Bool, isArchived: Bool, showArchiveSeparator: Bool, messageIndex: Int) -> ObservableMessageWrapper {
@@ -289,6 +300,35 @@ struct MessageTableView: UIViewRepresentable {
             }
         }
 
+        @discardableResult
+        func reconcileMessageIdentities(from previousIDs: [String], to currentMessages: [Message]) -> Bool {
+            guard previousIDs.count == currentMessages.count, !previousIDs.isEmpty else { return false }
+
+            var preserved = false
+            for (previousID, currentMessage) in zip(previousIDs, currentMessages) {
+                guard previousID != currentMessage.id,
+                      let wrapper = messageWrappers[previousID],
+                      wrapper.message.role == currentMessage.role,
+                      compatibleContent(wrapper.message.content, currentMessage.content) else {
+                    continue
+                }
+
+                messageWrappers.removeValue(forKey: previousID)
+                messageWrappers[currentMessage.id] = wrapper
+                shownMessageIds.insert(currentMessage.id)
+                preserved = true
+            }
+            return preserved
+        }
+
+        private func compatibleContent(_ previous: String, _ current: String) -> Bool {
+            previous == current ||
+            previous.isEmpty ||
+            current.isEmpty ||
+            previous.hasPrefix(current) ||
+            current.hasPrefix(previous)
+        }
+
         func numberOfSections(in tableView: UITableView) -> Int {
             return 1
         }
@@ -297,7 +337,7 @@ struct MessageTableView: UIViewRepresentable {
             if parent.messages.isEmpty {
                 return 1
             }
-            return parent.messages.count
+            return parent.messages.count + (showsWaitingRow ? 1 : 0)
         }
 
         func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
@@ -314,6 +354,24 @@ struct MessageTableView: UIViewRepresentable {
                         .padding(.horizontal, UIDevice.current.userInterfaceIdiom == .pad ? 100 : 0)
                         .frame(maxWidth: 900)
                         .frame(maxWidth: .infinity)
+                }
+                .minSize(width: 0, height: 0)
+                .margins(.all, 0)
+                .background(.clear)
+            } else if showsWaitingRow && indexPath.row == parent.messages.count {
+                cell.contentConfiguration = UIHostingConfiguration {
+                    AssistantActivityView(
+                        activity: ResponseActivity(phase: .waiting, tools: []),
+                        isDarkMode: parent.isDarkMode,
+                        isStreaming: true,
+                        onSelectTool: { _ in }
+                    )
+                    .padding(.vertical, Theme.Dimensions.paddingSmall)
+                    .padding(.horizontal, UIDevice.current.userInterfaceIdiom == .pad ? 100 : Theme.Dimensions.transcriptGutter)
+                    .if(UIDevice.current.userInterfaceIdiom == .pad) { view in
+                        view.frame(maxWidth: 900)
+                            .frame(maxWidth: .infinity)
+                    }
                 }
                 .minSize(width: 0, height: 0)
                 .margins(.all, 0)
@@ -336,7 +394,7 @@ struct MessageTableView: UIViewRepresentable {
 
                 // Always recreate the content configuration to ensure correct wrapper is used
                 cell.contentConfiguration = UIHostingConfiguration {
-                    ObservableMessageCell(wrapper: wrapper, viewModel: parent.viewModel, coordinator: self)
+                    ObservableMessageCell(wrapper: wrapper, viewModel: parent.viewModel)
                 }
                 .minSize(width: 0, height: 0)
                 .margins(.all, 0)
@@ -414,22 +472,7 @@ struct MessageTableView: UIViewRepresentable {
 
             let targetInset: CGFloat
 
-            if parent.isLoading, let lastMessage = parent.messages.last,
-               lastMessage.role == .assistant,
-               let wrapper = messageWrappers[lastMessage.id], wrapper.actualContentHeight > 0 {
-
-                let screenHeight = UIScreen.main.bounds.height
-                let bufferHeight = screenHeight * wrapper.bufferMultiplier
-                let unusedBuffer = bufferHeight - wrapper.actualContentHeight
-                let streamingInset = -max(0, unusedBuffer)
-
-                if isUserMessageScrollMode {
-                    let userMessageInset = insetForUserMessageAtTop(tableView)
-                    targetInset = max(streamingInset, userMessageInset)
-                } else {
-                    targetInset = streamingInset
-                }
-            } else if parent.isLoading && isUserMessageScrollMode {
+            if parent.isLoading && isUserMessageScrollMode {
                 targetInset = insetForUserMessageAtTop(tableView)
             } else {
                 targetInset = 0
@@ -459,6 +502,7 @@ struct MessageTableView: UIViewRepresentable {
             parent.viewModel.isScrollInteractionActive = true
             shouldScrollToBottomAfterLayout = false
             shouldScrollToUserMessageAfterLayout = false
+            stopFollowingLatest()
 
             UIView.animate(withDuration: 0.3) {
                 UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
@@ -485,13 +529,106 @@ struct MessageTableView: UIViewRepresentable {
             guard !parent.messages.isEmpty else { return }
 
             updateContentInset()
+            tableView.layoutIfNeeded()
 
-            let numberOfRows = tableView.numberOfRows(inSection: 0)
-            guard numberOfRows > 0 else { return }
-            guard numberOfRows == parent.messages.count || parent.messages.isEmpty else { return }
+            let inset = tableView.adjustedContentInset
+            let maxOffsetY = max(
+                -inset.top,
+                tableView.contentSize.height - tableView.bounds.height + inset.bottom
+            )
+            let targetOffset = CGPoint(x: tableView.contentOffset.x, y: maxOffsetY)
 
-            let lastIndexPath = IndexPath(row: numberOfRows - 1, section: 0)
-            tableView.scrollToRow(at: lastIndexPath, at: .bottom, animated: animated)
+            if animated {
+                tableView.setContentOffset(targetOffset, animated: true)
+            } else {
+                UIView.performWithoutAnimation {
+                    tableView.setContentOffset(targetOffset, animated: false)
+                }
+            }
+        }
+
+        /// Coalesces layout-driven bottom corrections into a modest cadence.
+        /// Subscription deltas must never steal the reader's position or force
+        /// a scroll correction for every provider token.
+        func scheduleFollowLatestIfNeeded() {
+            guard !parent.userHasScrolled,
+                  !isDragging,
+                  !followLatestScheduled else { return }
+            followLatestScheduled = true
+
+            let now = Date().timeIntervalSinceReferenceDate
+            let delay = max(0, 0.06 - (now - lastFollowLatestAt))
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self else { return }
+                self.followLatestScheduled = false
+                guard !self.parent.userHasScrolled,
+                      !self.isDragging,
+                      let tableView = self.tableView else { return }
+
+                self.lastFollowLatestAt = Date().timeIntervalSinceReferenceDate
+
+                let expectedRowCount = self.parent.messages.isEmpty
+                    ? 1
+                    : self.parent.messages.count + (self.showsWaitingRow ? 1 : 0)
+                guard tableView.numberOfRows(inSection: 0) == expectedRowCount else {
+                    tableView.reloadData()
+                    return
+                }
+
+                UIView.performWithoutAnimation {
+                    let visibleOffset = tableView.contentOffset
+                    tableView.beginUpdates()
+                    tableView.endUpdates()
+                    tableView.layoutIfNeeded()
+                    // UITableView can anchor a self-sizing row to its top
+                    // while resolving its final height. Keep the reader's
+                    // current viewport; the display-link follower handles any
+                    // remaining distance to the newest text.
+                    tableView.setContentOffset(visibleOffset, animated: false)
+                }
+
+                guard self.followLatestDisplayLink == nil else { return }
+                let displayLink = CADisplayLink(
+                    target: self.followLatestDisplayLinkTarget,
+                    selector: #selector(FollowLatestDisplayLinkTarget.advance(_:))
+                )
+                displayLink.add(to: .main, forMode: .common)
+                self.followLatestDisplayLink = displayLink
+            }
+        }
+
+        fileprivate func advanceFollowingLatest(_ displayLink: CADisplayLink) {
+            guard !parent.userHasScrolled, !isDragging, let tableView else {
+                stopFollowingLatest()
+                return
+            }
+
+            let inset = tableView.adjustedContentInset
+            let targetOffsetY = max(
+                -inset.top,
+                tableView.contentSize.height - tableView.bounds.height + inset.bottom
+            )
+            let distance = targetOffsetY - tableView.contentOffset.y
+
+            guard distance > 0.5 else {
+                if distance != 0 {
+                    tableView.contentOffset.y = targetOffsetY
+                }
+                stopFollowingLatest()
+                checkIfAtBottom()
+                return
+            }
+
+            let elapsed = min(max(displayLink.targetTimestamp - displayLink.timestamp, 1.0 / 120.0), 1.0 / 30.0)
+            let easedStep = distance * CGFloat(1 - exp(-elapsed / Self.followLatestResponse))
+            let maximumStep = Self.maximumFollowLatestSpeed * CGFloat(elapsed)
+            tableView.contentOffset.y += min(easedStep, maximumStep)
+        }
+
+        private func stopFollowingLatest() {
+            followLatestDisplayLink?.invalidate()
+            followLatestDisplayLink = nil
         }
 
         /// Scrolls so the user's message sits at the top of the visible area,
@@ -504,7 +641,7 @@ struct MessageTableView: UIViewRepresentable {
                 scrollToBottom(animated: animated)
                 return
             }
-            guard numberOfRows == parent.messages.count else { return }
+            guard numberOfRows == parent.messages.count || showsWaitingRow else { return }
 
             updateContentInset()
 
@@ -516,18 +653,16 @@ struct MessageTableView: UIViewRepresentable {
             guard let tableView = tableView else { return }
             guard tableView.window != nil else { return }
 
-            let contentHeight = tableView.contentSize.height
-            let bottomInset = tableView.contentInset.bottom
-            let viewHeight = tableView.bounds.height
-            let currentOffset = tableView.contentOffset.y
+            let inset = tableView.adjustedContentInset
+            let maxOffset = max(
+                -inset.top,
+                tableView.contentSize.height - tableView.bounds.height + inset.bottom
+            )
+            let distanceFromBottom = maxOffset - tableView.contentOffset.y
 
-            let maxOffset = contentHeight - viewHeight + bottomInset
-            let distanceFromBottom = maxOffset - currentOffset
+            let isVisible = distanceFromBottom <= Theme.Dimensions.bottomFollowTolerance
 
-            let slack: CGFloat = 150
-            let isVisible = distanceFromBottom <= slack
-
-            if parent.isAtBottom != isVisible {
+            if parent.isAtBottom != isVisible || (isVisible && parent.userHasScrolled) {
                 DispatchQueue.main.async {
                     self.parent.isAtBottom = isVisible
                     self.parent.viewModel.isAtBottom = isVisible
@@ -536,6 +671,27 @@ struct MessageTableView: UIViewRepresentable {
                     }
                 }
             }
+        }
+
+        func invalidateHeight(for messageID: String) {
+            messageHeightCache[messageID] = nil
+            heightCache = heightCache.filter { entry in
+                let indexPath = entry.key
+                guard indexPath.row < parent.messages.count else { return true }
+                return parent.messages[indexPath.row].id != messageID
+            }
+        }
+    }
+
+    private final class FollowLatestDisplayLinkTarget: NSObject {
+        weak var coordinator: Coordinator?
+
+        init(coordinator: Coordinator) {
+            self.coordinator = coordinator
+        }
+
+        @objc func advance(_ displayLink: CADisplayLink) {
+            coordinator?.advanceFollowingLatest(displayLink)
         }
     }
 }
@@ -549,10 +705,10 @@ class ObservableMessageWrapper: ObservableObject {
     @Published var showArchiveSeparator: Bool
     @Published var shouldAnimateAppearance: Bool = false
     @Published var messageIndex: Int
-    var bufferMultiplier: CGFloat = Constants.StreamingBuffer.initialMultiplier
-    var actualContentHeight: CGFloat = 0
     var cachedHeight: CGFloat?
     var cachedHeightKey: Int?
+    private var updateScheduled = false
+    private var pendingUpdate: (() -> Void)?
 
     init(message: Message, isDarkMode: Bool, isLastMessage: Bool, isLoading: Bool, isArchived: Bool, showArchiveSeparator: Bool, shouldAnimateAppearance: Bool = true, messageIndex: Int = 0) {
         self.message = message
@@ -565,7 +721,8 @@ class ObservableMessageWrapper: ObservableObject {
         self.messageIndex = messageIndex
     }
 
-    func update(message: Message, isDarkMode: Bool, isLastMessage: Bool, isLoading: Bool, isArchived: Bool, showArchiveSeparator: Bool, messageIndex: Int) {
+    @discardableResult
+    func update(message: Message, isDarkMode: Bool, isLastMessage: Bool, isLoading: Bool, isArchived: Bool, showArchiveSeparator: Bool, messageIndex: Int) -> Bool {
         let contentChanged = self.message.content != message.content ||
                             self.message.thoughts != message.thoughts ||
                             self.message.contentChunks != message.contentChunks ||
@@ -584,7 +741,7 @@ class ObservableMessageWrapper: ObservableObject {
                               self.messageIndex != messageIndex
 
         if !contentChanged && !metadataChanged {
-            return
+            return false
         }
 
         if contentChanged {
@@ -592,10 +749,11 @@ class ObservableMessageWrapper: ObservableObject {
             cachedHeightKey = nil
         }
 
-        // Defer @Published property updates to the next run loop tick.
-        // UIHostingConfiguration requires the objectWillChange notification
-        // to arrive on a separate run loop iteration to trigger a re-render.
-        DispatchQueue.main.async {
+        // UIHostingConfiguration needs the objectWillChange notification on a
+        // later run-loop turn. Keep only the newest streamed snapshot so token
+        // bursts cannot queue stale layout passes behind the visible frame.
+        pendingUpdate = { [weak self] in
+            guard let self else { return }
             self.message = message
             self.isDarkMode = isDarkMode
             self.isLastMessage = isLastMessage
@@ -604,26 +762,17 @@ class ObservableMessageWrapper: ObservableObject {
             self.showArchiveSeparator = showArchiveSeparator
             self.messageIndex = messageIndex
         }
-    }
 
-    /// Checks whether the streaming buffer needs to grow and extends it if so.
-    /// Returns true if the buffer was extended.
-    @discardableResult
-    func extendBufferIfNeeded(screenHeight: CGFloat) -> Bool {
-        let currentBufferHeight = screenHeight * bufferMultiplier
-        let threshold = currentBufferHeight * Constants.StreamingBuffer.extensionThresholdRatio
-        let needsExtension = actualContentHeight > threshold
-            && bufferMultiplier < Constants.StreamingBuffer.maxMultiplier
-
-        if needsExtension {
-            bufferMultiplier += Constants.StreamingBuffer.multiplierIncrement
+        guard !updateScheduled else { return true }
+        updateScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.updateScheduled = false
+            let update = self.pendingUpdate
+            self.pendingUpdate = nil
+            update?()
         }
-        return needsExtension
-    }
-
-    func resetBuffer() {
-        bufferMultiplier = Constants.StreamingBuffer.initialMultiplier
-        actualContentHeight = 0
+        return true
     }
 
     func getCacheKey() -> Int {
@@ -639,28 +788,12 @@ class ObservableMessageWrapper: ObservableObject {
 struct ObservableMessageCell: View {
     @ObservedObject var wrapper: ObservableMessageWrapper
     @ObservedObject var viewModel: ChatViewModel
-    weak var coordinator: MessageTableView.Coordinator?
     @State private var hasAppeared = false
-
-    private var bufferHeight: CGFloat {
-        let screenHeight = UIScreen.main.bounds.height
-        return min(
-            screenHeight * wrapper.bufferMultiplier,
-            Constants.StreamingBuffer.maxCellHeight
-        )
-    }
-
-    /// The streaming buffer only makes sense for an assistant reply that is
-    /// actually streaming. Reserving 50 screens behind a user message left the
-    /// viewport parked in empty space before the reply row existed.
-    private var reservesStreamingBuffer: Bool {
-        wrapper.isLoading && wrapper.isLastMessage && wrapper.message.role == .assistant
-    }
 
     var body: some View {
         VStack(spacing: 0) {
             if wrapper.showArchiveSeparator {
-                HStack(spacing: 8) {
+                HStack(spacing: Theme.Dimensions.relatedItemSpacing) {
                     Rectangle()
                         .frame(height: 1)
                         .foregroundColor(.gray)
@@ -671,16 +804,11 @@ struct ObservableMessageCell: View {
                         .frame(height: 1)
                         .foregroundColor(.gray)
                 }
-                .padding(.vertical, 16)
-                .padding(.horizontal, 24)
+                .padding(.vertical, Theme.Dimensions.paddingLarge)
+                .padding(.horizontal, Theme.Dimensions.paddingExtraLarge)
             }
 
             ZStack(alignment: .topLeading) {
-                if reservesStreamingBuffer {
-                    Color.clear
-                        .frame(height: bufferHeight)
-                }
-
                 MessageView(
                     message: wrapper.message,
                     isDarkMode: wrapper.isDarkMode,
@@ -690,32 +818,11 @@ struct ObservableMessageCell: View {
                 )
                 .environmentObject(viewModel)
                 .opacity(wrapper.isArchived ? 0.6 : 1.0)
-                .padding(.vertical, 8)
-                .padding(.horizontal, UIDevice.current.userInterfaceIdiom == .pad ? 100 : 8)
+                .padding(.vertical, Theme.Dimensions.paddingSmall)
+                .padding(.horizontal, UIDevice.current.userInterfaceIdiom == .pad ? 100 : Theme.Dimensions.transcriptGutter)
                 .if(UIDevice.current.userInterfaceIdiom == .pad) { view in
                     view.frame(maxWidth: 900)
                         .frame(maxWidth: .infinity)
-                }
-                .if(reservesStreamingBuffer) { view in
-                    view.background(
-                        GeometryReader { geometry in
-                            Color.clear
-                                // Seed the measurement on appear: onChange does not fire
-                                // for the initial layout, so without this the inset stays
-                                // 0 and the viewport rests inside the transparent spacer.
-                                .onAppear {
-                                    wrapper.actualContentHeight = geometry.size.height
-                                    coordinator?.updateContentInset()
-                                }
-                                .onChange(of: geometry.size.height) { _, newHeight in
-                                    wrapper.actualContentHeight = newHeight
-                                    // Re-apply the cancelled-out streaming buffer as soon
-                                    // as the real content height is known, otherwise the
-                                    // viewport briefly rests in the transparent spacer.
-                                    coordinator?.updateContentInset()
-                                }
-                        }
-                    )
                 }
             }
         }
