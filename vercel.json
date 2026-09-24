@@ -1,4 +1,5 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "ignoreCommand": "case \"$VERCEL_GIT_COMMIT_REF\" in main|codex/*|feat/*) exit 1 ;; *) echo 'Skipping build: branch outside allowlist (main|codex/*|feat/*)'; exit 0 ;; esac"
+  "ignoreCommand": "case \"$VERCEL_GIT_COMMIT_REF\" in main|codex/*|feat/*) exit 1 ;; *) echo 'Skipping build: branch outside allowlist (main|codex/*|feat/*)'; exit 0 ;; esac",
+  "buildCommand": "if [ \"$VERCEL_ENV\" = \"production\" ]; then bunx convex deploy --cmd 'bun run build'; else bun run build; fi"
 }
