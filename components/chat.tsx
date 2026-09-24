@@ -56,13 +56,12 @@ import { useAuthActions } from '@convex-dev/auth/react'
 import { Authenticated, useAction, useMutation, useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { PROVIDER_MODELS, isModelEnabled } from '@/lib/provider';
+import posthog from 'posthog-js';
 
 const models = PROVIDER_MODELS.map(({ id, name }) => ({ name, value: id }));
 
 const trackModelGate = (modelId: string) => {
-  if (typeof window === 'undefined') return;
-  const w = window as typeof window & { posthog?: { capture: (event: string, props?: Record<string, unknown>) => void } };
-  w.posthog?.capture('premium_model_clicked', { model: modelId });
+  posthog.capture('premium_model_clicked', { model: modelId });
 };
 const suggestions = [
   'Projects',
