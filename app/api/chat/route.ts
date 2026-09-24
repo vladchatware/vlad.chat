@@ -1,6 +1,5 @@
 import { streamText, UIMessage, convertToModelMessages, isStepCount, smoothStream, gateway } from 'ai';
 import { createMCPClient } from '@ai-sdk/mcp';
-import { isModelEnabled } from '@/lib/provider';
 import { system } from '@/lib/ai'
 import { api } from '@/convex/_generated/api';
 import { convexAuthNextjsToken } from '@convex-dev/auth/nextjs/server';
@@ -17,19 +16,23 @@ export async function POST(req: Request) {
 
   if (!user) return new NextResponse('no user present in session', { status: 403 })
 
-  if (!user.isAnonymous) {
-    if (user.trialTokens <= 0 && user.tokens <= 0) {
-      return new NextResponse('out of tokens', { status: 429 })
-    }
-  } else {
-    if (user.trialMessages! <= 0) return new NextResponse('no more messages left', { status: 429 })
-  }
-
-  if (!isModelEnabled(model)) {
+  // Admission gate: balance, premium access and usage caps are all checked
+  // BEFORE generation starts. Settlement (recordUsage) always accounts for
+  // completed work and never re-runs cap checks, so usage for billed upstream
+  // work is never discarded.
+  try {
+    await fetchMutation(api.users.usageGate, { model }, { token: await convexAuthNextjsToken() })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Request blocked.'
+    const status = message.includes('usage cap')
+      ? 429
+      : message.includes('subscription')
+        ? 404
+        : 429
     return NextResponse.json(
-      { error: { message: `Model '${model}' is not available.`, type: 'invalid_request_error', code: 'model_not_available' } },
-      { status: 404 },
-    );
+      { error: { message, type: 'invalid_request_error', code: status === 404 ? 'subscription_required' : 'insufficient_credits' } },
+      { status },
+    )
   }
 
   const notion = await createMCPClient({

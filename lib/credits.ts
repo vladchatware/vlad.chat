@@ -41,3 +41,33 @@ export function debitTokenBalance(
   if (remainingTrial >= 0) return { trialTokens: remainingTrial, tokens: paid };
   return { trialTokens: 0, tokens: paid - Math.abs(remainingTrial) };
 }
+
+// Raw tokens a weekly/daily trial balance could not cover. Requests that fit
+// inside the trial are free; only the shortfall converts to weighted credits.
+export function trialShortfallTokens(
+  trialTokens: number | undefined,
+  usageTokens: number,
+): number {
+  const trial = Math.max(0, trialTokens ?? 0);
+  return Math.max(0, usageTokens - trial);
+}
+
+// Weighted-credit phase of the debit waterfall: consume the subscription
+// grant first, then prepaid top-up credits; whatever remains becomes metered
+// overage (subscribers) or drives the paid balance negative (legacy
+// draw-down marker for non-subscribers).
+export function debitCreditBalance(
+  balances: { includedCredits: number | undefined; paidTokens: number | undefined },
+  credits: number,
+) {
+  const includedCredits = Math.max(0, balances.includedCredits ?? 0);
+  const paidTokens = Math.max(0, balances.paidTokens ?? 0);
+  const fromIncluded = Math.min(includedCredits, credits);
+  const remainingAfterIncluded = credits - fromIncluded;
+  const fromPaid = Math.min(paidTokens, remainingAfterIncluded);
+  return {
+    includedCredits: includedCredits - fromIncluded,
+    paidTokens: paidTokens - fromPaid,
+    overageCredits: remainingAfterIncluded - fromPaid,
+  };
+}

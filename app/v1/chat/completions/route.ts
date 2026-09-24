@@ -18,7 +18,7 @@ import {
   toAiTools,
   type ChatCompletionRequest,
 } from "@/lib/openai-compat";
-import { PROVIDER_MODEL_IDS, isModelEnabled } from "@/lib/provider";
+import { PROVIDER_MODEL_IDS, isModelEnabled, isPremiumModel } from "@/lib/provider";
 import { authenticateProviderRequest } from "@/lib/provider-auth";
 
 export const maxDuration = 300;
@@ -55,7 +55,20 @@ export async function POST(request: Request) {
       "model",
     );
   }
-  if (!isModelEnabled(parsed.data.model)) {
+  // Eligibility: free models must be operationally enabled; premium models
+  // are enabled for subscribers regardless of the enabled flag (which is how
+  // premium models are hidden from non-subscribers in PROVIDER_MODELS).
+  const premium = isPremiumModel(parsed.data.model);
+  if (premium && !authentication.premiumAllowed) {
+    return openAiError(
+      `Model '${parsed.data.model}' requires a vlad.chat subscription. Manage your plan at https://vlad.chat/provider.`,
+      404,
+      "invalid_request_error",
+      "subscription_required",
+      "model",
+    );
+  }
+  if (!premium && !isModelEnabled(parsed.data.model)) {
     return openAiError(
       `Model '${parsed.data.model}' is temporarily disabled.`,
       404,
