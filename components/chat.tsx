@@ -370,7 +370,7 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
         </GlassButton>
       </div>
       <div className="">
-        <div className="md:px-72">
+        <div className="md:px-72 pb-40">
           <Conversation className="">
             <ConversationContent>
               <div>
@@ -642,6 +642,7 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
         <PromptInput onSubmit={handleSubmit} className="mt-2">
           <PromptInputBody>
             <PromptInputTextarea
+              rows={1}
               onChange={(e) => {
                 setInput(e.target.value)
                 if (submitError) {
