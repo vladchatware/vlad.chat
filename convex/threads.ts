@@ -23,6 +23,7 @@ import { getAuthUserId } from "@convex-dev/auth/server"
 import { agent } from "./agents/simple";
 import { chatSystemInstructions } from "./agents/prompts";
 import { userNotionInstruction } from "@/lib/ai";
+import { isModelEnabled } from "@/lib/provider";
 import { z } from "zod/v3";
 import {
   gateway,
@@ -517,6 +518,12 @@ export const generateReply = action({
     const text = prompt.trim();
     if (!text) {
       throw new ConvexError("Your message is empty. Please type something first.");
+    }
+
+    if (!isModelEnabled(model)) {
+      throw new ConvexError(
+        "This model is currently unavailable. Please pick another model.",
+      );
     }
 
     const notionConn = await ctx.runQuery(internal.notion.getConnectionForUser, {

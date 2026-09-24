@@ -55,10 +55,14 @@ import { GlassButton } from '@/components/ui/glass';
 import { useAuthActions } from '@convex-dev/auth/react'
 import { Authenticated, useAction, useMutation, useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
-import { PROVIDER_MODELS } from '@/lib/provider';
+import { PROVIDER_MODELS, isModelEnabled } from '@/lib/provider';
+import posthog from 'posthog-js';
 
 const models = PROVIDER_MODELS.map(({ id, name }) => ({ name, value: id }));
 
+const trackModelGate = (modelId: string) => {
+  posthog.capture('premium_model_clicked', { model: modelId });
+};
 const suggestions = [
   'Projects',
   'Notion Templates',
@@ -655,6 +659,11 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
             <PromptInputTools>
               <PromptInputModelSelect
                 onValueChange={(value) => {
+                  if (!isModelEnabled(value)) {
+                    trackModelGate(value);
+                    setModel(models[0].value);
+                    return;
+                  }
                   setModel(value);
                 }}
                 value={model}
@@ -664,7 +673,15 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                 </PromptInputModelSelectTrigger>
                 <PromptInputModelSelectContent>
                   {models.map((model) => (
-                    <PromptInputModelSelectItem key={model.value} value={model.value}>
+                    <PromptInputModelSelectItem
+                      key={model.value}
+                      value={model.value}
+                      className={
+                        isModelEnabled(model.value)
+                          ? undefined
+                          : 'text-muted-foreground/50'
+                      }
+                    >
                       {model.name}
                     </PromptInputModelSelectItem>
                   ))}

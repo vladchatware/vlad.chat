@@ -24,7 +24,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { PROVIDER_MODELS, TOP_UP_PRICE_USD, TOP_UP_TOKENS } from "@/lib/provider";
+import { PROVIDER_MODELS_ENABLED, TOP_UP_PRICE_USD, TOP_UP_TOKENS } from "@/lib/provider";
 
 const OPENCODE_CONFIG = JSON.stringify({
   $schema: "https://opencode.ai/config.json",
@@ -37,7 +37,7 @@ const OPENCODE_CONFIG = JSON.stringify({
         apiKey: "{env:VLAD_API_KEY}",
       },
       models: Object.fromEntries(
-        PROVIDER_MODELS.map((model) => [model.id, { name: model.name }]),
+        PROVIDER_MODELS_ENABLED.map((model) => [model.id, { name: model.name }]),
       ),
     },
   },
@@ -50,7 +50,7 @@ const DEEPSEEK_CONFIG = `llm-pi-ai:
       api: openai-completions
       baseURL: https://vlad.chat/v1
       models:
-${PROVIDER_MODELS.map((model) => `        - id: ${model.id}`).join("\n")}`;
+${PROVIDER_MODELS_ENABLED.map((model) => `        - id: ${model.id}`).join("\n")}`;
 
 const tokenFormatter = new Intl.NumberFormat("en-US");
 const dateFormatter = new Intl.DateTimeFormat("en-US", { dateStyle: "medium" });

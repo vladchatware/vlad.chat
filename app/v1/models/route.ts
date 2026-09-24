@@ -1,5 +1,5 @@
 import { authenticateProviderRequest } from "@/lib/provider-auth";
-import { PROVIDER_MODELS } from "@/lib/provider";
+import { PROVIDER_MODELS_ENABLED } from "@/lib/provider";
 
 export async function GET(request: Request) {
   const authentication = await authenticateProviderRequest(request);
@@ -7,7 +7,7 @@ export async function GET(request: Request) {
 
   return Response.json({
     object: "list",
-    data: PROVIDER_MODELS.map((model) => ({
+    data: PROVIDER_MODELS_ENABLED.map((model) => ({
       id: model.id,
       object: "model",
       created: 0,
