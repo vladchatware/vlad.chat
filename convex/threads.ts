@@ -587,20 +587,29 @@ export const generateReply = action({
 
     // Same shape @posthog/ai emits: tool-call items inside the assistant
     // message of $ai_output_choices, so PostHog's AI dashboard counts them.
-    const toolCallItems = await result.steps
-      .then((steps) =>
-        steps.flatMap((step) =>
-          step.toolCalls.map((call) => ({
-            type: "tool-call" as const,
-            id: call.toolCallId,
-            function: {
-              name: call.toolName,
-              arguments: call.input,
-            },
-          })),
-        ),
-      )
-      .catch(() => []);
+    // Also emitted as $ai_span events (captureAiSpans) so traces show the
+    // tool/MCP steps around each LLM call.
+    const steps = await result.steps.catch(() => [] as Awaited<
+      typeof result.steps
+    >);
+    const toolCallItems = steps.flatMap((step) =>
+      step.toolCalls.map((call) => ({
+        type: "tool-call" as const,
+        id: call.toolCallId,
+        function: {
+          name: call.toolName,
+          arguments: call.input,
+        },
+      })),
+    );
+    const toolSpans = steps.flatMap((step, i) =>
+      step.toolCalls.map((call, j) => ({
+        spanId: `${result.order}-${i}-${j}-${call.toolCallId}`,
+        spanName: String(call.toolName),
+        input: call.input,
+        output: step.toolResults[j]?.output,
+      })),
+    );
 
     if (outputText) {
       if (user.isAnonymous) {
@@ -653,6 +662,19 @@ export const generateReply = action({
         });
       } catch (error) {
         console.error("PostHog LLM capture failed", error);
+      }
+    }
+
+    if (toolSpans.length > 0) {
+      try {
+        await ctx.runAction(internal.posthog.captureAiSpans, {
+          distinctId: userId,
+          traceId: `${threadId}:${result.order}`,
+          sessionId: threadId,
+          spans: toolSpans,
+        });
+      } catch (error) {
+        console.error("PostHog span capture failed", error);
       }
     }
 

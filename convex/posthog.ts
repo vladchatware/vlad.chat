@@ -21,6 +21,58 @@ function getClient() {
   return client;
 }
 
+export const captureAiSpans = internalAction({
+  args: {
+    distinctId: v.string(),
+    traceId: v.string(),
+    sessionId: v.optional(v.string()),
+    spans: v.array(
+      v.object({
+        spanId: v.string(),
+        spanName: v.string(),
+        input: v.optional(v.any()),
+        output: v.optional(v.any()),
+      }),
+    ),
+  },
+  handler: async (_ctx, args) => {
+    if (args.spans.length === 0) return { ok: true, count: 0 };
+    const posthog = getClient();
+    for (const span of args.spans) {
+      posthog.capture({
+        distinctId: args.distinctId,
+        event: "$ai_span",
+        properties: {
+          $ai_trace_id: args.traceId,
+          $ai_session_id: args.sessionId ?? null,
+          $ai_span_id: span.spanId,
+          $ai_span_name: span.spanName,
+          $ai_parent_id: args.traceId,
+          $ai_input_state: truncForState(span.input),
+          $ai_output_state: truncForState(span.output),
+        },
+        timestamp: new Date(),
+      });
+    }
+    await posthog.shutdown(2_000);
+    client = null;
+    return { ok: true, count: args.spans.length };
+  },
+});
+
+const MAX_STATE_CHARS = 20_000;
+
+function truncForState(value: unknown): unknown {
+  let json: string;
+  try {
+    json = JSON.stringify(value) ?? "null";
+  } catch {
+    return "[unserializable]";
+  }
+  if (json.length <= MAX_STATE_CHARS) return value;
+  return `${json.slice(0, MAX_STATE_CHARS)}…[truncated]`;
+}
+
 export const captureLlmGeneration = internalAction({
   args: {
     distinctId: v.string(),
