@@ -2,6 +2,8 @@ import { z } from "zod"
 import notion from "@/lib/notion"
 import { convertBlocksToMarkdownWithMeta } from "@/lib/notion-markdown"
 import { getRelativeTime } from "@/lib/utils"
+import { after } from "next/server"
+import { PostHog, instrument } from "@posthog/mcp"
 import { createMcpHandler } from "mcp-handler"
 import type {
   PageObjectResponse,
@@ -44,8 +46,18 @@ function isNotionObjectNotFoundError(error: unknown): error is NotionObjectNotFo
   return false
 }
 
+// PostHog MCP analytics — client created once at module scope, not per request.
+const posthog = new PostHog(process.env.NEXT_PUBLIC_POSTHOG_KEY!, {
+  host: process.env.NEXT_PUBLIC_POSTHOG_HOST ?? "https://us.i.posthog.com",
+  // In-memory queue dies with the serverless invocation; flush every request.
+  flushAt: 1,
+  flushInterval: 0,
+})
+
 const handler = createMcpHandler(
   (server) => {
+    instrument(server, posthog)
+    after(posthog.flush())
     server.tool(
       'notion-get-database',
       'Retrieves the schema of a Notion database, including all properties and their types. Use this to discover available properties before constructing filters for database queries.',
