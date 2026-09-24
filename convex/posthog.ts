@@ -3,6 +3,7 @@
 import { v } from "convex/values";
 import { internalAction } from "./_generated/server";
 import { PostHog } from "posthog-node";
+import { usageValidator } from "./validators";
 
 const posthogKey = process.env.NEXT_PUBLIC_POSTHOG_KEY!;
 const posthogHost = process.env.NEXT_PUBLIC_POSTHOG_HOST!;
@@ -30,26 +31,7 @@ export const captureLlmGeneration = internalAction({
     provider: v.string(),
     input: v.optional(v.any()),
     output: v.optional(v.any()),
-    usage: v.object({
-      totalTokens: v.optional(v.number()),
-      inputTokens: v.optional(v.number()),
-      outputTokens: v.optional(v.number()),
-      reasoningTokens: v.optional(v.number()),
-      cachedInputTokens: v.optional(v.number()),
-      inputTokenDetails: v.optional(
-        v.object({
-          cacheReadTokens: v.optional(v.number()),
-          noCacheTokens: v.optional(v.number()),
-        }),
-      ),
-      outputTokenDetails: v.optional(
-        v.object({
-          reasoningTokens: v.optional(v.number()),
-          textTokens: v.optional(v.number()),
-        }),
-      ),
-      raw: v.optional(v.any()),
-    }),
+    usage: usageValidator,
     providerMetadata: v.optional(v.any()),
   },
   handler: async (_ctx, args) => {

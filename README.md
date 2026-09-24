@@ -12,6 +12,7 @@ A personal AI chatbot application built with Next.js, featuring an intelligent c
 - 🎨 **Modern UI**: Beautiful, responsive interface built with Radix UI and Tailwind CSS
 - 🔄 **Streaming Responses**: Real-time streaming of AI responses
 - 🧠 **Reasoning Display**: Optional reasoning chain visualization
+- 🔑 **Provider API**: OpenAI-compatible model access for OpenCode and DeepSeek Harness
 
 ## Tech Stack
 
@@ -203,13 +204,23 @@ The MCP (Model Context Protocol) server at `/api/mcp` provides tools for the AI 
 ### AI Models
 
 The application currently supports:
-- `zai/glm-5.3-flash` (default)
-- `anthropic/claude-fable-5.1`
-- `openai/gpt-5.6-luna`
-- `xai/grok-4.6`
-- `deepseek/deepseek-v4-flash`
+- `deepseek/deepseek-v4-flash` (default)
+- `anthropic/claude-fable-5`
+- `openai/gpt-5.6-sol`
+- `xai/grok-4.5`
 
-You can modify the available models in `components/chat.tsx`.
+You can modify the shared browser/provider model catalog in `lib/provider.ts`.
+
+### Provider API
+
+Signed-in users can create and revoke API keys at `/provider`. Provider usage shares
+the same trial and paid credit balance as browser chat.
+
+- `GET /v1/models` lists supported models.
+- `POST /v1/chat/completions` supports JSON and SSE streaming responses.
+- Authentication uses `Authorization: Bearer vlad_...`.
+
+The provider page includes copyable OpenCode and DeepSeek Harness configuration.
 
 ## Deployment
 
