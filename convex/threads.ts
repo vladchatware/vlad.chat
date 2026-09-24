@@ -585,6 +585,23 @@ export const generateReply = action({
     }
     const usageObject = toUsageObject(usage);
 
+    // Same shape @posthog/ai emits: tool-call items inside the assistant
+    // message of $ai_output_choices, so PostHog's AI dashboard counts them.
+    const toolCallItems = await result.steps
+      .then((steps) =>
+        steps.flatMap((step) =>
+          step.toolCalls.map((call) => ({
+            type: "tool-call" as const,
+            id: call.toolCallId,
+            function: {
+              name: call.toolName,
+              arguments: call.input,
+            },
+          })),
+        ),
+      )
+      .catch(() => []);
+
     if (outputText) {
       if (user.isAnonymous) {
         await ctx.runMutation(api.users.messages, {});
@@ -602,13 +619,14 @@ export const generateReply = action({
       usageObject.totalTokens !== undefined ||
       usageObject.inputTokens !== undefined ||
       usageObject.outputTokens !== undefined;
-    if (hasUsage || providerMetadata) {
+    if (hasUsage || providerMetadata || toolCallItems.length > 0) {
       try {
         await ctx.runAction(internal.posthog.captureLlmGeneration, {
           distinctId: userId,
           traceId: `${threadId}:${result.order}`,
           threadId,
           order: result.order,
+          sessionId: threadId,
           model,
           provider: "AI Gateway",
           input: [{ role: "user", content: text }],
@@ -616,10 +634,20 @@ export const generateReply = action({
             ? [
                 {
                   role: "assistant",
-                  content: [{ type: "text", text: outputText }],
+                  content: [
+                    { type: "text", text: outputText },
+                    ...toolCallItems,
+                  ],
                 },
               ]
-            : [],
+            : toolCallItems.length > 0
+              ? [
+                  {
+                    role: "assistant",
+                    content: toolCallItems,
+                  },
+                ]
+              : [],
           usage: usageObject,
           providerMetadata,
         });
