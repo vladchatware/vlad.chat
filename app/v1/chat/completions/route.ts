@@ -18,7 +18,7 @@ import {
   toAiTools,
   type ChatCompletionRequest,
 } from "@/lib/openai-compat";
-import { PROVIDER_MODEL_IDS } from "@/lib/provider";
+import { PROVIDER_MODEL_IDS, isModelEnabled } from "@/lib/provider";
 import { authenticateProviderRequest } from "@/lib/provider-auth";
 
 export const maxDuration = 300;
@@ -52,6 +52,15 @@ export async function POST(request: Request) {
       404,
       "invalid_request_error",
       "model_not_found",
+      "model",
+    );
+  }
+  if (!isModelEnabled(parsed.data.model)) {
+    return openAiError(
+      `Model '${parsed.data.model}' is temporarily disabled.`,
+      404,
+      "invalid_request_error",
+      "model_not_available",
       "model",
     );
   }

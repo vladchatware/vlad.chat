@@ -1,5 +1,6 @@
 import { streamText, UIMessage, convertToModelMessages, isStepCount, smoothStream, gateway } from 'ai';
 import { createMCPClient } from '@ai-sdk/mcp';
+import { isModelEnabled } from '@/lib/provider';
 import { system } from '@/lib/ai'
 import { api } from '@/convex/_generated/api';
 import { convexAuthNextjsToken } from '@convex-dev/auth/nextjs/server';
@@ -22,6 +23,13 @@ export async function POST(req: Request) {
     }
   } else {
     if (user.trialMessages! <= 0) return new NextResponse('no more messages left', { status: 429 })
+  }
+
+  if (!isModelEnabled(model)) {
+    return NextResponse.json(
+      { error: { message: `Model '${model}' is not available.`, type: 'invalid_request_error', code: 'model_not_available' } },
+      { status: 404 },
+    );
   }
 
   const notion = await createMCPClient({
