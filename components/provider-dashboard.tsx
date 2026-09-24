@@ -25,6 +25,11 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { PROVIDER_MODELS_ENABLED, TOP_UP_PRICE_USD, TOP_UP_TOKENS } from "@/lib/provider";
+import {
+  OVERAGE_PRICE_PER_MILLION_CREDITS_USD,
+  SUBSCRIPTION_GRANT_CREDITS,
+  SUBSCRIPTION_PRICE_USD,
+} from "@/lib/billing";
 
 const OPENCODE_CONFIG = JSON.stringify({
   $schema: "https://opencode.ai/config.json",
@@ -97,6 +102,7 @@ function ProviderAccount() {
           OpenAI-compatible chat completions for OpenCode, DeepSeek Harness, and other clients.
         </p>
       </section>
+      <SubscriptionCard />
       <CreditBalance />
       <ApiKeyManager />
       <ConfigCard title="OpenCode" filename="opencode.json" value={OPENCODE_CONFIG} />
@@ -148,6 +154,66 @@ function CreditBalance() {
           {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
         </div>
         <Button onClick={topUp} disabled={working}>Top up ${TOP_UP_PRICE_USD}</Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+function SubscriptionCard() {
+  const subscription = useQuery(api.users.subscriptionStatus);
+  const [error, setError] = useState<string | null>(null);
+  const [working, setWorking] = useState<string | null>(null);
+
+  async function start(kind: "subscribe" | "portal") {
+    setWorking(kind);
+    setError(null);
+    try {
+      const response = await fetch(kind === "subscribe" ? "/api/subscribe" : "/api/billing_portal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ returnTo: "/provider" }),
+      });
+      const data: { url?: string; error?: string } = await response.json();
+      if (!response.ok || !data.url) throw new Error(data.error ?? "Could not start billing flow.");
+      window.location.assign(data.url);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not start billing flow.");
+      setWorking(null);
+    }
+  }
+
+  const status = subscription?.status ?? null;
+  const active = Boolean(subscription?.hasSubscription);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Subscription</CardTitle>
+        <CardDescription>
+          ${SUBSCRIPTION_PRICE_USD}/mo includes {formatTokens(SUBSCRIPTION_GRANT_CREDITS)} credits,
+          unlocks premium models, and raises usage caps. Overage is metered at $
+          {OVERAGE_PRICE_PER_MILLION_CREDITS_USD}/M credits.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <p className="text-2xl font-semibold">
+            {status === null ? "Not subscribed" : status === "active" ? "Active" : status === "past_due" ? "Past due" : "Canceled"}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {formatTokens(subscription?.includedCredits ?? 0)} included credits left
+          </p>
+          {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
+        </div>
+        {active ? (
+          <Button variant="outline" onClick={() => start("portal")} disabled={working !== null}>
+            Manage billing
+          </Button>
+        ) : (
+          <Button onClick={() => start("subscribe")} disabled={working !== null}>
+            Subscribe ${SUBSCRIPTION_PRICE_USD}/mo
+          </Button>
+        )}
       </CardContent>
     </Card>
   );

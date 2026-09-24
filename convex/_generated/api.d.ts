@@ -16,6 +16,7 @@ import type * as billing from "../billing.js";
 import type * as crons from "../crons.js";
 import type * as http from "../http.js";
 import type * as lounge from "../lounge.js";
+import type * as meter from "../meter.js";
 import type * as notion from "../notion.js";
 import type * as posthog from "../posthog.js";
 import type * as threads from "../threads.js";
@@ -45,6 +46,7 @@ declare const fullApi: ApiFromModules<{
   crons: typeof crons;
   http: typeof http;
   lounge: typeof lounge;
+  meter: typeof meter;
   notion: typeof notion;
   posthog: typeof posthog;
   threads: typeof threads;

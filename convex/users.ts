@@ -6,11 +6,60 @@ import { ConvexError } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import type { ProviderMetadata } from "ai";
 import { debitTokenBalance, normalizeUsage, type TokenUsage } from "@/lib/credits";
+import {
+  FIVE_HOUR_WINDOW_CREDITS,
+  FIVE_HOUR_WINDOW_MS,
+  SUBSCRIBER_WINDOW_MULTIPLIER,
+  WEEKLY_WINDOW_CREDITS,
+  WEEKLY_WINDOW_MS,
+  creditsForTokens,
+} from "@/lib/billing";
 import { usageValidator } from "./validators";
 
 const FREE_MESSAGE_LIMIT = 10;
 const FREE_TRIAL_TOKEN_LIMIT = 16_000_000;
 const PRICE_PER_MILLION_TOKENS_USD = 0.3;
+
+function isActiveSubscription(user: { subscriptionStatus?: string }) {
+  return (
+    user.subscriptionStatus === "active" || user.subscriptionStatus === "past_due"
+  );
+}
+
+// Credits spent by a usage row (new rows store credits; legacy rows are
+// reconstructed from the stored model + tokens with today's weights).
+function rowCredits(row: { credits?: number; model: string; usage: { totalTokens?: number } }) {
+  return row.credits ?? creditsForTokens(row.model, row.usage.totalTokens ?? 0);
+}
+
+async function usageWindows(
+  ctx: MutationCtx,
+  userId: string,
+  now: number,
+  subscriber: boolean,
+) {
+  const multiplier = subscriber ? SUBSCRIBER_WINDOW_MULTIPLIER : 1;
+  const fiveLimit = FIVE_HOUR_WINDOW_CREDITS * multiplier;
+  const weekLimit = WEEKLY_WINDOW_CREDITS * multiplier;
+
+  const recent = await ctx.db
+    .query("usage")
+    .withIndex("byUserTime", (q) =>
+      q.eq("userId", userId).gte("usageTime", now - FIVE_HOUR_WINDOW_MS),
+    )
+    .collect();
+  const weekly = await ctx.db
+    .query("usage")
+    .withIndex("byUserTime", (q) =>
+      q.eq("userId", userId).gte("usageTime", now - WEEKLY_WINDOW_MS),
+    )
+    .collect();
+
+  const fiveCredits = recent.reduce((sum, row) => sum + rowCredits(row), 0);
+  const weekCredits = weekly.reduce((sum, row) => sum + rowCredits(row), 0);
+
+  return { fiveCredits, fiveLimit, weekCredits, weekLimit };
+}
 
 async function recordUsage(
   ctx: MutationCtx,
@@ -31,16 +80,67 @@ async function recordUsage(
   if (!user) throw new ConvexError("User not found.");
 
   const usage = normalizeUsage(args.usage);
+  const now = Date.now();
+  const credits = creditsForTokens(args.model, usage.totalTokens);
+
   if (user.isAnonymous) {
     const trialMessages = Math.max(0, user.trialMessages ?? 0);
     if (trialMessages > 0) {
       await ctx.db.patch(normalizedUserId, { trialMessages: trialMessages - 1 });
     }
   } else {
-    await ctx.db.patch(
-      normalizedUserId,
-      debitTokenBalance(user.trialTokens, user.tokens, usage.totalTokens),
-    );
+    const subscriber = isActiveSubscription(user);
+    const windows = await usageWindows(ctx, normalizedUserId, now, subscriber);
+
+    if (windows.fiveCredits >= windows.fiveLimit) {
+      throw new ConvexError(
+        subscriber
+          ? "You've hit the 5-hour usage cap for your plan. It resets on a rolling basis — try again soon."
+          : "You've hit the free 5-hour usage cap. Subscribe or top up to raise it.",
+      );
+    }
+    if (windows.weekCredits >= windows.weekLimit) {
+      throw new ConvexError(
+        subscriber
+          ? "You've hit the weekly usage cap for your plan. It resets on a rolling basis."
+          : "You've hit the free weekly usage cap. Subscribe or top up to raise it.",
+      );
+    }
+
+    // Trial burns raw tokens; once the trial is exhausted, paid + grant
+    // balances burn weighted credits. Subscribers' excess queues as postpaid
+    // overage for the Stripe meter drain.
+    const trialDebit = debitTokenBalance(user.trialTokens, undefined, usage.totalTokens);
+    let includedCredits = Math.max(0, user.includedCredits ?? 0);
+    let paidTokens = Math.max(0, user.tokens ?? 0);
+    let remaining = trialDebit.trialTokens > 0 ? 0 : credits;
+
+    if (remaining > 0) {
+      const fromIncluded = Math.min(includedCredits, remaining);
+      includedCredits -= fromIncluded;
+      remaining -= fromIncluded;
+    }
+
+    if (remaining > 0) {
+      // Negative paid balance marks the account as drawn-down; the generate
+      // gate stops non-subscribers, while active subscribers keep going and
+      // settle up via metered billing.
+      paidTokens -= remaining;
+      if (subscriber && user.stripeId) {
+        await ctx.db.insert("meterOverage", {
+          userId: normalizedUserId,
+          stripeId: user.stripeId,
+          credits: remaining,
+          status: "pending",
+        });
+      }
+    }
+
+    await ctx.db.patch(normalizedUserId, {
+      trialTokens: trialDebit.trialTokens,
+      tokens: paidTokens,
+      includedCredits,
+    });
   }
 
   return ctx.db.insert("usage", {
@@ -51,6 +151,9 @@ async function recordUsage(
     source: args.source,
     apiKeyId: args.apiKeyId,
     userId,
+    usageTime: now,
+    credits,
+    overageQueued: false,
   });
 }
 
@@ -131,6 +234,39 @@ export const creditBalance = query({
       trialTokens,
       paidTokens,
       totalTokens: trialTokens + paidTokens,
+    };
+  },
+});
+
+export const subscriptionStatus = query({
+  args: {},
+  returns: v.union(
+    v.object({
+      status: v.union(
+        v.literal("active"),
+        v.literal("past_due"),
+        v.literal("canceled"),
+        v.null(),
+      ),
+      hasSubscription: v.boolean(),
+      includedCredits: v.number(),
+      paidTokens: v.number(),
+      trialTokens: v.number(),
+    }),
+    v.null(),
+  ),
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) return null;
+    const user = await ctx.db.get(userId);
+    if (!user || user.isAnonymous) return null;
+
+    return {
+      status: user.subscriptionStatus ?? null,
+      hasSubscription: isActiveSubscription(user),
+      includedCredits: Math.max(0, user.includedCredits ?? 0),
+      paidTokens: Math.max(0, user.tokens ?? 0),
+      trialTokens: Math.max(0, user.trialTokens ?? 0),
     };
   },
 });
@@ -287,7 +423,10 @@ export const revokeApiKey = mutation({
 
 export const resolveApiKey = query({
   args: { digest: v.string() },
-  returns: v.union(v.object({ hasCredits: v.boolean() }), v.null()),
+  returns: v.union(
+    v.object({ hasCredits: v.boolean(), premiumAllowed: v.boolean() }),
+    v.null(),
+  ),
   handler: async (ctx, { digest }) => {
     if (!/^[a-f0-9]{64}$/.test(digest)) return null;
     const key = await ctx.db
@@ -300,7 +439,10 @@ export const resolveApiKey = query({
     if (!user || user.isAnonymous) return null;
     const trialTokens = Math.max(0, user.trialTokens ?? 0);
     const paidTokens = Math.max(0, user.tokens ?? 0);
-    return { hasCredits: trialTokens > 0 || paidTokens > 0 };
+    return {
+      hasCredits: trialTokens > 0 || paidTokens > 0 || isActiveSubscription(user),
+      premiumAllowed: isActiveSubscription(user),
+    };
   },
 });
 
@@ -373,3 +515,59 @@ export const topup = internalMutation({
     return { credited: true };
   }
 })
+
+// Applies subscription lifecycle changes from Stripe webhooks. Idempotent per
+// Stripe event id via the stripeEvents table.
+export const applySubscriptionWebhook = internalMutation({
+  args: {
+    eventId: v.string(),
+    stripeId: v.string(),
+    action: v.union(
+      v.literal("activate"),
+      v.literal("past_due"),
+      v.literal("cancel"),
+    ),
+    subscriptionId: v.optional(v.string()),
+    grantCredits: v.optional(v.number()),
+  },
+  returns: v.object({ applied: v.boolean() }),
+  handler: async (ctx, args) => {
+    const processed = await ctx.db
+      .query("stripeEvents")
+      .withIndex("byEventId", (q) => q.eq("eventId", args.eventId))
+      .unique();
+    if (processed) return { applied: false };
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("stripeId", (q) => q.eq("stripeId", args.stripeId))
+      .unique();
+    if (!user) throw new ConvexError("Stripe customer not found.");
+
+    const now = Date.now();
+    if (args.action === "activate") {
+      // Renewals re-grant; fresh activations also stamp the period start.
+      const isRenewal =
+        isActiveSubscription(user) && args.subscriptionId === user.stripeSubscriptionId;
+      await ctx.db.patch(user._id, {
+        subscriptionStatus: "active",
+        stripeSubscriptionId: args.subscriptionId ?? user.stripeSubscriptionId,
+        includedCredits: Math.max(0, user.includedCredits ?? 0) + (args.grantCredits ?? 0),
+        grantPeriodStart: isRenewal ? user.grantPeriodStart : now,
+      });
+    } else if (args.action === "past_due") {
+      await ctx.db.patch(user._id, { subscriptionStatus: "past_due" });
+    } else {
+      await ctx.db.patch(user._id, {
+        subscriptionStatus: "canceled",
+        includedCredits: 0,
+      });
+    }
+
+    await ctx.db.insert("stripeEvents", {
+      eventId: args.eventId,
+      processedAt: now,
+    });
+    return { applied: true };
+  },
+});

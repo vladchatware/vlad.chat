@@ -18,6 +18,12 @@ export function isModelEnabled(modelId: string): boolean {
   );
 }
 
+export function isPremiumModel(modelId: string): boolean {
+  return PROVIDER_MODELS.some(
+    (model) => model.id === modelId && !model.enabled,
+  );
+}
+
 export const PROVIDER_MODEL_IDS = new Set<string>(
   PROVIDER_MODELS.map((model) => model.id),
 );

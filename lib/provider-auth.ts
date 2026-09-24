@@ -45,5 +45,10 @@ export async function authenticateProviderRequest(request: Request) {
     };
   }
 
-  return { ok: true as const, digest, hasCredits: principal.hasCredits };
+  return {
+    ok: true as const,
+    digest,
+    hasCredits: principal.hasCredits,
+    premiumAllowed: principal.premiumAllowed,
+  };
 }

@@ -1,6 +1,6 @@
 import { streamText, UIMessage, convertToModelMessages, isStepCount, smoothStream, gateway } from 'ai';
 import { createMCPClient } from '@ai-sdk/mcp';
-import { isModelEnabled } from '@/lib/provider';
+import { isModelEnabled, isPremiumModel } from '@/lib/provider';
 import { system } from '@/lib/ai'
 import { api } from '@/convex/_generated/api';
 import { convexAuthNextjsToken } from '@convex-dev/auth/nextjs/server';
@@ -18,14 +18,27 @@ export async function POST(req: Request) {
   if (!user) return new NextResponse('no user present in session', { status: 403 })
 
   if (!user.isAnonymous) {
-    if (user.trialTokens <= 0 && user.tokens <= 0) {
+    const subscriber =
+      user.subscriptionStatus === "active" || user.subscriptionStatus === "past_due";
+    const hasBalance =
+      user.trialTokens > 0 ||
+      user.tokens > 0 ||
+      (user.includedCredits ?? 0) > 0 ||
+      subscriber;
+    if (!hasBalance) {
       return new NextResponse('out of tokens', { status: 429 })
+    }
+    if (isPremiumModel(model) && !subscriber) {
+      return NextResponse.json(
+        { error: { message: 'This model requires a vlad.chat subscription.', type: 'invalid_request_error', code: 'subscription_required' } },
+        { status: 404 },
+      );
     }
   } else {
     if (user.trialMessages! <= 0) return new NextResponse('no more messages left', { status: 429 })
   }
 
-  if (!isModelEnabled(model)) {
+  if (!isPremiumModel(model) && !isModelEnabled(model)) {
     return NextResponse.json(
       { error: { message: `Model '${model}' is not available.`, type: 'invalid_request_error', code: 'model_not_available' } },
       { status: 404 },

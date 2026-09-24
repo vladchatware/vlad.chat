@@ -56,6 +56,7 @@ import { useAuthActions } from '@convex-dev/auth/react'
 import { Authenticated, useAction, useMutation, useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
 import { PROVIDER_MODELS, isModelEnabled } from '@/lib/provider';
+import { SUBSCRIPTION_GRANT_CREDITS } from '@/lib/billing';
 import posthog from 'posthog-js';
 
 const models = PROVIDER_MODELS.map(({ id, name }) => ({ name, value: id }));
@@ -351,6 +352,24 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
     }
   }
 
+  const subscribe = async () => {
+    try {
+      const res = await fetch('/api/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ returnTo: '/' }),
+      })
+      const session = await res.json()
+      if (!res.ok || !session.url) {
+        console.error('Subscribe failed:', session.error ?? res.statusText);
+        return;
+      }
+      window.open(session.url, '_blank')
+    } catch (error) {
+      console.error('Subscribe error:', error);
+    }
+  }
+
   return (
     <>
       <div className="fixed top-4 right-4 z-50 flex flex-col items-end gap-2 md:flex-row md:items-center">
@@ -629,9 +648,12 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
             <span className="text-muted-foreground/50">for unlimited</span>
           </div>
         </Authenticated>}
-        {user && user.trialTokens <= 0 && user.tokens <= 0 && <Suggestions>
-          <Suggestion suggestion={'You have run out of credits. Buy more.'} onClick={() => { checkout() }} />
-        </Suggestions>
+        {user && !user.isAnonymous && user.trialTokens <= 0 && user.tokens <= 0 && (user.includedCredits ?? 0) <= 0 && (
+          <Suggestions>
+            <Suggestion suggestion={'You have run out of credits. Buy more.'} onClick={() => { checkout() }} />
+            <Suggestion suggestion={`Subscribe for ${SUBSCRIPTION_GRANT_CREDITS / 1_000_000}M credits monthly + premium models`} onClick={() => { subscribe() }} />
+          </Suggestions>
+        )
         }
         {showSuggestions && <Suggestions>
           {suggestions.map(suggestion =>
@@ -659,7 +681,9 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
             <PromptInputTools>
               <PromptInputModelSelect
                 onValueChange={(value) => {
-                  if (!isModelEnabled(value)) {
+                  const subscriber =
+                    user?.subscriptionStatus === 'active' || user?.subscriptionStatus === 'past_due';
+                  if (!subscriber && !isModelEnabled(value)) {
                     trackModelGate(value);
                     setModel(models[0].value);
                     return;
@@ -672,19 +696,20 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                   <PromptInputModelSelectValue />
                 </PromptInputModelSelectTrigger>
                 <PromptInputModelSelectContent>
-                  {models.map((model) => (
-                    <PromptInputModelSelectItem
-                      key={model.value}
-                      value={model.value}
-                      className={
-                        isModelEnabled(model.value)
-                          ? undefined
-                          : 'text-muted-foreground/50'
-                      }
-                    >
-                      {model.name}
-                    </PromptInputModelSelectItem>
-                  ))}
+                  {models.map((model) => {
+                    const subscriber =
+                      user?.subscriptionStatus === 'active' || user?.subscriptionStatus === 'past_due';
+                    const locked = !subscriber && !isModelEnabled(model.value);
+                    return (
+                      <PromptInputModelSelectItem
+                        key={model.value}
+                        value={model.value}
+                        className={locked ? 'text-muted-foreground/50' : undefined}
+                      >
+                        {model.name}
+                      </PromptInputModelSelectItem>
+                    );
+                  })}
                 </PromptInputModelSelectContent>
               </PromptInputModelSelect>
               <PromptInputSearchToggle

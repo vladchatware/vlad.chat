@@ -17,10 +17,22 @@ export default defineSchema({
     stripeId: v.optional(v.string()),
     trialMessages: v.optional((v.number())),
     trialTokens: v.optional(v.number()),
-    tokens: v.optional(v.number())
+    tokens: v.optional(v.number()),
+    // Subscription billing (lib/billing.ts holds plan constants).
+    subscriptionStatus: v.optional(
+      v.union(
+        v.literal("active"),
+        v.literal("past_due"),
+        v.literal("canceled"),
+      ),
+    ),
+    stripeSubscriptionId: v.optional(v.string()),
+    includedCredits: v.optional(v.number()),
+    grantPeriodStart: v.optional(v.number()),
   })
     .index("email", ["email"])
-    .index('stripeId', ['stripeId']),
+    .index('stripeId', ['stripeId'])
+    .index("bySubscriptionStatus", ["subscriptionStatus"]),
   usage: defineTable({
     userId: v.string(),
     model: v.string(),
@@ -29,7 +41,25 @@ export default defineSchema({
     apiKeyId: v.optional(v.id("apiKeys")),
     usage: usageValidator,
     providerMetadata: v.optional(vProviderMetadata),
-  }),
+    usageTime: v.number(),
+    credits: v.optional(v.number()),
+    overageQueued: v.optional(v.boolean()),
+  }).index("byUserTime", ["userId", "usageTime"]),
+  // Queued overage drained to Stripe meter events by a cron; stripeEventId
+  // (the API's own event id) provides at-least-once-safe idempotency.
+  meterOverage: defineTable({
+    userId: v.id("users"),
+    stripeId: v.string(),
+    credits: v.number(),
+    identifier: v.optional(v.string()),
+    status: v.union(v.literal("pending"), v.literal("sent")),
+    sentAt: v.optional(v.number()),
+    stripeEventId: v.optional(v.string()),
+    failedAt: v.optional(v.number()),
+    lastError: v.optional(v.string()),
+  })
+    .index("byStatus", ["status"])
+    .index("byUser", ["userId"]),
   apiKeys: defineTable({
     userId: v.id("users"),
     name: v.string(),

@@ -18,7 +18,7 @@ import {
   toAiTools,
   type ChatCompletionRequest,
 } from "@/lib/openai-compat";
-import { PROVIDER_MODEL_IDS, isModelEnabled } from "@/lib/provider";
+import { PROVIDER_MODEL_IDS, isModelEnabled, isPremiumModel } from "@/lib/provider";
 import { authenticateProviderRequest } from "@/lib/provider-auth";
 
 export const maxDuration = 300;
@@ -52,6 +52,15 @@ export async function POST(request: Request) {
       404,
       "invalid_request_error",
       "model_not_found",
+      "model",
+    );
+  }
+  if (isPremiumModel(parsed.data.model) && !authentication.premiumAllowed) {
+    return openAiError(
+      `Model '${parsed.data.model}' requires a vlad.chat subscription. Manage your plan at https://vlad.chat/provider.`,
+      404,
+      "invalid_request_error",
+      "subscription_required",
       "model",
     );
   }
