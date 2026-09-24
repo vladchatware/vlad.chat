@@ -733,8 +733,6 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
           </PromptInputToolbar>
         </PromptInput>
         <footer className="mt-1.5 flex items-center justify-center gap-2 text-[11px] text-muted-foreground/60">
-          <span>© {new Date().getFullYear()} Lusesi Co., Ltd.</span>
-          <span aria-hidden="true">•</span>
           <Link href="/terms" className="transition-colors hover:text-foreground">
             Terms
           </Link>
