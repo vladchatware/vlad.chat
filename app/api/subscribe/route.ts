@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { fetchAction, fetchQuery } from "convex/nextjs"
+import { fetchAction, fetchMutation, fetchQuery } from "convex/nextjs"
 import { convexAuthNextjsToken } from '@convex-dev/auth/nextjs/server';
 
 import { stripe } from '../../../lib/stripe'
@@ -45,21 +45,54 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Subscription plan is not configured.' }, { status: 500 })
     }
 
-    // Attach the metered overage price alongside the flat price so meter
-    // events actually invoice. Metered items take no quantity.
-    const session = await stripe.checkout.sessions.create({
-      customer: stripeId,
-      line_items: [
-        { price: price.id, quantity: 1 },
-        { price: overagePrice.id },
-      ],
-      mode: 'subscription',
-      success_url: `${returnUrl.toString()}?subscription=success`,
-      cancel_url: `${returnUrl.toString()}?subscription=canceled`,
-      subscription_data: { metadata: { userId: user._id } },
-      metadata: { kind: 'vladchat-subscription' },
-    })
-    return NextResponse.json({ url: session.url })
+    // Fail closed on a misconfigured catalog rather than charging the wrong
+    // rate: the flat price must be exactly $5/month USD and the metered price
+    // exactly $0.30 per 1M credits.
+    if (
+      price.unit_amount !== 500 ||
+      price.currency !== 'usd' ||
+      Number(overagePrice.unit_amount_decimal) !== 0.00003 ||
+      overagePrice.currency !== 'usd'
+    ) {
+      return NextResponse.json({ error: 'Subscription plan is misconfigured.' }, { status: 503 })
+    }
+
+    // Reserve the single checkout slot before creating the session; the marker
+    // rides along as client_reference_id so webhook events can identify the
+    // reservation they belong to.
+    const marker = crypto.randomUUID()
+    try {
+      await fetchMutation(api.users.reserveCheckout, { marker }, { token })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : ''
+      if (message.includes('checkout is already in progress')) {
+        return NextResponse.json({ error: message }, { status: 409 })
+      }
+      throw err
+    }
+
+    try {
+      // Attach the metered overage price alongside the flat price so meter
+      // events actually invoice. Metered items take no quantity.
+      const session = await stripe.checkout.sessions.create({
+        customer: stripeId,
+        client_reference_id: marker,
+        line_items: [
+          { price: price.id, quantity: 1 },
+          { price: overagePrice.id },
+        ],
+        mode: 'subscription',
+        success_url: `${returnUrl.toString()}?subscription=success`,
+        cancel_url: `${returnUrl.toString()}?subscription=canceled`,
+        subscription_data: { metadata: { userId: user._id } },
+        metadata: { kind: 'vladchat-subscription' },
+      })
+      return NextResponse.json({ url: session.url })
+    } catch (err) {
+      // Session creation failed — release the slot so the user can retry.
+      await fetchMutation(api.users.releaseCheckout, { marker }, { token }).catch(() => {})
+      throw err
+    }
   } catch (err) {
     console.log(err)
     const message = err instanceof Error ? err.message : 'Checkout failed.'

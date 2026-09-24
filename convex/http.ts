@@ -42,6 +42,9 @@ http.route({
                 typeof session.subscription === "string" ? session.subscription : session.subscription?.id,
               grantCredits: SUBSCRIPTION_GRANT_CREDITS,
             });
+            // The subscription is live — release the checkout reservation
+            // regardless of which session held it.
+            await ctx.runMutation(internal.users.clearCheckoutReservation, { stripeId });
             break;
           }
 
@@ -115,6 +118,7 @@ http.route({
             eventId: event.id,
             stripeId,
             action: "past_due",
+            subscriptionId,
           });
           break;
         }
@@ -128,6 +132,19 @@ http.route({
             action: "cancel",
             subscriptionId: subscription.id,
           });
+          break;
+        }
+        case 'checkout.session.expired': {
+          // An abandoned subscription checkout frees its reservation slot so
+          // the user can start a new one (client_reference_id is the marker).
+          const session = event.data.object;
+          if (session.mode === "subscription") {
+            const stripeId = stripeIdOf(session.customer);
+            const marker = typeof session.client_reference_id === "string" ? session.client_reference_id : undefined;
+            if (stripeId) {
+              await ctx.runMutation(internal.users.clearCheckoutReservation, { stripeId, marker });
+            }
+          }
           break;
         }
         default:

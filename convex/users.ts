@@ -20,7 +20,7 @@ import {
   creditsForTokens,
 } from "@/lib/billing";
 import { usageValidator } from "./validators";
-import { isPremiumModel } from "@/lib/provider";
+import { isPremiumModel, isModelEnabled } from "@/lib/provider";
 
 const FREE_MESSAGE_LIMIT = 10;
 const FREE_TRIAL_TOKEN_LIMIT = 16_000_000;
@@ -153,7 +153,18 @@ export const usageGate = mutation({
     if (!userId) throw new ConvexError("Please sign in to continue.");
     const user = await ctx.db.get(userId);
     if (!user) throw new ConvexError("User not found.");
+    const now = Date.now();
 
+    // Premium access is checked first and independently of the operational
+    // enabled flag: premium models are enabled:false by definition, so a
+    // subscriber must not be blocked by the enabled check below.
+    if (isPremiumModel(args.model)) {
+      if (user.isAnonymous || !isActiveSubscription(user)) {
+        throw new ConvexError("This model requires a vlad.chat subscription.");
+      }
+    } else if (!isModelEnabled(args.model)) {
+      throw new ConvexError("This model is unavailable.");
+    }
     if (user.isAnonymous) {
       if ((user.trialMessages ?? 0) <= 0) {
         throw new ConvexError("You've reached the anonymous message limit. Sign in with Google for unlimited messages.");
@@ -171,25 +182,19 @@ export const usageGate = mutation({
       throw new ConvexError("You have run out of credits. Buy more to continue.");
     }
 
-    if (isPremiumModel(args.model) && !subscriber) {
-      throw new ConvexError(
-        "This model is part of the vlad.chat subscription. Subscribe to unlock it.",
-      );
-    }
-
-    const windows = await usageWindows(ctx, userId, Date.now(), subscriber);
+    const windows = await usageWindows(ctx, userId, now, subscriber);
     if (windows.fiveCredits >= windows.fiveLimit) {
       throw new ConvexError(
         subscriber
           ? "You've hit the 5-hour usage cap for your plan. It resets on a rolling basis — try again soon."
-          : "You've hit the free 5-hour usage cap. Subscribe or top up to raise it.",
+          : "You've hit the free 5-hour usage cap. It resets on a rolling basis — try again soon.",
       );
     }
     if (windows.weekCredits >= windows.weekLimit) {
       throw new ConvexError(
         subscriber
           ? "You've hit the weekly usage cap for your plan. It resets on a rolling basis."
-          : "You've hit the free weekly usage cap. Subscribe or top up to raise it.",
+          : "You've hit the free weekly usage cap. It resets on a rolling basis.",
       );
     }
     return null;
@@ -201,6 +206,77 @@ export const viewer = query({
   handler: async (ctx) => {
     const userId = await getAuthUserId(ctx);
     return userId !== null ? ctx.db.get(userId) : null;
+  },
+});
+
+// Claims the single Checkout-session slot for the signed-in user. Called by
+// /api/subscribe BEFORE creating the Stripe session, with a locally generated
+// marker (passed to Stripe as client_reference_id). Convex OCC serializes
+// concurrent calls: the transaction that commits second re-runs, re-reads the
+// fresh reservation, and throws — so only one checkout can be in flight. A
+// reservation older than 24h (Checkout's max lifetime) is treated as stale and
+// is safely overwritable, so an abandoned session never locks the user out.
+export const reserveCheckout = mutation({
+  args: { marker: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { marker }) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new ConvexError("Please sign in to continue.");
+    const user = await ctx.db.get(userId);
+    if (!user) throw new ConvexError("User not found.");
+    const reserved = user.pendingCheckoutSessionId;
+    const reservedAt = user.pendingCheckoutAt ?? 0;
+    if (reserved && reserved !== marker && Date.now() - reservedAt < 24 * 60 * 60 * 1000) {
+      throw new ConvexError(
+        "A checkout is already in progress. Complete or cancel it before starting another.",
+      );
+    }
+    await ctx.db.patch(userId, {
+      pendingCheckoutSessionId: marker,
+      pendingCheckoutAt: Date.now(),
+    });
+    return null;
+  },
+});
+
+// Releases the Checkout slot. With a marker, only the owning reservation is
+// cleared (expired/failed session events); without one, whatever reservation
+// exists is cleared (successful subscription activation).
+export const clearCheckoutReservation = internalMutation({
+  args: { stripeId: v.string(), marker: v.optional(v.string()) },
+  returns: v.null(),
+  handler: async (ctx, { stripeId, marker }) => {
+    const user = await ctx.db
+      .query("users")
+      .withIndex("stripeId", (q) => q.eq("stripeId", stripeId))
+      .unique();
+    if (!user) return null;
+    if (marker !== undefined && user.pendingCheckoutSessionId !== marker) {
+      return null;
+    }
+    await ctx.db.patch(user._id, {
+      pendingCheckoutSessionId: undefined,
+      pendingCheckoutAt: undefined,
+    });
+    return null;
+  },
+});
+
+// Caller-owned release for /api/subscribe when Stripe session creation fails
+// (the reservation was taken under the caller's own marker).
+export const releaseCheckout = mutation({
+  args: { marker: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { marker }) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) return null;
+    const user = await ctx.db.get(userId);
+    if (!user || user.pendingCheckoutSessionId !== marker) return null;
+    await ctx.db.patch(user._id, {
+      pendingCheckoutSessionId: undefined,
+      pendingCheckoutAt: undefined,
+    });
+    return null;
   },
 });
 
@@ -606,10 +682,13 @@ export const applySubscriptionWebhook = internalMutation({
           grantPeriodStart: now,
         });
       } else {
-        // Renewal (same subscription, already active): additive re-grant.
+        // Renewal (already active/past_due): additive re-grant. Identity is
+        // preserved — a renewal invoice naming a different subscription must
+        // never overwrite the locally-known id (stale/foreign event guard).
+        // A paid renewal also recovers a past_due subscription to active.
         await ctx.db.patch(user._id, {
           subscriptionStatus: "active",
-          stripeSubscriptionId: args.subscriptionId ?? knownSub,
+          stripeSubscriptionId: knownSub ?? args.subscriptionId,
           includedCredits: Math.max(0, user.includedCredits ?? 0) + (args.grantCredits ?? 0),
         });
       }

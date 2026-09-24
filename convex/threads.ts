@@ -23,7 +23,7 @@ import { getAuthUserId } from "@convex-dev/auth/server"
 import { agent } from "./agents/simple";
 import { chatSystemInstructions } from "./agents/prompts";
 import { userNotionInstruction } from "@/lib/ai";
-import { isModelEnabled } from "@/lib/provider";
+import { isModelEnabled, isPremiumModel } from "@/lib/provider";
 import { z } from "zod/v3";
 import {
   gateway,
@@ -518,7 +518,10 @@ export const generateReply = action({
       throw new ConvexError("Your message is empty. Please type something first.");
     }
 
-    if (!isModelEnabled(model)) {
+    // usageGate (above) already enforced tier eligibility and subscription
+    // access; this only blocks operationally disabled free models. Premium
+    // models are enabled:false by definition, so they must not be caught here.
+    if (!isPremiumModel(model) && !isModelEnabled(model)) {
       throw new ConvexError(
         "This model is currently unavailable. Please pick another model.",
       );

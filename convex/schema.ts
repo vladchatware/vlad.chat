@@ -29,6 +29,11 @@ export default defineSchema({
     stripeSubscriptionId: v.optional(v.string()),
     includedCredits: v.optional(v.number()),
     grantPeriodStart: v.optional(v.number()),
+    // One in-flight Checkout session per user; blocks concurrent subscription
+    // checkouts until paid (webhook clears it), expired (expired webhook), or
+    // 24h old. Convex OCC serializes the check-and-set on this document.
+    pendingCheckoutSessionId: v.optional(v.string()),
+    pendingCheckoutAt: v.optional(v.number()),
   })
     .index("email", ["email"])
     .index('stripeId', ['stripeId'])

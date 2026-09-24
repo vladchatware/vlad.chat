@@ -73,21 +73,43 @@ async function ensurePrice(
   const existing = await stripe.prices.list({ lookup_keys: [opts.lookupKey], active: true });
   if (existing.data.length > 0) {
     const price = existing.data[0];
-    // Self-heal: if a metered price exists with a wrong decimal amount, retire
-    // it and recreate at the correct rate (lookup key moves with transfer).
-    if (
-      opts.unitAmountDecimal !== undefined &&
-      price.unit_amount_decimal !== undefined &&
-      Number(price.unit_amount_decimal) !== Number(opts.unitAmountDecimal)
-    ) {
+    // Self-heal: if a price exists with a wrong amount, create the corrected
+    // replacement FIRST (with the lookup key transferred off the old price),
+    // then retire the wrong one — the lookup key is never left dangling and
+    // checkout below can never resolve a mispriced price.
+    const expected =
+      opts.unitAmountDecimal !== undefined
+        ? Number(opts.unitAmountDecimal)
+        : opts.unitAmount;
+    const actual =
+      price.unit_amount_decimal !== undefined
+        ? Number(price.unit_amount_decimal)
+        : price.unit_amount;
+    if (expected !== undefined && actual !== expected) {
       console.log(
-        `price ${price.id} (${opts.lookupKey}) has wrong amount ${price.unit_amount_decimal} — replacing with ${opts.unitAmountDecimal}`,
+        `price ${price.id} (${opts.lookupKey}) has wrong amount ${price.unit_amount_decimal ?? price.unit_amount} — replacing with ${opts.unitAmountDecimal ?? opts.unitAmount}`,
       );
+      const replacement = await stripe.prices.create({
+        product: productId,
+        currency: "usd",
+        ...(opts.unitAmount !== undefined
+          ? { unit_amount: opts.unitAmount }
+          : {
+              unit_amount_decimal: opts.unitAmountDecimal,
+              recurring: opts.meter
+                ? { interval: "month" as const, meter: opts.meter, usage_type: "metered" as const }
+                : { interval: "month" as const },
+            }),
+        lookup_key: opts.lookupKey,
+        transfer_lookup_key: true,
+        ...(opts.nickname ? { nickname: opts.nickname } : {}),
+      });
       await stripe.prices.update(price.id, { active: false });
-    } else {
-      console.log(`price exists: ${price.id} (${opts.lookupKey})`);
-      return price.id;
+      console.log(`price replaced: ${replacement.id} (${opts.lookupKey})`);
+      return replacement.id;
     }
+    console.log(`price exists: ${price.id} (${opts.lookupKey})`);
+    return price.id;
   }
   const recurring = opts.meter
     ? { interval: "month" as const, meter: opts.meter, usage_type: "metered" as const }
