@@ -204,10 +204,11 @@ The MCP (Model Context Protocol) server at `/api/mcp` provides tools for the AI 
 ### AI Models
 
 The application currently supports:
-- `deepseek/deepseek-v4-flash` (default)
-- `anthropic/claude-fable-5`
-- `openai/gpt-5.6-sol`
-- `xai/grok-4.5`
+- `zai/glm-5.3-flash` (default)
+- `anthropic/claude-fable-5.1`
+- `openai/gpt-5.6-luna`
+- `xai/grok-4.6`
+- `deepseek/deepseek-v4-flash`
 
 You can modify the shared browser/provider model catalog in `lib/provider.ts`.
 
