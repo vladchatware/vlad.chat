@@ -205,7 +205,7 @@ The MCP (Model Context Protocol) server at `/api/mcp` provides tools for the AI 
 
 The application currently supports:
 - `zai/glm-5.3-flash` (default)
-- `anthropic/claude-fable-5.1`
+- `anthropic/claude-opus-5.5`
 - `openai/gpt-5.6-luna`
 - `spacexai/grok-4.7`
 - `deepseek/deepseek-v4.1-flash`
