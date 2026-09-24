@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as admin from "../admin.js";
 import type * as agents_prompts from "../agents/prompts.js";
 import type * as agents_simple from "../agents/simple.js";
 import type * as apiKeys from "../apiKeys.js";
@@ -38,6 +39,7 @@ import type {
  * ```
  */
 declare const fullApi: ApiFromModules<{
+  admin: typeof admin;
   "agents/prompts": typeof agents_prompts;
   "agents/simple": typeof agents_simple;
   apiKeys: typeof apiKeys;

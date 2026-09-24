@@ -3,7 +3,7 @@ import { fetchAction, fetchQuery } from "convex/nextjs"
 import { convexAuthNextjsToken } from '@convex-dev/auth/nextjs/server';
 
 import { stripe } from '../../../lib/stripe'
-import { SUBSCRIPTION_PRICE_NICKNAME } from '@/lib/billing'
+import { OVERAGE_PRICE_NICKNAME, SUBSCRIPTION_PRICE_NICKNAME } from '@/lib/billing'
 import { api } from '@/convex/_generated/api';
 
 const returnPaths = ['/', '/provider'] as const;
@@ -32,18 +32,27 @@ export async function POST(request: Request) {
     const returnUrl = new URL(returnTo, siteUrl)
 
     // Prices are looked up by nickname so nothing environment-specific is hardcoded.
-    const prices = await stripe.prices.list({
-      lookup_keys: [SUBSCRIPTION_PRICE_NICKNAME],
-      expand: ['data.currency_options'],
-    })
+    const [prices, overagePrices] = await Promise.all([
+      stripe.prices.list({
+        lookup_keys: [SUBSCRIPTION_PRICE_NICKNAME],
+        expand: ['data.currency_options'],
+      }),
+      stripe.prices.list({ lookup_keys: [OVERAGE_PRICE_NICKNAME] }),
+    ])
     const price = prices.data[0]
-    if (!price) {
+    const overagePrice = overagePrices.data[0]
+    if (!price || !overagePrice) {
       return NextResponse.json({ error: 'Subscription plan is not configured.' }, { status: 500 })
     }
 
+    // Attach the metered overage price alongside the flat price so meter
+    // events actually invoice. Metered items take no quantity.
     const session = await stripe.checkout.sessions.create({
       customer: stripeId,
-      line_items: [{ price: price.id, quantity: 1 }],
+      line_items: [
+        { price: price.id, quantity: 1 },
+        { price: overagePrice.id },
+      ],
       mode: 'subscription',
       success_url: `${returnUrl.toString()}?subscription=success`,
       cancel_url: `${returnUrl.toString()}?subscription=canceled`,

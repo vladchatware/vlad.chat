@@ -76,6 +76,18 @@ http.route({
                 : parent.subscription_details.subscription?.id
               : null;
           if (!subscriptionId) break; // One-time invoices (top-ups) don't re-grant.
+          // The initial subscription invoice is already granted by
+          // checkout.session.completed; granting here too would double-grant.
+          // Only renewal invoices (billing_reason != subscription_create)
+          // re-grant. billing_reason is absent on very old API versions, in
+          // which case renewal invoices are identified by a prior period.
+          const billingReason =
+            (invoice as { billing_reason?: string | null }).billing_reason ?? null;
+          const priorPeriodEnd = invoice.lines?.data?.[0]?.period?.end;
+          const isInitialInvoice =
+            billingReason === "subscription_create" ||
+            (billingReason === null && priorPeriodEnd === undefined);
+          if (isInitialInvoice) break;
           const stripeId = stripeIdOf(invoice.customer);
           if (!stripeId) throw new Error("Subscription invoice missing customer.");
           await ctx.runMutation(internal.users.applySubscriptionWebhook, {

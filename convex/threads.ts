@@ -23,7 +23,7 @@ import { getAuthUserId } from "@convex-dev/auth/server"
 import { agent } from "./agents/simple";
 import { chatSystemInstructions } from "./agents/prompts";
 import { userNotionInstruction } from "@/lib/ai";
-import { isModelEnabled, isPremiumModel } from "@/lib/provider";
+import { isModelEnabled } from "@/lib/provider";
 import { z } from "zod/v3";
 import {
   gateway,
@@ -507,32 +507,18 @@ export const generateReply = action({
       throw new ConvexError("We couldn't load your account. Please refresh and try again.");
     }
 
-    if (!user.isAnonymous) {
-      const subscriber =
-        user.subscriptionStatus === "active" || user.subscriptionStatus === "past_due";
-      const hasBalance =
-        user.trialTokens > 0 ||
-        user.tokens > 0 ||
-        (user.includedCredits ?? 0) > 0 ||
-        subscriber;
-      if (!hasBalance) {
-        throw new ConvexError("You have run out of credits. Buy more to continue.");
-      }
-      if (isPremiumModel(model) && !subscriber) {
-        throw new ConvexError(
-          "This model is part of the vlad.chat subscription. Subscribe to unlock it.",
-        );
-      }
-    } else if ((user.trialMessages ?? 0) <= 0) {
-      throw new ConvexError("You've reached the anonymous message limit. Sign in with Google for unlimited messages.");
-    }
+    // Admission gate: balance, premium access and usage caps are enforced
+    // BEFORE generation starts (usageGate also covers anonymous users, so
+    // anonymous callers cannot reach premium models). Settlement accounts
+    // for completed work separately.
+    await ctx.runMutation(api.users.usageGate, { model });
 
     const text = prompt.trim();
     if (!text) {
       throw new ConvexError("Your message is empty. Please type something first.");
     }
 
-    if (!isPremiumModel(model) && !isModelEnabled(model)) {
+    if (!isModelEnabled(model)) {
       throw new ConvexError(
         "This model is currently unavailable. Please pick another model.",
       );

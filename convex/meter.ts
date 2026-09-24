@@ -12,6 +12,7 @@ export const pendingOverage = internalQuery({
       _id: v.id("meterOverage"),
       stripeId: v.string(),
       credits: v.number(),
+      queuedAt: v.optional(v.number()),
     }),
   ),
   handler: async (ctx, { limit }) => {
@@ -23,6 +24,7 @@ export const pendingOverage = internalQuery({
       _id: row._id,
       stripeId: row.stripeId,
       credits: row.credits,
+      queuedAt: row.queuedAt,
     }));
   },
 });

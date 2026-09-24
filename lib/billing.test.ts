@@ -1,8 +1,9 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
-import type { Doc, Id } from "../convex/_generated/dataModel";
+import type { Id } from "../convex/_generated/dataModel";
 import {
   FIVE_HOUR_WINDOW_CREDITS,
   OVERAGE_METER_EVENT_NAME,
+  OVERAGE_PRICE_PER_MILLION_CREDITS_USD,
   SUBSCRIBER_WINDOW_MULTIPLIER,
   SUBSCRIPTION_GRANT_CREDITS,
   WEEKLY_WINDOW_CREDITS,
@@ -10,18 +11,15 @@ import {
   creditsForTokens,
   meterValueForCredits,
 } from "./billing";
+import { debitCreditBalance, debitTokenBalance, trialShortfallTokens } from "./credits";
 
 const baseUser = {
   trialTokens: 0,
   tokens: 0,
   includedCredits: 0,
-  subscriptionStatus: undefined as Doc<"users">["subscriptionStatus"],
-  stripeId: undefined as Doc<"users">["stripeId"],
+  subscriptionStatus: "active" as const,
+  stripeId: "cus_test",
 };
-
-function activeSubscriber(overrides: Partial<typeof baseUser> = {}) {
-  return { ...baseUser, subscriptionStatus: "active" as const, ...overrides };
-}
 
 function creditUsage(totalTokens: number) {
   return { totalTokens, inputTokens: totalTokens, outputTokens: 0 };
@@ -55,6 +53,14 @@ describe("meter values", () => {
   });
 });
 
+describe("metered price conversion", () => {
+  it("bills $0.30 per million credits (cents decimal = 0.00003)", () => {
+    const unitAmountDecimalCents = "0.00003";
+    const dollarsPerCredit = Number(unitAmountDecimalCents) / 100;
+    expect(dollarsPerCredit * 1_000_000).toBe(OVERAGE_PRICE_PER_MILLION_CREDITS_USD);
+  });
+});
+
 describe("usage windows", () => {
   it("keeps the 4x subscriber headroom relationship", () => {
     expect(FIVE_HOUR_WINDOW_CREDITS * SUBSCRIBER_WINDOW_MULTIPLIER).toBe(2_000_000);
@@ -68,9 +74,61 @@ describe("grant accounting", () => {
     expectTypeOf(SUBSCRIPTION_GRANT_CREDITS).toBeNumber();
     expect(SUBSCRIPTION_GRANT_CREDITS).toBe(16_000_000);
   });
+});
 
+// Debit waterfall semantics: trial burns raw; only the raw shortfall converts
+// to weighted credits; grant first, prepaid buffer second; only the uncovered
+// remainder becomes metered overage.
+describe("debit waterfall", () => {
+  it("keeps requests fully covered by trial free", () => {
+    expect(trialShortfallTokens(100, 100)).toBe(0);
+    expect(trialShortfallTokens(150, 100)).toBe(0);
+    expect(trialShortfallTokens(0, 100)).toBe(100);
+    expect(trialShortfallTokens(undefined, 100)).toBe(100);
+  });
+
+  it("debits only the shortfall when trial partially covers a request", () => {
+    // 50 trial raw + 50 shortfall raw on GLM (weight 1) = 50 weighted credits.
+    const shortfallCredits = creditsForTokens("zai/glm-5.3-flash", trialShortfallTokens(50, 100));
+    expect(shortfallCredits).toBe(50);
+    const result = debitCreditBalance({ includedCredits: 1000, paidTokens: 0 }, shortfallCredits);
+    expect(result).toEqual({ includedCredits: 950, paidTokens: 0, overageCredits: 0 });
+  });
+
+  it("consumes grant before prepaid and meters only the uncovered remainder", () => {
+    const result = debitCreditBalance(
+      { includedCredits: 1000, paidTokens: 1000 },
+      1500,
+    );
+    expect(result).toEqual({ includedCredits: 0, paidTokens: 500, overageCredits: 0 });
+  });
+
+  it("uses prepaid as a buffer and meters only what it cannot cover", () => {
+    const result = debitCreditBalance({ includedCredits: 0, paidTokens: 1000 }, 1500);
+    expect(result).toEqual({ includedCredits: 0, paidTokens: 0, overageCredits: 500 });
+  });
+
+  it("meters everything beyond grant when no prepaid buffer exists", () => {
+    const result = debitCreditBalance({ includedCredits: 500, paidTokens: 0 }, 1500);
+    expect(result).toEqual({ includedCredits: 0, paidTokens: 0, overageCredits: 1000 });
+  });
+
+  it("never double-charges prepaid usage as overage", () => {
+    // A request fully covered by prepaid must queue zero overage.
+    const result = debitCreditBalance({ includedCredits: 0, paidTokens: 1000 }, 1000);
+    expect(result.overageCredits).toBe(0);
+    expect(result.paidTokens).toBe(0);
+  });
+
+  it("keeps legacy trial->paid debit raw for non-subscriber top-ups", () => {
+    expect(debitTokenBalance(100, 50, 120)).toEqual({ trialTokens: 0, tokens: 30 });
+    expect(debitTokenBalance(0, 10, 25)).toEqual({ trialTokens: 0, tokens: -15 });
+  });
+});
+
+describe("gate semantics", () => {
   it("subscribers with zero balances keep generating (postpaid)", () => {
-    const user = activeSubscriber({ stripeId: "cus_test" });
+    const user = baseUser;
     const hasBalance =
       user.trialTokens > 0 ||
       user.tokens > 0 ||
@@ -80,7 +138,12 @@ describe("grant accounting", () => {
   });
 
   it("non-subscribers with zero balances are blocked", () => {
-    const user = baseUser;
+    const user: {
+      trialTokens: number;
+      tokens: number;
+      includedCredits: number;
+      subscriptionStatus: "active" | "canceled";
+    } = { ...baseUser, subscriptionStatus: "canceled" };
     const hasBalance =
       user.trialTokens > 0 ||
       user.tokens > 0 ||

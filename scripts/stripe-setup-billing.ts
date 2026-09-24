@@ -8,12 +8,13 @@
 import Stripe from "stripe";
 import {
   OVERAGE_METER_EVENT_NAME,
+  OVERAGE_PRICE_NICKNAME,
   SUBSCRIPTION_PRICE_NICKNAME,
   SUBSCRIPTION_PRICE_USD,
 } from "../lib/billing";
 
-const OVERAGE_LOOKUP_KEY = "vladchat-overage-metered";
-const MONTHLY_LOOKUP_KEY = "vladchat-monthly";
+const OVERAGE_LOOKUP_KEY = OVERAGE_PRICE_NICKNAME;
+const MONTHLY_LOOKUP_KEY = SUBSCRIPTION_PRICE_NICKNAME;
 const PRODUCT_NAME = "VLAD.CHAT Subscription";
 
 const key = process.env.STRIPE_SECRET_KEY;
@@ -71,8 +72,22 @@ async function ensurePrice(
 ): Promise<string> {
   const existing = await stripe.prices.list({ lookup_keys: [opts.lookupKey], active: true });
   if (existing.data.length > 0) {
-    console.log(`price exists: ${existing.data[0].id} (${opts.lookupKey})`);
-    return existing.data[0].id;
+    const price = existing.data[0];
+    // Self-heal: if a metered price exists with a wrong decimal amount, retire
+    // it and recreate at the correct rate (lookup key moves with transfer).
+    if (
+      opts.unitAmountDecimal !== undefined &&
+      price.unit_amount_decimal !== undefined &&
+      Number(price.unit_amount_decimal) !== Number(opts.unitAmountDecimal)
+    ) {
+      console.log(
+        `price ${price.id} (${opts.lookupKey}) has wrong amount ${price.unit_amount_decimal} — replacing with ${opts.unitAmountDecimal}`,
+      );
+      await stripe.prices.update(price.id, { active: false });
+    } else {
+      console.log(`price exists: ${price.id} (${opts.lookupKey})`);
+      return price.id;
+    }
   }
   const recurring = opts.meter
     ? { interval: "month" as const, meter: opts.meter, usage_type: "metered" as const }
@@ -129,10 +144,11 @@ const monthlyPriceId = await ensurePrice(productId, {
   unitAmount: 500,
   nickname: `${SUBSCRIPTION_PRICE_NICKNAME} ($${SUBSCRIPTION_PRICE_USD}/mo)`,
 });
-// metered per-unit: $0.30 per 1M credits = $0.0000003/credit = 0.0003 cents/credit
+// metered per-unit: $0.30 per 1M credits = $0.0000003/credit. Prices are in
+// cents, so the decimal is 0.00003 cents/credit (0.0003 would be $3/M).
 const overagePriceId = await ensurePrice(productId, {
   lookupKey: OVERAGE_LOOKUP_KEY,
-  unitAmountDecimal: "0.0003",
+  unitAmountDecimal: "0.00003",
   meter: meterId,
   nickname: "Overage (metered credits)",
 });

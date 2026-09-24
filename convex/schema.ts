@@ -55,6 +55,7 @@ export default defineSchema({
     credits: v.number(),
     identifier: v.optional(v.string()),
     status: v.union(v.literal("pending"), v.literal("sent")),
+    queuedAt: v.optional(v.number()),
     sentAt: v.optional(v.number()),
     stripeEventId: v.optional(v.string()),
     failedAt: v.optional(v.number()),

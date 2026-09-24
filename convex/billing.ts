@@ -53,6 +53,9 @@ export const drainMeterOverage = internalAction({
             stripe_customer_id: row.stripeId,
           },
           identifier: `overage_${row._id}`,
+          // Attribute usage to when it occurred, not when the queue drains —
+          // delayed drains must land in the billing period that incurred them.
+          ...(row.queuedAt ? { timestamp: new Date(row.queuedAt).toISOString() } : {}),
         });
         await ctx.runMutation(internal.meter.markOverageSent, {
           id: row._id,

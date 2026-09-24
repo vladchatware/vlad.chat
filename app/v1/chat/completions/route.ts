@@ -55,7 +55,11 @@ export async function POST(request: Request) {
       "model",
     );
   }
-  if (isPremiumModel(parsed.data.model) && !authentication.premiumAllowed) {
+  // Eligibility: free models must be operationally enabled; premium models
+  // are enabled for subscribers regardless of the enabled flag (which is how
+  // premium models are hidden from non-subscribers in PROVIDER_MODELS).
+  const premium = isPremiumModel(parsed.data.model);
+  if (premium && !authentication.premiumAllowed) {
     return openAiError(
       `Model '${parsed.data.model}' requires a vlad.chat subscription. Manage your plan at https://vlad.chat/provider.`,
       404,
@@ -64,7 +68,7 @@ export async function POST(request: Request) {
       "model",
     );
   }
-  if (!isModelEnabled(parsed.data.model)) {
+  if (!premium && !isModelEnabled(parsed.data.model)) {
     return openAiError(
       `Model '${parsed.data.model}' is temporarily disabled.`,
       404,

@@ -5,7 +5,12 @@ import { vProviderMetadata } from "@convex-dev/agent";
 import { ConvexError } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import type { ProviderMetadata } from "ai";
-import { debitTokenBalance, normalizeUsage, type TokenUsage } from "@/lib/credits";
+import {
+  debitCreditBalance,
+  normalizeUsage,
+  trialShortfallTokens,
+  type TokenUsage,
+} from "@/lib/credits";
 import {
   FIVE_HOUR_WINDOW_CREDITS,
   FIVE_HOUR_WINDOW_MS,
@@ -15,6 +20,7 @@ import {
   creditsForTokens,
 } from "@/lib/billing";
 import { usageValidator } from "./validators";
+import { isPremiumModel } from "@/lib/provider";
 
 const FREE_MESSAGE_LIMIT = 10;
 const FREE_TRIAL_TOKEN_LIMIT = 16_000_000;
@@ -90,57 +96,37 @@ async function recordUsage(
     }
   } else {
     const subscriber = isActiveSubscription(user);
-    const windows = await usageWindows(ctx, normalizedUserId, now, subscriber);
 
-    if (windows.fiveCredits >= windows.fiveLimit) {
-      throw new ConvexError(
-        subscriber
-          ? "You've hit the 5-hour usage cap for your plan. It resets on a rolling basis — try again soon."
-          : "You've hit the free 5-hour usage cap. Subscribe or top up to raise it.",
-      );
-    }
-    if (windows.weekCredits >= windows.weekLimit) {
-      throw new ConvexError(
-        subscriber
-          ? "You've hit the weekly usage cap for your plan. It resets on a rolling basis."
-          : "You've hit the free weekly usage cap. Subscribe or top up to raise it.",
-      );
-    }
-
-    // Trial burns raw tokens; once the trial is exhausted, paid + grant
-    // balances burn weighted credits. Subscribers' excess queues as postpaid
-    // overage for the Stripe meter drain.
-    const trialDebit = debitTokenBalance(user.trialTokens, undefined, usage.totalTokens);
-    let includedCredits = Math.max(0, user.includedCredits ?? 0);
-    let paidTokens = Math.max(0, user.tokens ?? 0);
-    let remaining = trialDebit.trialTokens > 0 ? 0 : credits;
-
-    if (remaining > 0) {
-      const fromIncluded = Math.min(includedCredits, remaining);
-      includedCredits -= fromIncluded;
-      remaining -= fromIncluded;
-    }
-
-    if (remaining > 0) {
-      // Negative paid balance marks the account as drawn-down; the generate
-      // gate stops non-subscribers, while active subscribers keep going and
-      // settle up via metered billing.
-      paidTokens -= remaining;
-      if (subscriber && user.stripeId) {
-        await ctx.db.insert("meterOverage", {
-          userId: normalizedUserId,
-          stripeId: user.stripeId,
-          credits: remaining,
-          status: "pending",
-        });
-      }
-    }
+    // Settlement always accounts for completed generation. Cap enforcement
+    // happens at admission (usageGate) — a cap thrown here would drop usage
+    // for work the upstream provider already billed us for.
+    // Trial burns raw tokens; once the trial can't cover a request, the raw
+    // shortfall (not the whole request) converts to weighted credits. Grant
+    // and prepaid credits burn weighted. The prepaid balance acts as a buffer
+    // before overage; only the uncovered remainder is metered to Stripe.
+    const shortfallTokens = trialShortfallTokens(user.trialTokens, usage.totalTokens);
+    const shortfallCredits = creditsForTokens(args.model, shortfallTokens);
+    const waterfall = debitCreditBalance(
+      { includedCredits: user.includedCredits, paidTokens: user.tokens },
+      shortfallCredits,
+    );
 
     await ctx.db.patch(normalizedUserId, {
-      trialTokens: trialDebit.trialTokens,
-      tokens: paidTokens,
-      includedCredits,
+      trialTokens: Math.max(0, (user.trialTokens ?? 0) - usage.totalTokens),
+      tokens: waterfall.paidTokens,
+      includedCredits: waterfall.includedCredits,
     });
+
+    if (waterfall.overageCredits > 0 && subscriber && user.stripeId) {
+      // Active subscribers keep going and settle up via metered billing.
+      await ctx.db.insert("meterOverage", {
+        userId: normalizedUserId,
+        stripeId: user.stripeId,
+        credits: waterfall.overageCredits,
+        status: "pending",
+        queuedAt: now,
+      });
+    }
   }
 
   return ctx.db.insert("usage", {
@@ -156,6 +142,59 @@ async function recordUsage(
     overageQueued: false,
   });
 }
+
+// Admission-time gate: throws before generation starts when a usage window is
+// already exhausted. Called by chat/api/threads entry points.
+export const usageGate = mutation({
+  args: { model: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new ConvexError("Please sign in to continue.");
+    const user = await ctx.db.get(userId);
+    if (!user) throw new ConvexError("User not found.");
+
+    if (user.isAnonymous) {
+      if ((user.trialMessages ?? 0) <= 0) {
+        throw new ConvexError("You've reached the anonymous message limit. Sign in with Google for unlimited messages.");
+      }
+      return null;
+    }
+
+    const subscriber = isActiveSubscription(user);
+    const hasBalance =
+      (user.trialTokens ?? 0) > 0 ||
+      (user.tokens ?? 0) > 0 ||
+      (user.includedCredits ?? 0) > 0 ||
+      subscriber;
+    if (!hasBalance) {
+      throw new ConvexError("You have run out of credits. Buy more to continue.");
+    }
+
+    if (isPremiumModel(args.model) && !subscriber) {
+      throw new ConvexError(
+        "This model is part of the vlad.chat subscription. Subscribe to unlock it.",
+      );
+    }
+
+    const windows = await usageWindows(ctx, userId, Date.now(), subscriber);
+    if (windows.fiveCredits >= windows.fiveLimit) {
+      throw new ConvexError(
+        subscriber
+          ? "You've hit the 5-hour usage cap for your plan. It resets on a rolling basis — try again soon."
+          : "You've hit the free 5-hour usage cap. Subscribe or top up to raise it.",
+      );
+    }
+    if (windows.weekCredits >= windows.weekLimit) {
+      throw new ConvexError(
+        subscriber
+          ? "You've hit the weekly usage cap for your plan. It resets on a rolling basis."
+          : "You've hit the free weekly usage cap. Subscribe or top up to raise it.",
+      );
+    }
+    return null;
+  },
+});
 
 export const viewer = query({
   args: {},
@@ -518,6 +557,12 @@ export const topup = internalMutation({
 
 // Applies subscription lifecycle changes from Stripe webhooks. Idempotent per
 // Stripe event id via the stripeEvents table.
+//
+// Stale-event protection: every action is guarded by the local subscription
+// identity, so delayed/retried events for an older subscription cannot
+// overwrite newer entitlement state (cancellation of the current subscription
+// is the only valid cancel; activation of a different subscription than the
+// locally-known one can only start a new entitlement).
 export const applySubscriptionWebhook = internalMutation({
   args: {
     eventId: v.string(),
@@ -545,23 +590,45 @@ export const applySubscriptionWebhook = internalMutation({
     if (!user) throw new ConvexError("Stripe customer not found.");
 
     const now = Date.now();
+    const knownSub = user.stripeSubscriptionId;
+
     if (args.action === "activate") {
-      // Renewals re-grant; fresh activations also stamp the period start.
-      const isRenewal =
-        isActiveSubscription(user) && args.subscriptionId === user.stripeSubscriptionId;
-      await ctx.db.patch(user._id, {
-        subscriptionStatus: "active",
-        stripeSubscriptionId: args.subscriptionId ?? user.stripeSubscriptionId,
-        includedCredits: Math.max(0, user.includedCredits ?? 0) + (args.grantCredits ?? 0),
-        grantPeriodStart: isRenewal ? user.grantPeriodStart : now,
-      });
+      const sameSub = args.subscriptionId !== undefined && args.subscriptionId === knownSub;
+      if (!isActiveSubscription(user) && !sameSub) {
+        // A paid invoice for a subscription other than the locally-known one
+        // can only mean a fresh (re)subscription — adopt it and stamp a new
+        // grant period. Same-subscription activations (renewal invoices) just
+        // re-grant on top of the existing period.
+        await ctx.db.patch(user._id, {
+          subscriptionStatus: "active",
+          stripeSubscriptionId: args.subscriptionId,
+          includedCredits: Math.max(0, user.includedCredits ?? 0) + (args.grantCredits ?? 0),
+          grantPeriodStart: now,
+        });
+      } else {
+        // Renewal (same subscription, already active): additive re-grant.
+        await ctx.db.patch(user._id, {
+          subscriptionStatus: "active",
+          stripeSubscriptionId: args.subscriptionId ?? knownSub,
+          includedCredits: Math.max(0, user.includedCredits ?? 0) + (args.grantCredits ?? 0),
+        });
+      }
     } else if (args.action === "past_due") {
-      await ctx.db.patch(user._id, { subscriptionStatus: "past_due" });
+      // Payment failure only downgrades the subscription it belongs to. A
+      // failure for an old/unknown subscription must not touch a newer one.
+      if (args.subscriptionId === undefined || args.subscriptionId === knownSub) {
+        await ctx.db.patch(user._id, { subscriptionStatus: "past_due" });
+      }
     } else {
-      await ctx.db.patch(user._id, {
-        subscriptionStatus: "canceled",
-        includedCredits: 0,
-      });
+      // Cancellation only clears entitlements for the locally-known
+      // subscription; a stale deletion for a previous subscription is
+      // ignored so it cannot cancel a newer entitlement or wipe its grant.
+      if (args.subscriptionId === undefined || args.subscriptionId === knownSub) {
+        await ctx.db.patch(user._id, {
+          subscriptionStatus: "canceled",
+          includedCredits: 0,
+        });
+      }
     }
 
     await ctx.db.insert("stripeEvents", {
