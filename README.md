@@ -208,7 +208,7 @@ The application currently supports:
 - `anthropic/claude-fable-5.1`
 - `openai/gpt-5.6-luna`
 - `spacexai/grok-4.7`
-- `deepseek/deepseek-v4-flash`
+- `deepseek/deepseek-v4.1-flash`
 
 You can modify the shared browser/provider model catalog in `lib/provider.ts`.
 
