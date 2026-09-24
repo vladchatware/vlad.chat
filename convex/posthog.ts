@@ -33,6 +33,7 @@ export const captureLlmGeneration = internalAction({
     output: v.optional(v.any()),
     usage: usageValidator,
     providerMetadata: v.optional(v.any()),
+    sessionId: v.optional(v.string()),
   },
   handler: async (_ctx, args) => {
     const posthog = getClient();
@@ -42,6 +43,7 @@ export const captureLlmGeneration = internalAction({
       event: "$ai_generation",
       properties: {
         $ai_trace_id: args.traceId,
+        $ai_session_id: args.sessionId ?? null,
         $ai_model: args.model,
         $ai_provider: args.provider,
         $ai_input: args.input,
