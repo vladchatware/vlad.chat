@@ -72,10 +72,10 @@ class AppConfig: ObservableObject {
     private func setupDefaultModels() {
         availableModels = [
             ModelType(id: "zai/glm-5.3-flash", displayName: "GLM 5.3 Flash", fullName: "GLM 5.3 Flash", iconName: "openai-icon", isMultimodal: false),
-            ModelType(id: "anthropic/claude-fable-5.1", displayName: "Fable 5.1", fullName: "Claude Fable 5.1", iconName: "openai-icon", isMultimodal: false),
+            ModelType(id: "anthropic/claude-opus-5.5", displayName: "Opus 5.5", fullName: "Claude Opus 5.5", iconName: "openai-icon", isMultimodal: false),
             ModelType(id: "openai/gpt-5.6-luna", displayName: "GPT 5.6 Luna", fullName: "GPT 5.6 Luna", iconName: "openai-icon", isMultimodal: false),
-            ModelType(id: "xai/grok-4.6", displayName: "Grok 4.6", fullName: "Grok 4.6", iconName: "openai-icon", isMultimodal: false),
-            ModelType(id: "deepseek/deepseek-v4-flash", displayName: "DeepSeek 4", fullName: "DeepSeek 4", iconName: "openai-icon", isMultimodal: false),
+            ModelType(id: "spacexai/grok-4.7", displayName: "Grok 4.7", fullName: "Grok 4.7", iconName: "openai-icon", isMultimodal: false),
+            ModelType(id: "deepseek/deepseek-v4.1-flash", displayName: "DeepSeek 4.1", fullName: "DeepSeek 4.1", iconName: "openai-icon", isMultimodal: false),
         ]
     }
 
