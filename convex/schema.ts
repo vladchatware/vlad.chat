@@ -41,7 +41,9 @@ export default defineSchema({
     apiKeyId: v.optional(v.id("apiKeys")),
     usage: usageValidator,
     providerMetadata: v.optional(vProviderMetadata),
-    usageTime: v.number(),
+    // Optional: usage rows written before this schema have no timestamp;
+    // window queries exclude them (undefined sorts below any cutoff).
+    usageTime: v.optional(v.number()),
     credits: v.optional(v.number()),
     overageQueued: v.optional(v.boolean()),
   }).index("byUserTime", ["userId", "usageTime"]),
