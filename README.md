@@ -207,7 +207,7 @@ The application currently supports:
 - `zai/glm-5.3-flash` (default)
 - `anthropic/claude-fable-5.1`
 - `openai/gpt-5.6-luna`
-- `xai/grok-4.6`
+- `spacexai/grok-4.7`
 - `deepseek/deepseek-v4-flash`
 
 You can modify the shared browser/provider model catalog in `lib/provider.ts`.
