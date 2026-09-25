@@ -3,73 +3,104 @@ import AuthenticationServices
 
 struct AccountView: View {
     @ObservedObject var viewModel: ChatViewModel
-    @Environment(\.dismiss) private var dismiss
+    let onDismiss: () -> Void
 
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var account: MobileAccount? { viewModel.account }
+    private var isAnonymous: Bool { account?.isAnonymous ?? true }
     var body: some View {
-        NavigationStack {
-            List {
-                Section {
-                    if let account = viewModel.account, !account.isAnonymous {
-                        LabeledContent("Name", value: account.name ?? "Vlad user")
-                        if let email = account.email {
-                            LabeledContent("Email", value: email)
-                        }
-                    } else {
-                        VStack(alignment: .leading, spacing: 20) {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("Anonymous account")
-                                    .font(.headline)
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 6) {
+                    heading
 
-                                Text("Link Google or Apple to keep your chats when you switch devices.")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                            }
-
-                            VStack(spacing: 12) {
-                                GoogleOAuthButton(isEnabled: !viewModel.isLinkingAccount) {
-                                    viewModel.linkGoogleAccount()
-                                }
-
-                                AppleOAuthButton(isEnabled: !viewModel.isLinkingAccount) {
-                                    viewModel.linkAppleAccount()
-                                }
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 44)
-                            }
-                        }
-                        .listRowSeparator(.hidden)
-                    }
+                    Text(isAnonymous
+                         ? "Link an account to keep your chats when you switch devices."
+                         : (account?.email ?? "Your chats are linked to this account."))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
-                if let account = viewModel.account {
-                    Section("Credits") {
-                        if account.isAnonymous {
-                            LabeledContent(
-                                "Free messages",
-                                value: String(Int(account.trialMessages))
-                            )
-                        } else {
-                            LabeledContent(
-                                "Trial tokens",
-                                value: account.trialTokens.formatted()
-                            )
-                            LabeledContent(
-                                "Purchased tokens",
-                                value: account.tokens.formatted()
-                            )
-                        }
-                    }
+                Spacer(minLength: 0)
+
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 32, height: 32)
+                        .contentShape(Circle())
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Dismiss account notice")
             }
-            .navigationTitle("Account")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") { dismiss() }
+
+            if isAnonymous {
+                HStack(spacing: 8) {
+                    GoogleOAuthButton(isEnabled: !viewModel.isLinkingAccount) {
+                        viewModel.linkGoogleAccount()
+                    }
+
+                    AppleOAuthButton(isEnabled: !viewModel.isLinkingAccount) {
+                        viewModel.linkAppleAccount()
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 44)
+                }
+            } else if let account {
+                HStack(spacing: 16) {
+                    creditValue(title: "Trial", value: account.trialTokens.formatted())
+                    creditValue(title: "Purchased", value: account.tokens.formatted())
                 }
             }
         }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+            if #available(iOS 26, *) {
+                RoundedRectangle(cornerRadius: 26)
+                    .fill(.clear)
+                    .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 26))
+            } else {
+                RoundedRectangle(cornerRadius: 26)
+                    .fill(.thickMaterial)
+            }
+        }
     }
+
+    @ViewBuilder
+    private var heading: some View {
+        if isAnonymous, let account, account.trialMessages <= 2 {
+            if account.trialMessages > 0 {
+                Text("\(Int(account.trialMessages)) free messages left", comment: "Near-limit notice title showing how many anonymous chat messages remain.")
+                    .font(.headline)
+            } else {
+                Text("No free messages left")
+                    .font(.headline)
+            }
+        } else if isAnonymous {
+            Text("Keep your chats")
+                .font(.headline)
+        } else {
+            Text(account?.name ?? "Account")
+                .font(.headline)
+        }
+    }
+
+    @ViewBuilder
+    private func creditValue(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.subheadline.weight(.medium))
+                .monospacedDigit()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
 }
 
 private struct GoogleOAuthButton: View {
@@ -98,28 +129,26 @@ private struct GoogleOAuthButton: View {
 
     var body: some View {
         Button(action: action) {
-            ZStack {
+            HStack(spacing: 6) {
+                Image("GoogleG")
+                    .resizable()
+                    .scaledToFit()
+                    .padding(2)
+                    .frame(width: 20, height: 20)
+                    .background(.white, in: RoundedRectangle(cornerRadius: 3))
+                    .accessibilityHidden(true)
+
                 Text("Continue with Google")
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.system(size: 12, weight: .medium))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
                     .foregroundStyle(foregroundColor)
 
-                HStack {
-                    Image("GoogleG")
-                        .resizable()
-                        .scaledToFit()
-                        .padding(3)
-                        .frame(width: 22, height: 22)
-                        .background(.white, in: RoundedRectangle(cornerRadius: 3))
-                        .accessibilityHidden(true)
-
-                    Spacer()
-
-                    if !isEnabled {
-                        ProgressView()
-                            .tint(foregroundColor)
-                    }
+                if !isEnabled {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(foregroundColor)
                 }
-                .padding(.horizontal, 16)
             }
             .frame(maxWidth: .infinity, minHeight: 44)
             .background(backgroundColor, in: RoundedRectangle(cornerRadius: 8))
@@ -144,7 +173,7 @@ private struct AppleOAuthButton: UIViewRepresentable {
 
     func makeUIView(context: Context) -> ASAuthorizationAppleIDButton {
         let style: ASAuthorizationAppleIDButton.Style = colorScheme == .dark ? .white : .black
-        let button = ASAuthorizationAppleIDButton(type: .signIn, style: style)
+        let button = ASAuthorizationAppleIDButton(type: .continue, style: style)
         button.cornerRadius = 8
         button.addTarget(context.coordinator, action: #selector(Coordinator.didTap), for: .touchUpInside)
         button.isEnabled = isEnabled

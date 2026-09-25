@@ -18,7 +18,7 @@ struct ChatContainer: View {
     @EnvironmentObject private var viewModel: ChatViewModel
 
     @State private var messageText = ""
-    @State private var isAccountPresented = false
+    @State private var isAccountPromptPresented = false
 
     var body: some View {
         NavigationStack {
@@ -26,7 +26,8 @@ struct ChatContainer: View {
                 isDarkMode: colorScheme == .dark,
                 isLoading: viewModel.isLoading,
                 viewModel: viewModel,
-                messageText: $messageText
+                messageText: $messageText,
+                isAccountPromptPresented: $isAccountPromptPresented
             )
                 .background(Color.chatBackground(isDarkMode: colorScheme == .dark))
                 .ignoresSafeArea(edges: .top)
@@ -36,7 +37,7 @@ struct ChatContainer: View {
                 .toolbar {
                     ToolbarItem(placement: .principal) {
                         Button {
-                            isAccountPresented = true
+                            isAccountPromptPresented = true
                         } label: {
                             VladIdentityHeader()
                         }
@@ -48,11 +49,6 @@ struct ChatContainer: View {
                 }
         }
         .environmentObject(viewModel)
-        .sheet(isPresented: $isAccountPresented) {
-            AccountView(viewModel: viewModel)
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
-        }
         .onAppear {
             setupNavigationBarAppearance()
         }
