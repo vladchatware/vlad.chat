@@ -55,6 +55,41 @@ describe("mergeMobileStreamText", () => {
     expect(result[0]).toEqual(finalized);
   });
 
+  it("keeps completed reasoning while the stored terminal projection catches up", () => {
+    const finalized: MobileMessage = {
+      ...pendingMessage,
+      text: "The answer",
+      status: "success",
+      response: {
+        phase: "complete",
+        tools: [],
+        parts: [{ id: "text:stored:text:0", type: "text", text: "The answer", state: "done" }],
+      },
+    };
+    const result = mergeMobileStreamText(
+      [finalized],
+      [{ streamId: "stream-1", order: 2, stepOrder: 0 }],
+      [{
+        streamId: "stream-1",
+        start: 0,
+        parts: [
+          { type: "reasoning-start", id: "reasoning" },
+          { type: "reasoning-delta", id: "reasoning", delta: "Checked the constraints." },
+          { type: "reasoning-end", id: "reasoning" },
+          { type: "text-delta", id: "text", delta: "The answer" },
+          { type: "finish" },
+        ],
+      }],
+    );
+
+    expect(result[0].status).toBe("success");
+    expect(result[0].text).toBe("The answer");
+    expect(result[0].response?.parts).toEqual([
+      { id: "reasoning:reasoning", type: "reasoning", text: "Checked the constraints.", state: "done" },
+      { id: "text:stored:text:0", type: "text", text: "The answer", state: "done" },
+    ]);
+  });
+
   it("materializes a streaming assistant before its pending message exists", () => {
     const userMessage = {
       ...pendingMessage,
@@ -80,6 +115,31 @@ describe("mergeMobileStreamText", () => {
       text: "Partial",
       status: "streaming",
     });
+  });
+
+  it("inserts a materialized stream row at its history order", () => {
+    const history: MobileMessage[] = [
+      { ...pendingMessage, id: "user-1", role: "user", text: "First", status: "success", order: 1 },
+      { ...pendingMessage, id: "user-2", role: "user", text: "Second", status: "success", order: 2 },
+      { ...pendingMessage, id: "user-3", role: "user", text: "Third", status: "success", order: 3 },
+    ];
+
+    const result = mergeMobileStreamText(
+      history,
+      [{ streamId: "stream-2", order: 2, stepOrder: 0 }],
+      [{
+        streamId: "stream-2",
+        start: 0,
+        parts: [{ type: "text-delta", id: "text", delta: "Second response" }],
+      }],
+    );
+
+    expect(result.map(({ id }) => id)).toEqual([
+      "user-1",
+      "user-2",
+      "stream:stream-2",
+      "user-3",
+    ]);
   });
 });
 

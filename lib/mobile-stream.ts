@@ -567,20 +567,69 @@ export function mergeMobileStreamText(
 
   const merged = messages.map((message) => {
     const state = states.get(message.order);
-    if (
-      message.role !== "assistant" ||
-      !state ||
-      (message.status !== "pending" && message.status !== "streaming")
-    ) {
+    if (message.role !== "assistant" || !state) {
       return message;
     }
-    return {
-      ...message,
-      text: state.text,
-      status: "streaming",
-      response: responseFor(state),
-      ...(state.errorText ? { errorText: state.errorText } : {}),
-    };
+
+    if (message.status === "pending" || message.status === "streaming") {
+      return {
+        ...message,
+        text: state.text,
+        status: "streaming",
+        response: responseFor(state),
+        ...(state.errorText ? { errorText: state.errorText } : {}),
+      };
+    }
+
+    // A terminal message can become visible just before its stored response
+    // projection catches up with the final stream snapshot. Carry over any
+    // completed stream parts only when the streamed answer exactly matches the
+    // durable text, so stale deltas can never overwrite a finished response.
+    if (message.status === "success" && state.phase === "complete" && state.text === message.text) {
+      const streamed = responseFor(state);
+      const stored = message.response;
+      const storedParts = stored?.parts ?? [];
+      const matchedStoredPartIds = new Set<string>();
+      let hasStreamOnlyParts = false;
+      const completedParts = streamed.parts.flatMap((streamPart) => {
+        const storedPart = storedParts.find((candidate) => {
+          if (matchedStoredPartIds.has(candidate.id)) return false;
+          if (candidate.id === streamPart.id) return true;
+          if (candidate.type === "text" && streamPart.type === "text") return candidate.text === streamPart.text;
+          if (candidate.type === "reasoning" && streamPart.type === "reasoning") return candidate.text === streamPart.text;
+          if (candidate.type === "tool" && streamPart.type === "tool") return candidate.tool.id === streamPart.tool.id;
+          if (candidate.type === "source" && streamPart.type === "source") {
+            return candidate.sourceId === streamPart.sourceId && candidate.url === streamPart.url;
+          }
+          return false;
+        });
+        if (storedPart) {
+          matchedStoredPartIds.add(storedPart.id);
+          return [storedPart];
+        }
+        // The stored message text is authoritative. If it already has text
+        // parts, don't append an equivalent streamed part under a generated ID.
+        if (streamPart.type === "text" && storedParts.some((part) => part.type === "text")) {
+          return [];
+        }
+        hasStreamOnlyParts = true;
+        return [streamPart];
+      });
+      completedParts.push(...storedParts.filter((part) => !matchedStoredPartIds.has(part.id)));
+      if (hasStreamOnlyParts) {
+        return {
+          ...message,
+          response: {
+            phase: stored?.phase ?? "complete",
+            parts: completedParts,
+            tools: stored?.tools ?? streamed.tools,
+            ...(stored?.errorText ? { errorText: stored.errorText } : {}),
+          },
+        };
+      }
+    }
+
+    return message;
   });
 
   for (const [order, state] of states) {
@@ -592,7 +641,7 @@ export function mergeMobileStreamText(
       const prompt = merged.find(
         (message) => message.order === order && message.role === "user",
       );
-      merged.push({
+      const assistant = {
         id: `stream:${stream.streamId}`,
         role: "assistant",
         text: state.text,
@@ -601,7 +650,13 @@ export function mergeMobileStreamText(
         createdAt: prompt?.createdAt ?? 0,
         response: responseFor(state),
         ...(state.errorText ? { errorText: state.errorText } : {}),
-      });
+      } satisfies MobileMessage;
+      const insertionIndex = merged.findIndex((message) => message.order > order);
+      if (insertionIndex === -1) {
+        merged.push(assistant);
+      } else {
+        merged.splice(insertionIndex, 0, assistant);
+      }
     }
   }
   return merged;

@@ -357,6 +357,10 @@ final class ChatViewModel: ObservableObject {
             isLoading = false
         }
 
+        let previousMessagesByOrder = (currentChat?.messages ?? []).reduce(into: [Double: Message]()) { result, message in
+            guard message.role == .assistant, let order = messageOrders[message.id] else { return }
+            result[order] = message
+        }
         messageOrders = Dictionary(
             uniqueKeysWithValues: mobileChat.messages.map { ($0.id, $0.order) }
         )
@@ -372,8 +376,11 @@ final class ChatViewModel: ObservableObject {
                 timestamp: Date(timeIntervalSince1970: item.createdAt / 1_000)
             )
             message.isStreaming = responseIsStreaming
-            message.responseActivity = item.response
-            if let response = item.response {
+            let response = item.response?.retainingReasoning(
+                from: previousMessagesByOrder[item.order]?.responseActivity
+            )
+            message.responseActivity = response
+            if let response {
                 let reasoning = response.parts
                     .filter { (part: ResponsePart) in part.type == .reasoning }
                     .compactMap(\.text)

@@ -143,6 +143,7 @@ struct StreamingScrollE2EView: View {
     @State private var scrollTrigger = UUID()
     @State private var scrollToUserTrigger = UUID()
     @State private var didSeedFixture = false
+    @State private var didInsertHistoryRow = false
 
     private var isDarkMode: Bool { colorScheme == .dark }
 
@@ -169,6 +170,9 @@ struct StreamingScrollE2EView: View {
                 Button("Complete stream", action: completeStream)
                     .accessibilityIdentifier("finishStreamingFixture")
                     .disabled(!isLoading)
+                Button("Insert history row", action: insertHistoryRow)
+                    .accessibilityIdentifier("insertHistoryRowFixture")
+                    .disabled(didInsertHistoryRow)
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 12)
@@ -181,8 +185,20 @@ struct StreamingScrollE2EView: View {
         guard !didSeedFixture else { return }
         didSeedFixture = true
 
-        let paragraphs = (1...10).map { index in
+        var paragraphs = (1...10).map { index in
             "STREAM_ANCHOR_\(String(format: "%02d", index)) — Paragraph \(index) keeps enough readable text on screen to exercise streaming row height and scroll preservation. The reader should remain at this paragraph when the stream completes."
+        }
+        let exercisesMarkdownCompletion = ProcessInfo.processInfo.arguments.contains("--ui-test-streaming-markdown-reflow")
+        if exercisesMarkdownCompletion {
+            paragraphs[9] = """
+            | Column A | Column B |
+            | --- | --- |
+            | STREAM_FINAL_MARKDOWN | A longer final table row that expands after completion |
+            | Row 2 | Value 2 |
+            | Row 3 | Value 3 |
+            | Row 4 | Value 4 |
+            | Row 5 | Value 5 |
+            """
         }
         let fullText = paragraphs.joined(separator: "\n\n")
         var assistant = Message(id: "streaming-scroll-assistant", role: .assistant, content: fullText)
@@ -190,7 +206,7 @@ struct StreamingScrollE2EView: View {
         assistant.contentChunks = paragraphs.enumerated().map { index, paragraph in
             ContentChunk(
                 id: "streaming-scroll-paragraph-\(index)",
-                type: .paragraph,
+                type: exercisesMarkdownCompletion && index == paragraphs.count - 1 ? .table : .paragraph,
                 content: paragraph,
                 isComplete: index < paragraphs.count - 1
             )
@@ -216,6 +232,245 @@ struct StreamingScrollE2EView: View {
         viewModel.currentChat = chat
         viewModel.isLoading = false
         isLoading = false
+    }
+
+    private func insertHistoryRow() {
+        guard !didInsertHistoryRow, var chat = viewModel.currentChat,
+              chat.messages.indices.contains(1) else { return }
+        chat.messages.insert(
+            Message(id: "streaming-scroll-history-insert", role: .user, content: "A newly arrived older history message."),
+            at: 1
+        )
+        viewModel.currentChat = chat
+        viewModel.chats = [chat]
+        didInsertHistoryRow = true
+    }
+}
+
+/// Captures the production message row while its inline reasoning preview sits
+/// below visible answer text, then records the terminal snapshot transition.
+struct ThinkingLabelE2EView: View {
+    @ObservedObject var viewModel: ChatViewModel
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var isLoading = true
+    @State private var isAtBottom = true
+    @State private var userHasScrolled = false
+    @State private var tableOpacity = 1.0
+    @State private var scrollTrigger = UUID()
+    @State private var scrollToUserTrigger = UUID()
+    @State private var didSeedFixture = false
+
+    private let answer = "ANSWER_VISIBLE — the response is already on screen while the final reasoning preview remains below it."
+    private let reasoning = "THINKING_PREVIEW_VISIBLE — checking the final constraint before completion."
+
+    var body: some View {
+        MessageTableView(
+            archivedMessagesStartIndex: 0,
+            isDarkMode: colorScheme == .dark,
+            isLoading: isLoading,
+            viewModel: viewModel,
+            isAtBottom: $isAtBottom,
+            userHasScrolled: $userHasScrolled,
+            scrollTrigger: scrollTrigger,
+            scrollToUserTrigger: scrollToUserTrigger,
+            tableOpacity: $tableOpacity,
+            keyboardHeight: 0
+        )
+        .opacity(tableOpacity)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            HStack {
+                Text(isLoading ? "Streaming" : "Complete")
+                    .accessibilityIdentifier("thinkingCompletionStatus")
+                Spacer()
+                Button("Complete response", action: completeResponse)
+                    .accessibilityIdentifier("completeThinkingResponseFixture")
+                    .disabled(!isLoading)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+            .background(Color.chatBackground(isDarkMode: colorScheme == .dark))
+        }
+        .onAppear(perform: seedFixture)
+    }
+
+    private func seedFixture() {
+        guard !didSeedFixture else { return }
+        didSeedFixture = true
+
+        var assistant = Message(id: "thinking-label-assistant", role: .assistant, content: answer)
+        assistant.isStreaming = true
+        assistant.responseActivity = ResponseActivity(
+            phase: .responding,
+            tools: [],
+            parts: [
+                ResponsePart(id: "thinking-label-answer", type: .text, text: answer, state: .done, sourceId: nil, url: nil, title: nil, tool: nil),
+                ResponsePart(id: "thinking-label-reasoning", type: .reasoning, text: reasoning, state: .streaming, sourceId: nil, url: nil, title: nil, tool: nil),
+            ]
+        )
+        let user = Message(id: "thinking-label-user", role: .user, content: "Show the final reasoning state.")
+        let fixture = Chat(
+            id: "thinking-label-ui-test",
+            title: "Thinking label test",
+            messages: [user, assistant],
+            modelType: viewModel.currentModel
+        )
+        viewModel.currentChat = fixture
+        viewModel.chats = [fixture]
+        viewModel.isLoading = true
+    }
+
+    private func completeResponse() {
+        guard var chat = viewModel.currentChat, let index = chat.messages.indices.last else { return }
+        chat.messages[index].isStreaming = false
+        if let activity = chat.messages[index].responseActivity {
+            let completedParts = activity.parts.map { part in
+                ResponsePart(
+                    id: part.id,
+                    type: part.type,
+                    text: part.text,
+                    state: part.type == .reasoning ? .done : part.state,
+                    sourceId: part.sourceId,
+                    url: part.url,
+                    title: part.title,
+                    tool: part.tool
+                )
+            }
+            chat.messages[index].responseActivity = ResponseActivity(phase: .complete, tools: activity.tools, parts: completedParts)
+        }
+        viewModel.currentChat = chat
+        viewModel.chats = [chat]
+        viewModel.isLoading = false
+        isLoading = false
+    }
+}
+
+/// Replays an expanding assistant response after loading a multi-turn seeded
+/// chat into the production ChatContainer. Keeps the real scroll ownership,
+/// composer, message wrappers, and row layout in the UI-test path.
+struct SeededChatHistoryHarnessView: View {
+    @ObservedObject var viewModel: ChatViewModel
+    @State private var didStart = false
+
+    private let responseParts = (1...32).map { index in
+        if index.isMultiple(of: 8) {
+            return "### SEEDED_STREAM_SEGMENT_\(String(format: "%02d", index))\n\nSegment \(index) continues a long response while the chat contains earlier conversation history. The viewport must follow the newest text instead of stopping halfway through this message."
+        }
+        return "SEEDED_STREAM_SEGMENT_\(String(format: "%02d", index)) — Segment \(index) continues the long response while the chat contains earlier conversation history. The viewport must follow the newest text instead of stopping halfway through this message."
+    }
+
+    var body: some View {
+        ChatContainer()
+            .task {
+                await seedAndStream()
+            }
+    }
+
+    @MainActor
+    private func seedAndStream() async {
+        guard !didStart else { return }
+        didStart = true
+
+        let history = (1...8).flatMap { index in
+            [
+                Message(
+                    id: "seeded-history-user-\(index)",
+                    role: .user,
+                    content: "SEEDED_HISTORY_USER_\(index) — Can you explain how this part of the project works?"
+                ),
+                Message(
+                    id: "seeded-history-assistant-\(index)",
+                    role: .assistant,
+                    content: "SEEDED_HISTORY_ASSISTANT_\(index) — It follows the existing conversation context and keeps earlier messages available while new text arrives."
+                ),
+            ]
+        }
+        let userMessage = Message(
+            id: "seeded-history-current-user",
+            role: .user,
+            content: "Continue from the existing history and explain the full sequence."
+        )
+        var assistantMessage = Message(
+            id: "seeded-history-current-assistant",
+            role: .assistant,
+            content: responseParts[0]
+        )
+        assistantMessage.isStreaming = true
+        assistantMessage.contentChunks = [makeChunk(at: 0, complete: false)]
+        assistantMessage.responseActivity = responseActivity(
+            text: responseParts[0],
+            state: .streaming,
+            phase: .responding
+        )
+        let chat = Chat(
+            id: "seeded-chat-history-scroll-e2e",
+            title: "Seeded chat history scroll E2E",
+            messages: history + [userMessage, assistantMessage],
+            modelType: viewModel.currentModel
+        )
+        viewModel.currentChat = chat
+        viewModel.chats = [chat]
+        viewModel.isLoading = true
+
+        for count in 2...responseParts.count {
+            do {
+                try await Task.sleep(nanoseconds: 250_000_000)
+            } catch {
+                return
+            }
+            guard var currentChat = viewModel.currentChat,
+                  let lastIndex = currentChat.messages.indices.last else { return }
+            let text = responseParts.prefix(count).joined(separator: "\n\n")
+            currentChat.messages[lastIndex].content = text
+            currentChat.messages[lastIndex].contentChunks = (0..<count).map { makeChunk(at: $0, complete: $0 < count - 1) }
+            currentChat.messages[lastIndex].responseActivity = responseActivity(
+                text: text,
+                state: .streaming,
+                phase: .responding
+            )
+            viewModel.currentChat = currentChat
+        }
+
+        guard var currentChat = viewModel.currentChat,
+              let lastIndex = currentChat.messages.indices.last else { return }
+        currentChat.messages[lastIndex].isStreaming = false
+        currentChat.messages[lastIndex].contentChunks = (0..<responseParts.count).map { makeChunk(at: $0, complete: true) }
+        currentChat.messages[lastIndex].responseActivity = responseActivity(
+            text: responseParts.joined(separator: "\n\n"),
+            state: .done,
+            phase: .complete
+        )
+        viewModel.currentChat = currentChat
+        viewModel.isLoading = false
+    }
+
+    private func makeChunk(at index: Int, complete: Bool) -> ContentChunk {
+        ContentChunk(
+            id: "seeded-stream-chunk-\(index + 1)",
+            type: (index + 1).isMultiple(of: 8) ? .heading : .paragraph,
+            content: responseParts[index],
+            isComplete: complete
+        )
+    }
+
+    private func responseActivity(
+        text: String,
+        state: ResponsePart.State,
+        phase: ResponseActivity.Phase
+    ) -> ResponseActivity {
+        ResponseActivity(
+            phase: phase,
+            tools: [],
+            parts: [ResponsePart(
+                id: "seeded-history-response-text",
+                type: .text,
+                text: text,
+                state: state,
+                sourceId: nil,
+                url: nil,
+                title: nil,
+                tool: nil
+            )]
+        )
     }
 }
 

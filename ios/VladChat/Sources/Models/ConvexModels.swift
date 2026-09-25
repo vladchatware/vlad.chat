@@ -109,6 +109,28 @@ extension ResponseActivity {
             phase == .failed ||
             phase == .unknown
     }
+
+    func retainingReasoning(from previous: ResponseActivity?) -> ResponseActivity {
+        guard phase == .complete || phase == .stopped || phase == .failed,
+              let previous else { return self }
+
+        let terminalReasoning = parts.filter { $0.type == .reasoning }
+        let missingReasoning = previous.parts.filter { previousPart in
+            previousPart.type == .reasoning &&
+                !terminalReasoning.contains { $0.id == previousPart.id || $0.text == previousPart.text }
+        }
+        guard !missingReasoning.isEmpty else { return self }
+
+        var retainedParts = parts
+        let firstTextIndex = retainedParts.firstIndex { $0.type == .text } ?? retainedParts.endIndex
+        retainedParts.insert(contentsOf: missingReasoning, at: firstTextIndex)
+        return ResponseActivity(
+            phase: phase,
+            tools: tools,
+            parts: retainedParts,
+            errorText: errorText
+        )
+    }
 }
 
 struct ChatMessage: Decodable, Identifiable, Equatable, Sendable {

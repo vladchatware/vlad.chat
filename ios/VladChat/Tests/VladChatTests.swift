@@ -63,4 +63,43 @@ struct VladChatTests {
         #expect(completedSnapshot.first?.id == activeSnapshot.first?.id)
         #expect(completedSnapshot.first?.isComplete == true)
     }
+
+    @Test func terminalResponseKeepsReasoningFromTheLastStreamingSnapshot() {
+        let reasoning = ResponsePart(
+            id: "reasoning-live",
+            type: .reasoning,
+            text: "The final thinking stays attached to this answer.",
+            state: .done,
+            sourceId: nil,
+            url: nil,
+            title: nil,
+            tool: nil
+        )
+        let previous = ResponseActivity(
+            phase: .responding,
+            tools: [],
+            parts: [reasoning]
+        )
+        let finalText = ResponsePart(
+            id: "text-stored",
+            type: .text,
+            text: "The answer is complete.",
+            state: .done,
+            sourceId: nil,
+            url: nil,
+            title: nil,
+            tool: nil
+        )
+        let terminal = ResponseActivity(
+            phase: .complete,
+            tools: [],
+            parts: [finalText]
+        )
+
+        let retained = terminal.retainingReasoning(from: previous)
+
+        #expect(retained.phase == .complete)
+        #expect(retained.parts.map(\.id) == [reasoning.id, finalText.id])
+        #expect(retained.parts.filter { $0.type == .reasoning }.count == 1)
+    }
 }

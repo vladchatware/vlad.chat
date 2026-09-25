@@ -929,6 +929,7 @@ struct CollapsibleThinkingBox: View {
     let isStreaming: Bool
     let generationTimeSeconds: Double?
     let thinkingSummary: String?
+    var showsThinkingSummaryAfterCompletion = false
     let onTap: () -> Void
 
     var body: some View {
@@ -952,6 +953,14 @@ struct CollapsibleThinkingBox: View {
                             .foregroundColor(isDarkMode ? .white : Color.black.opacity(0.8))
                             .modifier(TextPulseAnimation())
                     }
+                } else if showsThinkingSummaryAfterCompletion,
+                          let summary = thinkingSummary,
+                          !summary.isEmpty {
+                    Text(summary)
+                        .font(.subheadline)
+                        .foregroundColor(isDarkMode ? .white : Color.black.opacity(0.8))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                 } else {
                     Text("Thoughts")
                         .font(.system(size: 16))
@@ -1204,8 +1213,10 @@ struct OrderedResponsePartsView: View {
                     isStreaming: part.state == .streaming && isStreaming,
                     generationTimeSeconds: nil,
                     thinkingSummary: reasoningPreview(text),
+                    showsThinkingSummaryAfterCompletion: true,
                     onTap: onShowThoughts
                 )
+                .accessibilityIdentifier("responseThinkingPreview")
             }
         case .tool:
             if let tool = part.tool {

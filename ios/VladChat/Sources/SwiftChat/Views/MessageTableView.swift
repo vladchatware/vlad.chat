@@ -106,7 +106,7 @@ struct MessageTableView: UIViewRepresentable {
             }
             context.coordinator.lastMessageIds = currentMessageIds
             context.coordinator.lastMessageSequence = currentMessageSequence
-            tableView.reloadData()
+            context.coordinator.reloadDataPreservingReaderPosition()
         }
 
         let isDarkModeChanged = context.coordinator.lastIsDarkMode != isDarkMode
@@ -114,6 +114,9 @@ struct MessageTableView: UIViewRepresentable {
         let showsWaitingRow = context.coordinator.showsWaitingRow
         let waitingRowChanged = context.coordinator.lastShowsWaitingRow != showsWaitingRow
         context.coordinator.lastShowsWaitingRow = showsWaitingRow
+        let isLoadingChanged = context.coordinator.lastIsLoading != isLoading
+        let isCompletingStream = isLoadingChanged && !isLoading
+        context.coordinator.lastIsLoading = isLoading
 
         if isDarkModeChanged {
             context.coordinator.lastIsDarkMode = isDarkMode
@@ -127,8 +130,10 @@ struct MessageTableView: UIViewRepresentable {
         if messageCountChanged || waitingRowChanged || (chatIdChanged && !isIdConversion) {
             context.coordinator.lastMessageCount = messages.count
             context.coordinator.heightCache.removeAll()
-            tableView.reloadData()
-            context.coordinator.scheduleFollowLatestIfNeeded()
+            context.coordinator.reloadDataPreservingReaderPosition()
+            if !isCompletingStream {
+                context.coordinator.scheduleFollowLatestIfNeeded()
+            }
         } else if !messages.isEmpty {
             // Reconcile the last row for both streaming and terminal snapshots.
             // A reconnect can deliver new content after local loading is already false.
@@ -149,16 +154,19 @@ struct MessageTableView: UIViewRepresentable {
                     showArchiveSeparator: showArchiveSeparator,
                     messageIndex: messages.count - 1
                 )
-                if didUpdate {
+                if didUpdate && !isCompletingStream {
                     coordinator.scheduleFollowLatestIfNeeded()
                 }
             }
         }
 
-        let isLoadingChanged = context.coordinator.lastIsLoading != isLoading
-        context.coordinator.lastIsLoading = isLoading
-
         if isLoadingChanged && !isLoading {
+            // Final Markdown rendering can change the self-sizing row after the
+            // stream ends. Stop the streaming follower here so that this layout
+            // pass preserves the reader's viewport instead of starting a second
+            // animated trip to the new bottom.
+            context.coordinator.stopFollowingLatest()
+
             // Streaming just ended - update the last message wrapper to reflect final state (including any errors)
             if let lastMessage = messages.last,
                let wrapper = context.coordinator.messageWrappers[lastMessage.id] {
@@ -254,6 +262,7 @@ struct MessageTableView: UIViewRepresentable {
         var lastChatId: String? = nil
         var lastMessageIds: Set<String> = []
         var lastMessageSequence: [String] = []
+        private var renderedMessageSequence: [String] = []
         private var isDragging = false
         private var isUpdatingContentInset = false
         var messageWrappers: [String: ObservableMessageWrapper] = [:]
@@ -266,12 +275,14 @@ struct MessageTableView: UIViewRepresentable {
         var messageHeightCache: [String: CGFloat] = [:]
         var shownMessageIds: Set<String> = []
         private var followLatestScheduled = false
+        private var followLatestGeneration = 0
+        private var readerPositionRestoreScheduled = false
         private var lastFollowLatestAt: TimeInterval = 0
         private var followLatestDisplayLink: CADisplayLink?
         private lazy var followLatestDisplayLinkTarget = FollowLatestDisplayLinkTarget(coordinator: self)
 
         private static let followLatestResponse: TimeInterval = 0.2
-        private static let maximumFollowLatestSpeed: CGFloat = 300
+        private static let maximumFollowLatestSpeed: CGFloat = 1_800
 
         var showsWaitingRow: Bool {
             parent.isLoading && parent.messages.last?.role == .user
@@ -331,6 +342,60 @@ struct MessageTableView: UIViewRepresentable {
 
         func numberOfSections(in tableView: UITableView) -> Int {
             return 1
+        }
+
+        /// Preserve the message the reader is looking at when a subscription
+        /// inserts/reconciles rows above it. A raw content offset points to a
+        /// different message once variable-height rows move.
+        func reloadDataPreservingReaderPosition() {
+            guard let tableView else { return }
+            guard parent.userHasScrolled,
+                  !readerPositionRestoreScheduled,
+                  let visibleRows = tableView.indexPathsForVisibleRows?.sorted(by: { $0.row < $1.row }) else {
+                tableView.reloadData()
+                renderedMessageSequence = parent.messages.map(\.id)
+                return
+            }
+
+            let viewportCenterY = tableView.bounds.midY
+            let anchors = visibleRows.compactMap { indexPath -> (id: String, viewportY: CGFloat, distanceFromCenter: CGFloat)? in
+                guard renderedMessageSequence.indices.contains(indexPath.row) else { return nil }
+                let messageID = renderedMessageSequence[indexPath.row]
+                let rowRect = tableView.rectForRow(at: indexPath)
+                let viewportY = rowRect.minY - tableView.contentOffset.y
+                return (messageID, viewportY, abs(rowRect.midY - tableView.contentOffset.y - viewportCenterY))
+            }.sorted { $0.distanceFromCenter < $1.distanceFromCenter }
+            guard !anchors.isEmpty else {
+                tableView.reloadData()
+                renderedMessageSequence = parent.messages.map(\.id)
+                return
+            }
+
+            readerPositionRestoreScheduled = true
+            tableView.reloadData()
+            renderedMessageSequence = parent.messages.map(\.id)
+            DispatchQueue.main.async { [weak self, weak tableView] in
+                guard let self, let tableView else { return }
+                self.readerPositionRestoreScheduled = false
+                guard self.parent.userHasScrolled, !tableView.isDragging, !tableView.isDecelerating else { return }
+                tableView.layoutIfNeeded()
+
+                guard let anchor = anchors.first(where: { item in
+                    self.parent.messages.contains(where: { $0.id == item.id })
+                }),
+                let row = self.parent.messages.firstIndex(where: { $0.id == anchor.id }) else { return }
+
+                let rowTop = tableView.rectForRow(at: IndexPath(row: row, section: 0)).minY
+                let minimumOffset = -tableView.adjustedContentInset.top
+                let maximumOffset = max(
+                    minimumOffset,
+                    tableView.contentSize.height - tableView.bounds.height + tableView.adjustedContentInset.bottom
+                )
+                let targetOffset = min(max(rowTop - anchor.viewportY, minimumOffset), maximumOffset)
+                UIView.performWithoutAnimation {
+                    tableView.setContentOffset(CGPoint(x: tableView.contentOffset.x, y: targetOffset), animated: false)
+                }
+            }
         }
 
         func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
@@ -555,12 +620,14 @@ struct MessageTableView: UIViewRepresentable {
                   !isDragging,
                   !followLatestScheduled else { return }
             followLatestScheduled = true
+            let generation = followLatestGeneration
 
             let now = Date().timeIntervalSinceReferenceDate
             let delay = max(0, 0.06 - (now - lastFollowLatestAt))
 
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                 guard let self else { return }
+                guard generation == self.followLatestGeneration else { return }
                 self.followLatestScheduled = false
                 guard !self.parent.userHasScrolled,
                       !self.isDragging,
@@ -572,7 +639,7 @@ struct MessageTableView: UIViewRepresentable {
                     ? 1
                     : self.parent.messages.count + (self.showsWaitingRow ? 1 : 0)
                 guard tableView.numberOfRows(inSection: 0) == expectedRowCount else {
-                    tableView.reloadData()
+                    self.reloadDataPreservingReaderPosition()
                     return
                 }
 
@@ -626,7 +693,9 @@ struct MessageTableView: UIViewRepresentable {
             tableView.contentOffset.y += min(easedStep, maximumStep)
         }
 
-        private func stopFollowingLatest() {
+        fileprivate func stopFollowingLatest() {
+            followLatestGeneration += 1
+            followLatestScheduled = false
             followLatestDisplayLink?.invalidate()
             followLatestDisplayLink = nil
         }
