@@ -5,6 +5,10 @@ import { api } from '@/convex/_generated/api';
 import { convexAuthNextjsToken } from '@convex-dev/auth/nextjs/server';
 import { fetchMutation, fetchQuery } from "convex/nextjs"
 import { NextResponse } from 'next/server';
+import {
+  computerUseToolsAvailable,
+  createComputerUseTools,
+} from '@/lib/computer-use'
 
 export async function POST(req: Request) {
   const {
@@ -60,6 +64,15 @@ export async function POST(req: Request) {
       console.error('Failed to initialize Tavily MCP client:', error)
       // Fall back to just Notion tools
     }
+  }
+
+  // Computer use (V-83): shared backend tools for web + iOS. Feature-flagged.
+  // Clients only render tool JSON (screenshotUrl / handoff); no UI-only orchestration.
+  if (computerUseToolsAvailable()) {
+    const computerTools = createComputerUseTools({
+      userId: String(user._id),
+    })
+    tools = { ...tools, ...computerTools }
   }
 
   const result = streamText({
