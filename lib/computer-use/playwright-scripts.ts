@@ -25,11 +25,22 @@ fi
 
 export const INSTALL_DESK_SH = `set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
-if ! command -v Xvfb >/dev/null 2>&1 || ! command -v x11vnc >/dev/null 2>&1 || ! command -v websockify >/dev/null 2>&1; then
-  apt-get update -qq
-  apt-get install -y -qq xvfb x11vnc novnc websockify fluxbox xterm fonts-liberation >/dev/null
+apt-get update -qq
+apt-get install -y -qq xvfb x11vnc novnc websockify python3-websockify fluxbox xterm fonts-liberation curl net-tools >/dev/null
+# Fail closed with clear paths — do not trust "command -v" alone across sudo/non-sudo.
+for b in Xvfb x11vnc websockify curl; do
+  if ! command -v "$b" >/dev/null 2>&1; then
+    echo "desk install missing binary: $b" >&2
+    exit 1
+  fi
+done
+mkdir -p /tmp/cu /tmp/cu-profile /usr/share/novnc
+if [ ! -f /usr/share/novnc/vnc.html ] && [ ! -f /usr/share/novnc/vnc_lite.html ]; then
+  echo "noVNC web assets missing under /usr/share/novnc" >&2
+  ls -la /usr/share/novnc >&2 || true
+  exit 1
 fi
-mkdir -p /tmp/cu /tmp/cu-profile
+echo desk-packages-ready
 `;
 
 export const LAUNCH_CHROME_CJS = `#!/usr/bin/env node
@@ -133,22 +144,50 @@ export PLAYWRIGHT_BROWSERS_PATH=/tmp/cu-browsers
 mkdir -p /tmp/cu /tmp/cu-profile
 diag() {
   echo "=== desk diagnostics ===" >&2
+  echo "binaries:" >&2
+  command -v Xvfb x11vnc websockify curl || true
+  echo "ports:" >&2
+  (ss -ltn 2>/dev/null || netstat -ltn 2>/dev/null || true) | head -40 >&2 || true
   tail -80 /tmp/cu/chrome.log /tmp/cu/chrome-launch.err /tmp/cu/xvfb.log /tmp/cu/x11vnc.log /tmp/cu/novnc.log /tmp/cu/fluxbox.log 2>/dev/null || true
-  ps -ef | head -60 >&2 || true
+  # -x only: never pgrep -f against this script body (false positive).
+  ps -eo pid,comm,args | head -80 >&2 || true
   ls -la /tmp/cu-browsers 2>/dev/null | head -40 >&2 || true
 }
-if ! pgrep -f 'Xvfb :99' >/dev/null 2>&1; then
+need() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "missing binary: $1" >&2
+    diag
+    exit 1
+  fi
+}
+need Xvfb
+need x11vnc
+need curl
+port_up() { ss -ltn 2>/dev/null | grep -q ":$1 " || netstat -ltn 2>/dev/null | grep -q ":$1 "; }
+
+# IMPORTANT: use pgrep -x / port checks — pgrep -f matches this bash -lc script text.
+if ! pgrep -x Xvfb >/dev/null 2>&1; then
   rm -f /tmp/.X99-lock /tmp/.X11-unix/X99 2>/dev/null || true
   Xvfb :99 -screen 0 1280x720x24 -ac +extension RANDR +render -noreset -nolisten tcp >/tmp/cu/xvfb.log 2>&1 &
   sleep 0.8
+  if ! pgrep -x Xvfb >/dev/null 2>&1; then
+    echo "Xvfb failed to start" >&2
+    diag
+    exit 1
+  fi
 fi
 if ! pgrep -x fluxbox >/dev/null 2>&1; then
   fluxbox >/tmp/cu/fluxbox.log 2>&1 &
   sleep 0.4
 fi
-if ! pgrep -f 'x11vnc.*5900' >/dev/null 2>&1; then
+if ! pgrep -x x11vnc >/dev/null 2>&1; then
   x11vnc -display :99 -rfbport 5900 -localhost -forever -shared -nopw -xkb -repeat >/tmp/cu/x11vnc.log 2>&1 &
-  sleep 0.5
+  sleep 0.6
+  if ! pgrep -x x11vnc >/dev/null 2>&1; then
+    echo "x11vnc failed to start" >&2
+    diag
+    exit 1
+  fi
 fi
 NOVNC_WEB=""
 for d in /usr/share/novnc /usr/share/novnc/utils/.. /usr/share/novnc; do
@@ -164,12 +203,25 @@ echo "$NOVNC_WEB" > /tmp/cu/novnc-web
 ENTRY=vnc.html
 [ -f "$NOVNC_WEB/$ENTRY" ] || ENTRY=vnc_lite.html
 echo "$ENTRY" > /tmp/cu/novnc-entry
-if ! pgrep -f 'websockify.*6080' >/dev/null 2>&1; then
-  websockify --web="$NOVNC_WEB" 6080 127.0.0.1:5900 >/tmp/cu/novnc.log 2>&1 &
-  sleep 0.5
+
+start_websockify() {
+  if command -v websockify >/dev/null 2>&1; then
+    websockify --web="$NOVNC_WEB" 6080 127.0.0.1:5900 >/tmp/cu/novnc.log 2>&1 &
+    return 0
+  fi
+  if python3 -c 'import websockify' >/dev/null 2>&1; then
+    python3 -m websockify --web="$NOVNC_WEB" 6080 127.0.0.1:5900 >/tmp/cu/novnc.log 2>&1 &
+    return 0
+  fi
+  echo "websockify not available" >&2
+  return 1
+}
+if ! port_up 6080; then
+  start_websockify || { diag; exit 1; }
+  sleep 0.6
 fi
 ok=0
-for i in $(seq 1 40); do
+for i in $(seq 1 50); do
   if curl -fsS -o /dev/null "http://127.0.0.1:6080/" 2>/dev/null; then ok=1; break; fi
   if curl -fsS -o /dev/null "http://127.0.0.1:6080/$ENTRY" 2>/dev/null; then ok=1; break; fi
   sleep 0.25
@@ -188,9 +240,12 @@ if ! cdp_up; then
     exit 1
   fi
   rm -f /tmp/cu/cdp-ready /tmp/cu/chrome-launch.err
-  # Kill stale chrome/launchers that may hold the profile lock.
-  pkill -f 'launch-chrome.cjs' >/dev/null 2>&1 || true
-  pkill -f 'chrome.*remote-debugging-port=9222' >/dev/null 2>&1 || true
+  pkill -x chrome >/dev/null 2>&1 || true
+  pkill -x chromium >/dev/null 2>&1 || true
+  # Kill prior node launchers by pid file only (avoid pgrep -f on script text).
+  if [ -f /tmp/cu/chrome-launcher.pid ]; then
+    kill "$(cat /tmp/cu/chrome-launcher.pid)" >/dev/null 2>&1 || true
+  fi
   sleep 0.3
   node /tmp/cu/launch-chrome.cjs >/tmp/cu/chrome.log 2>&1 &
   echo $! > /tmp/cu/chrome-launcher.pid
@@ -202,7 +257,6 @@ if ! cdp_up; then
       diag
       exit 1
     fi
-    # If launcher pid died without cdp-ready, fail fast with logs.
     if [ -f /tmp/cu/chrome-launcher.pid ]; then
       lp=$(cat /tmp/cu/chrome-launcher.pid)
       if ! kill -0 "$lp" 2>/dev/null; then
@@ -219,7 +273,6 @@ if ! cdp_up; then
     exit 1
   fi
 fi
-# Stable for 1s
 for i in 1 2 3; do
   if ! cdp_up; then
     echo "CDP dropped after ready" >&2
@@ -230,6 +283,7 @@ for i in 1 2 3; do
 done
 echo desk-ready
 `;
+
 
 export const RUNNER_CJS = `#!/usr/bin/env node
 process.env.PLAYWRIGHT_BROWSERS_PATH = process.env.PLAYWRIGHT_BROWSERS_PATH || '/tmp/cu-browsers';
