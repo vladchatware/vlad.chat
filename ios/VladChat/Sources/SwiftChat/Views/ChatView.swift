@@ -18,6 +18,8 @@ struct ChatContainer: View {
     @EnvironmentObject private var viewModel: ChatViewModel
 
     @State private var messageText = ""
+    @State private var isAccountPresented = false
+
     var body: some View {
         NavigationStack {
             ChatListView(
@@ -35,9 +37,20 @@ struct ChatContainer: View {
                     ToolbarItem(placement: .principal) {
                         VladIdentityHeader()
                     }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            isAccountPresented = true
+                        } label: {
+                            Label("Account", systemImage: "person.crop.circle")
+                        }
+                        .accessibilityIdentifier("openAccount")
+                    }
                 }
         }
         .environmentObject(viewModel)
+        .sheet(isPresented: $isAccountPresented) {
+            AccountView(viewModel: viewModel)
+        }
         .onAppear {
             setupNavigationBarAppearance()
         }

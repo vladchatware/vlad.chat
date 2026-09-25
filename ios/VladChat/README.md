@@ -19,6 +19,10 @@ Native SwiftUI client backed by same Convex deployment as vlad.chat.
 - SwiftChat message renderer, sidebar, composer, model picker, and web-search UI
 - Markdown, LaTeX, code blocks, citations, and attachment presentation from SwiftChat
 
+Open Account from the person icon at the top right of the chat screen. Anonymous
+users can link Google or Apple there; linked users see their identity and credit
+balances.
+
 StoreKit purchases, Convex attachment uploads, voice transcription and
 multi-thread mutations remain follow-up slices.
 

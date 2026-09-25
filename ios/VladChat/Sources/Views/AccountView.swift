@@ -17,6 +17,9 @@ struct AccountView: View {
                     } else {
                         Text("Anonymous account")
                             .foregroundStyle(.secondary)
+                        Text("Link Google or Apple to keep your chats when you switch devices.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
                         Button {
                             viewModel.linkGoogleAccount()
                         } label: {
