@@ -1,0 +1,24 @@
+{
+  "configurations" : [
+    {
+      "id" : "44A31A68-24F2-4E01-AA0D-AB2859A80152",
+      "name" : "Configuration 1",
+      "options" : {
+        "uiTestingScreenshotsLifetime" : "keepAlways"
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "testTimeoutsEnabled" : true
+  },
+  "testTargets" : [
+    {
+      "target" : {
+        "containerPath" : "container:VladChat.xcodeproj",
+        "identifier" : "698DF4F7CAAFF39E1943B9E5",
+        "name" : "VladChatUITests"
+      }
+    }
+  ],
+  "version" : 1
+}

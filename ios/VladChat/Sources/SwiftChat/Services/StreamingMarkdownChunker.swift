@@ -40,13 +40,20 @@ class StreamingMarkdownChunker {
     private var codeBlockLanguage: String?
     private var codeBlockFenceCount = 0
     private var isFinalized: Bool = false
+    private var nextChunkIndex = 0
+    private var workingChunkID: String?
+
+    private func makeChunkID(_ prefix: String) -> String {
+        defer { nextChunkIndex += 1 }
+        return "\(prefix)_\(nextChunkIndex)"
+    }
 
     func getAllChunks() -> [ContentChunk] {
         var result = completedChunks
 
         if !workingBuffer.isEmpty {
             let chunkType: ContentChunkType = isInTable ? .table : (isInCodeBlock ? .codeBlock(language: codeBlockLanguage) : .paragraph)
-            let chunkId = isInTable ? "working_table" : "working_current"
+            let chunkId = workingChunkID ?? (isInTable ? "working_table" : "working_current")
             result.append(ContentChunk(
                 id: chunkId,
                 type: chunkType,
@@ -60,6 +67,9 @@ class StreamingMarkdownChunker {
 
     @discardableResult
     func appendToken(_ token: String) -> Bool {
+        if workingBuffer.isEmpty && workingChunkID == nil {
+            workingChunkID = makeChunkID(isInCodeBlock ? "codeblock" : "paragraph")
+        }
         workingBuffer += token
 
         if isInCodeBlock {
@@ -88,7 +98,7 @@ class StreamingMarkdownChunker {
                 let beforeFence = String(workingBuffer[..<fenceRange.lowerBound])
 
                 if !beforeFence.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    let chunkId = "paragraph_\(beforeFence.hashValue)_\(Date().timeIntervalSince1970)"
+                    let chunkId = workingChunkID ?? makeChunkID("paragraph")
                     completedChunks.append(ContentChunk(
                         id: chunkId,
                         type: .paragraph,
@@ -106,6 +116,7 @@ class StreamingMarkdownChunker {
 
                 isInCodeBlock = true
                 workingBuffer = String(workingBuffer[fenceRange.lowerBound...])
+                workingChunkID = makeChunkID("codeblock")
                 return true
             }
         }
@@ -124,14 +135,15 @@ class StreamingMarkdownChunker {
         if workingBuffer.hasSuffix("\n\n") && workingBuffer.count > 2 {
             let content = String(workingBuffer.dropLast(2))
             if !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                let chunkId = "paragraph_\(content.hashValue)_\(Date().timeIntervalSince1970)"
+                let chunkId = workingChunkID ?? makeChunkID("paragraph")
                 completedChunks.append(ContentChunk(
                     id: chunkId,
                     type: .paragraph,
                     content: content,
                     isComplete: true
                 ))
-                workingBuffer = "\n\n"
+                workingBuffer = ""
+                workingChunkID = nil
                 return true
             }
         }
@@ -140,7 +152,7 @@ class StreamingMarkdownChunker {
     }
 
     private func finalizeCodeBlock(preserveAfterFence: String = "") {
-        let chunkId = "codeblock_\(workingBuffer.hashValue)_\(Date().timeIntervalSince1970)"
+        let chunkId = workingChunkID ?? makeChunkID("codeblock")
         completedChunks.append(ContentChunk(
             id: chunkId,
             type: .codeBlock(language: codeBlockLanguage),
@@ -151,12 +163,13 @@ class StreamingMarkdownChunker {
         isInCodeBlock = false
         codeBlockLanguage = nil
         workingBuffer = preserveAfterFence
+        workingChunkID = preserveAfterFence.isEmpty ? nil : makeChunkID("paragraph")
     }
 
     private func finalizeTable() {
         let trimmed = workingBuffer.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty {
-            let chunkId = "table_\(trimmed.hashValue)_\(Date().timeIntervalSince1970)"
+            let chunkId = workingChunkID ?? makeChunkID("table")
             completedChunks.append(ContentChunk(
                 id: chunkId,
                 type: .table,
@@ -167,6 +180,7 @@ class StreamingMarkdownChunker {
 
         isInTable = false
         workingBuffer = ""
+        workingChunkID = nil
     }
 
     func finalize() {
@@ -179,7 +193,7 @@ class StreamingMarkdownChunker {
         } else if !workingBuffer.isEmpty {
             let trimmed = workingBuffer.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty {
-                let chunkId = "paragraph_\(trimmed.hashValue)_\(Date().timeIntervalSince1970)"
+                let chunkId = workingChunkID ?? makeChunkID("paragraph")
                 completedChunks.append(ContentChunk(
                     id: chunkId,
                     type: .paragraph,
@@ -187,6 +201,7 @@ class StreamingMarkdownChunker {
                     isComplete: true
                 ))
                 workingBuffer = ""
+                workingChunkID = nil
             }
         }
     }
@@ -198,5 +213,7 @@ class StreamingMarkdownChunker {
         isInTable = false
         codeBlockLanguage = nil
         isFinalized = false
+        nextChunkIndex = 0
+        workingChunkID = nil
     }
 }

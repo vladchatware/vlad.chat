@@ -22,6 +22,7 @@ struct ChatListView: View {
     @State private var scrollTrigger = UUID()
     @State private var scrollToUserTrigger = UUID()
     @State private var tableOpacity = 1.0
+    @State private var keyboardObserverTokens: [NSObjectProtocol] = []
 
     private var messages: [Message] {
         viewModel.messages
@@ -47,14 +48,10 @@ struct ChatListView: View {
         .opacity(tableOpacity)
         .background(Color.chatBackground(isDarkMode: isDarkMode))
         .overlay(alignment: .bottom) {
-            if !isAtBottom && !messages.isEmpty && !isKeyboardVisible {
+            if userHasScrolled && !messages.isEmpty && !isKeyboardVisible {
                 Group {
                     if #available(iOS 26, *) {
-                        Button(action: {
-                            userHasScrolled = false
-                            viewModel.isScrollInteractionActive = false
-                            scrollTrigger = UUID()
-                        }) {
+                        Button(action: jumpToLatest) {
                             Image(systemName: "arrow.down")
                                 .font(.system(size: 12, weight: .semibold))
                                 .frame(width: Constants.UI.scrollToBottomButtonSize, height: Constants.UI.scrollToBottomButtonSize)
@@ -62,11 +59,7 @@ struct ChatListView: View {
                         .buttonStyle(.glass)
                         .clipShape(Circle())
                     } else {
-                        Button(action: {
-                            userHasScrolled = false
-                            viewModel.isScrollInteractionActive = false
-                            scrollTrigger = UUID()
-                        }) {
+                        Button(action: jumpToLatest) {
                             Image(systemName: "arrow.down.circle.fill")
                                 .font(.system(size: 24))
                                 .foregroundColor(.white)
@@ -76,7 +69,7 @@ struct ChatListView: View {
                         }
                     }
                 }
-                .padding(.bottom, 16)
+                .padding(.bottom, 8)
                 .transition(.opacity)
             }
         }
@@ -145,21 +138,34 @@ struct ChatListView: View {
     }
 
     private func setupKeyboardObservers() {
-        NotificationCenter.default.addObserver(forName: UIResponder.keyboardWillShowNotification, object: nil, queue: .main) { notification in
+        removeKeyboardObservers()
+
+        let showToken = NotificationCenter.default.addObserver(forName: UIResponder.keyboardWillShowNotification, object: nil, queue: .main) { notification in
             if let keyboardFrame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect {
                 isKeyboardVisible = true
                 self.keyboardHeight = keyboardFrame.height
             }
         }
 
-        NotificationCenter.default.addObserver(forName: UIResponder.keyboardWillHideNotification, object: nil, queue: .main) { _ in
+        let hideToken = NotificationCenter.default.addObserver(forName: UIResponder.keyboardWillHideNotification, object: nil, queue: .main) { _ in
             isKeyboardVisible = false
             keyboardHeight = 0
         }
+
+        keyboardObserverTokens = [showToken, hideToken]
     }
 
     private func removeKeyboardObservers() {
-        NotificationCenter.default.removeObserver(self, name: UIResponder.keyboardWillShowNotification, object: nil)
-        NotificationCenter.default.removeObserver(self, name: UIResponder.keyboardWillHideNotification, object: nil)
+        for token in keyboardObserverTokens {
+            NotificationCenter.default.removeObserver(token)
+        }
+        keyboardObserverTokens.removeAll()
     }
+
+    private func jumpToLatest() {
+        userHasScrolled = false
+        viewModel.isScrollInteractionActive = false
+        scrollTrigger = UUID()
+    }
+
 }

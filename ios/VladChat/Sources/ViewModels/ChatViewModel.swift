@@ -32,9 +32,19 @@ final class ChatViewModel: ObservableObject {
 
     private var client: ConvexClientWithAuth<ConvexAuthSession>?
     private var subscriptionTask: Task<Void, Never>?
+    private var presentationTask: Task<Void, Never>?
+    private var presentationTaskID: UUID?
+    private var pendingMobileChat: MobileChat?
     private var generationTask: Task<Void, Never>?
+    private var activeGenerationID: UUID?
+    private var localGenerationActive = false
+    private var localGenerationExpectedOrder: Double?
+    private var localGenerationPreviousMaxOrder: Double?
+    private var localGenerationMessageID: String?
     private var hasStarted = false
     private var messageOrders: [String: Double] = [:]
+    private var streamingChunkers: [String: StreamingMarkdownChunker] = [:]
+    private var streamingContent: [String: String] = [:]
 
     init() {
         guard let model = AppConfig.shared.currentModel ?? AppConfig.shared.availableModels.first else {
@@ -72,15 +82,17 @@ final class ChatViewModel: ObservableObject {
     func sendMessage(text rawText: String) {
         let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !isLoading, (!text.isEmpty || !pendingAttachments.isEmpty) else { return }
-        guard let client else {
-            attachmentError = "Vlad is still connecting."
-            return
-        }
         guard pendingAttachments.isEmpty else {
             attachmentError = "Attachments need the Convex upload bridge before they can be sent."
             return
         }
+        guard let client else {
+            attachmentError = "Vlad is still connecting."
+            return
+        }
 
+        let generationID = UUID()
+        let localAssistantID = "local-response-\(generationID.uuidString)"
         let optimistic = Message(
             id: "optimistic-\(UUID().uuidString)",
             role: .user,
@@ -89,35 +101,75 @@ final class ChatViewModel: ObservableObject {
         )
         if var chat = currentChat {
             chat.messages.append(optimistic)
+
+            var waitingMessage = Message(
+                id: localAssistantID,
+                role: .assistant,
+                content: "",
+                timestamp: Date()
+            )
+            waitingMessage.isStreaming = true
+            waitingMessage.responseActivity = ResponseActivity(phase: .waiting, tools: [])
+            chat.messages.append(waitingMessage)
+
             currentChat = chat
             replaceChat(chat)
         }
 
         isLoading = true
+        localGenerationActive = true
+        localGenerationExpectedOrder = nil
+        localGenerationPreviousMaxOrder = messageOrders.values.max()
+        localGenerationMessageID = localAssistantID
+        activeGenerationID = generationID
+        let modelID = currentModel.id
+        let searchEnabled = isWebSearchEnabled
         generationTask?.cancel()
         generationTask = Task { [weak self] in
             guard let self else { return }
             do {
-                let _: GenerationResult = try await client.action(
+                let result: GenerationResult = try await client.action(
                     "threads:generateReply",
                     with: [
                         "prompt": text,
-                        "model": currentModel.id,
-                        "searchEnabled": isWebSearchEnabled,
+                        "model": modelID,
+                        "searchEnabled": searchEnabled,
                     ]
                 )
+                guard activeGenerationID == generationID else { return }
+                localGenerationExpectedOrder = result.order
+                if hasObservedLocalGeneration(order: result.order) {
+                    localGenerationActive = false
+                    localGenerationExpectedOrder = nil
+                    localGenerationPreviousMaxOrder = nil
+                    localGenerationMessageID = nil
+                    isLoading = hasActiveObservedResponse(order: result.order)
+                }
             } catch {
                 guard !Task.isCancelled else { return }
+                guard activeGenerationID == generationID else { return }
+                localGenerationActive = false
+                localGenerationExpectedOrder = nil
+                localGenerationPreviousMaxOrder = nil
+                localGenerationMessageID = nil
+                activeGenerationID = nil
                 removeMessage(id: optimistic.id)
+                removeMessage(id: localAssistantID)
                 attachmentError = Self.userFacingMessage(for: error)
             }
-            isLoading = false
+            guard activeGenerationID == generationID else { return }
+            activeGenerationID = nil
         }
     }
 
     func cancelGeneration() {
         generationTask?.cancel()
         generationTask = nil
+        activeGenerationID = nil
+        localGenerationActive = false
+        localGenerationExpectedOrder = nil
+        localGenerationPreviousMaxOrder = nil
+        localGenerationMessageID = nil
         isLoading = false
         guard let client, let threadId = currentChat?.id else { return }
         let activeOrder = currentChat?.messages
@@ -230,12 +282,16 @@ final class ChatViewModel: ObservableObject {
 
     private func subscribe(using client: ConvexClientWithAuth<ConvexAuthSession>) {
         subscriptionTask?.cancel()
+        presentationTask?.cancel()
+        presentationTask = nil
+        presentationTaskID = nil
+        pendingMobileChat = nil
         subscriptionTask = Task { [weak self] in
             let updates = client.subscribe(to: "threads:getMobileChat", yielding: MobileChat.self).values
             do {
                 for try await mobileChat in updates {
                     guard !Task.isCancelled else { return }
-                    self?.apply(mobileChat)
+                    self?.enqueue(mobileChat)
                 }
             } catch {
                 self?.attachmentError = Self.userFacingMessage(for: error)
@@ -243,21 +299,137 @@ final class ChatViewModel: ObservableObject {
         }
     }
 
+    /// Limits view publication to a bounded cadence while allowing terminal
+    /// snapshots to appear immediately. The server remains authoritative; this
+    /// only separates transport burst frequency from rendering frequency.
+    private func enqueue(_ mobileChat: MobileChat) {
+        pendingMobileChat = mobileChat
+
+        if !hasActiveServerResponse(in: mobileChat) && !localGenerationActive {
+            presentationTask?.cancel()
+            presentationTask = nil
+            presentationTaskID = nil
+            pendingMobileChat = nil
+            apply(mobileChat)
+            return
+        }
+
+        guard presentationTask == nil else { return }
+        let taskID = UUID()
+        presentationTaskID = taskID
+        presentationTask = Task { @MainActor [weak self] in
+            defer {
+                if let self, self.presentationTaskID == taskID {
+                    self.presentationTask = nil
+                    self.presentationTaskID = nil
+                }
+            }
+
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 33_000_000)
+                guard !Task.isCancelled, let self else { return }
+                guard let next = self.pendingMobileChat else { return }
+                self.pendingMobileChat = nil
+                self.apply(next)
+
+                if self.pendingMobileChat == nil {
+                    return
+                }
+            }
+        }
+    }
+
     private func apply(_ mobileChat: MobileChat) {
+        if let expectedOrder = localGenerationExpectedOrder,
+           hasObservedLocalGeneration(in: mobileChat, order: expectedOrder) {
+            localGenerationActive = false
+            localGenerationExpectedOrder = nil
+            localGenerationPreviousMaxOrder = nil
+            localGenerationMessageID = nil
+        }
+
+        let hasActiveServerResponse = hasActiveServerResponse(in: mobileChat)
+        if hasActiveServerResponse {
+            isLoading = true
+        } else if localGenerationActive {
+            isLoading = true
+        } else {
+            isLoading = false
+        }
+
+        let previousMessagesByOrder = (currentChat?.messages ?? []).reduce(into: [Double: Message]()) { result, message in
+            guard message.role == .assistant, let order = messageOrders[message.id] else { return }
+            result[order] = message
+        }
         messageOrders = Dictionary(
             uniqueKeysWithValues: mobileChat.messages.map { ($0.id, $0.order) }
         )
-        let mapped = mobileChat.messages.map { item in
+        var activeMessageIds = Set<String>()
+        var mapped = mobileChat.messages.map { item in
+            let responseIsStreaming =
+                (item.status == "pending" || item.status == "streaming") &&
+                !isTerminal(item.response?.phase)
             var message = Message(
                 id: item.id,
                 role: item.isUser ? .user : .assistant,
                 content: item.text,
                 timestamp: Date(timeIntervalSince1970: item.createdAt / 1_000)
             )
-            message.isStreaming = item.status == "streaming"
-            message.responseActivity = item.response
+            message.isStreaming = responseIsStreaming
+            let response = item.response?.retainingReasoning(
+                from: previousMessagesByOrder[item.order]?.responseActivity
+            )
+            message.responseActivity = response
+            if let response {
+                let reasoning = response.parts
+                    .filter { (part: ResponsePart) in part.type == .reasoning }
+                    .compactMap(\.text)
+                    .joined(separator: "\n")
+                message.thoughts = reasoning.isEmpty ? nil : reasoning
+                message.isThinking = response.phase == .thinking
+                message.streamError = item.errorText ?? response.errorText
+                message.isRequestError = message.streamError != nil
+            } else if let errorText = item.errorText {
+                message.streamError = errorText
+                message.isRequestError = true
+            }
+            if !item.isUser {
+                activeMessageIds.insert(item.id)
+                message.contentChunks = contentChunks(
+                    for: item.id,
+                    content: item.text,
+                    isStreaming: responseIsStreaming
+                )
+            }
             return message
         }
+
+        // Keep the sent message and an explicit waiting response visible while
+        // the action result and the subscription snapshot cross in flight. The
+        // server remains authoritative once it publishes the generated order.
+        if localGenerationActive &&
+            !hasActiveServerResponse &&
+            !hasServerResponseForLocalGeneration(in: mobileChat) {
+            if let optimisticUser = currentChat?.messages.last(where: {
+                $0.role == .user && $0.id.hasPrefix("optimistic-")
+            }), !mapped.contains(where: { $0.role == .user && $0.content == optimisticUser.content }) {
+                mapped.append(optimisticUser)
+            }
+
+            if let localGenerationMessageID {
+                var waitingMessage = Message(
+                    id: localGenerationMessageID,
+                    role: .assistant,
+                    content: "",
+                    timestamp: Date()
+                )
+                waitingMessage.isStreaming = true
+                waitingMessage.responseActivity = ResponseActivity(phase: .waiting, tools: [])
+                mapped.append(waitingMessage)
+            }
+        }
+        streamingChunkers = streamingChunkers.filter { activeMessageIds.contains($0.key) }
+        streamingContent = streamingContent.filter { activeMessageIds.contains($0.key) }
         let title = mapped.first(where: { $0.role == .user })?.content
             .split(separator: " ")
             .prefix(5)
@@ -271,7 +443,98 @@ final class ChatViewModel: ObservableObject {
         )
         currentChat = chat
         chats = [chat]
-        scrollToBottomTrigger = UUID()
+    }
+
+    private func hasActiveServerResponse(in mobileChat: MobileChat) -> Bool {
+        mobileChat.messages.contains {
+            !$0.isUser &&
+            ($0.status == "pending" || $0.status == "streaming") &&
+            !isTerminal($0.response?.phase)
+        }
+    }
+
+    private func hasServerResponseForLocalGeneration(in mobileChat: MobileChat) -> Bool {
+        guard let optimisticText = currentChat?.messages.last(where: {
+            $0.role == .user && $0.id.hasPrefix("optimistic-")
+        })?.content,
+        let serverUser = mobileChat.messages.last(where: {
+            $0.isUser && $0.text == optimisticText
+        }) else {
+            return false
+        }
+
+        return mobileChat.messages.contains {
+            !$0.isUser && $0.order > serverUser.order
+        }
+    }
+
+    private func isTerminal(_ phase: ResponseActivity.Phase?) -> Bool {
+        switch phase {
+        case .complete, .stopped, .failed:
+            return true
+        case .waiting, .thinking, .tool, .responding, .unknown, .none:
+            return false
+        }
+    }
+
+    private func hasObservedLocalGeneration(order: Double) -> Bool {
+        let previousMaxOrder = localGenerationPreviousMaxOrder ?? -.infinity
+        return currentChat?.messages.contains { message in
+            guard message.role != .user,
+                  let messageOrder = messageOrders[message.id] else { return false }
+            return messageOrder >= order && messageOrder > previousMaxOrder
+        } ?? false
+    }
+
+    private func hasObservedLocalGeneration(in mobileChat: MobileChat, order: Double) -> Bool {
+        let previousMaxOrder = localGenerationPreviousMaxOrder ?? -.infinity
+        return mobileChat.messages.contains {
+            !$0.isUser && $0.order >= order && $0.order > previousMaxOrder
+        }
+    }
+
+    private func hasActiveObservedResponse(order: Double) -> Bool {
+        currentChat?.messages.contains(where: { (message: Message) in
+            guard message.role != .user,
+                  let messageOrder = messageOrders[message.id],
+                  messageOrder >= order else { return false }
+            if message.isStreaming { return true }
+            guard let phase = message.responseActivity?.phase else { return false }
+            switch phase {
+            case .waiting, .thinking, .tool, .responding, .unknown:
+                return true
+            case .complete, .stopped, .failed:
+                return false
+            }
+        }) ?? false
+    }
+
+    private func contentChunks(
+        for messageId: String,
+        content: String,
+        isStreaming: Bool
+    ) -> [ContentChunk] {
+        let previousContent = streamingContent[messageId] ?? ""
+        if !content.hasPrefix(previousContent) {
+            streamingChunkers[messageId] = StreamingMarkdownChunker()
+        }
+
+        let chunker = streamingChunkers[messageId] ?? StreamingMarkdownChunker()
+        if content.hasPrefix(previousContent) {
+            let delta = String(content.dropFirst(previousContent.count))
+            if !delta.isEmpty {
+                chunker.appendToken(delta)
+            }
+        } else if !content.isEmpty {
+            chunker.appendToken(content)
+        }
+
+        streamingContent[messageId] = content
+        if !isStreaming {
+            chunker.finalize()
+        }
+        streamingChunkers[messageId] = chunker
+        return chunker.getAllChunks()
     }
 
     private func replaceMessages(from index: Int, with rawText: String) {
@@ -284,6 +547,7 @@ final class ChatViewModel: ObservableObject {
               let order = messageOrders[messages[index].id] else { return }
 
         isLoading = true
+        localGenerationActive = true
         Task { [weak self] in
             guard let self else { return }
             do {
@@ -305,6 +569,9 @@ final class ChatViewModel: ObservableObject {
                 pendingAttachments = composingAttachments
                 pendingImageThumbnails = composingThumbnails
             } catch {
+                localGenerationActive = false
+                localGenerationPreviousMaxOrder = nil
+                localGenerationMessageID = nil
                 isLoading = false
                 attachmentError = Self.userFacingMessage(for: error)
             }
