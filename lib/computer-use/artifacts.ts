@@ -47,8 +47,23 @@ export function getScreenshot(id: string): ScreenshotArtifact | undefined {
   return item;
 }
 
+/**
+ * Prefer the deployment that actually holds the in-memory screenshot store.
+ * Preview builds often keep NEXT_PUBLIC_SITE_URL=https://vlad.chat, which 404s.
+ */
 export function screenshotPublicUrl(id: string): string {
-  const base = (process.env.NEXT_PUBLIC_SITE_URL || "").replace(/\/$/, "");
-  if (!base) return `/api/computer-use/screenshots/${id}`;
-  return `${base}/api/computer-use/screenshots/${id}`;
+  const path = `/api/computer-use/screenshots/${id}`;
+  const site = (process.env.NEXT_PUBLIC_SITE_URL || "").replace(/\/$/, "");
+  const vercel =
+    process.env.VERCEL_URL && !process.env.VERCEL_URL.startsWith("http")
+      ? `https://${process.env.VERCEL_URL}`
+      : (process.env.VERCEL_URL || "").replace(/\/$/, "");
+  const env = process.env.VERCEL_ENV || process.env.NODE_ENV;
+  // On Preview / non-production Vercel deploys, always use this deployment's host.
+  if (env === "preview" || (vercel && env !== "production")) {
+    return `${vercel}${path}`;
+  }
+  const base = site || vercel;
+  if (!base) return path;
+  return `${base}${path}`;
 }
