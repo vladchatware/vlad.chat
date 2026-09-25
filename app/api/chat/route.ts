@@ -5,7 +5,6 @@ import { api } from '@/convex/_generated/api';
 import { convexAuthNextjsToken } from '@convex-dev/auth/nextjs/server';
 import { fetchMutation, fetchQuery } from "convex/nextjs"
 import { NextResponse } from 'next/server';
-import { stripe } from '@/lib/stripe';
 
 export async function POST(req: Request) {
   const {
@@ -17,20 +16,23 @@ export async function POST(req: Request) {
 
   if (!user) return new NextResponse('no user present in session', { status: 403 })
 
-  if (!user.isAnonymous) {
-    if (!user.stripeId) {
-      const customer = await stripe.customers.create(({
-        email: user.email
-      }))
-      await fetchMutation(api.users.connect, { stripeId: customer.id }, { token: await convexAuthNextjsToken() })
-      user.stripeId = customer.id
-    }
-
-    if (user.trialTokens <= 0 && user.tokens <= 0) {
-      return new NextResponse('out of tokens', { status: 429 })
-    }
-  } else {
-    if (user.trialMessages! <= 0) return new NextResponse('no more messages left', { status: 429 })
+  // Admission gate: balance, premium access and usage caps are all checked
+  // BEFORE generation starts. Settlement (recordUsage) always accounts for
+  // completed work and never re-runs cap checks, so usage for billed upstream
+  // work is never discarded.
+  try {
+    await fetchMutation(api.users.usageGate, { model }, { token: await convexAuthNextjsToken() })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Request blocked.'
+    const status = message.includes('usage cap')
+      ? 429
+      : message.includes('subscription')
+        ? 404
+        : 429
+    return NextResponse.json(
+      { error: { message, type: 'invalid_request_error', code: status === 404 ? 'subscription_required' : 'insufficient_credits' } },
+      { status },
+    )
   }
 
   const notion = await createMCPClient({
