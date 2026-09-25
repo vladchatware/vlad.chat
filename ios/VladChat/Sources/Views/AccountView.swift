@@ -20,23 +20,18 @@ struct AccountView: View {
                         Text("Link Google or Apple to keep your chats when you switch devices.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
-                        Button {
-                            viewModel.linkGoogleAccount()
-                        } label: {
-                            HStack {
-                                Text("Continue with Google")
-                                Spacer()
-                                if viewModel.isLinkingAccount {
-                                    ProgressView()
-                                }
+                        VStack(spacing: 12) {
+                            GoogleOAuthButton(isEnabled: !viewModel.isLinkingAccount) {
+                                viewModel.linkGoogleAccount()
                             }
-                        }
-                        .disabled(viewModel.isLinkingAccount)
 
-                        AppleOAuthButton(isEnabled: !viewModel.isLinkingAccount) {
-                            viewModel.linkAppleAccount()
+                            AppleOAuthButton(isEnabled: !viewModel.isLinkingAccount) {
+                                viewModel.linkAppleAccount()
+                            }
+                            .frame(width: 188)
+                            .frame(height: 44)
                         }
-                        .frame(height: 44)
+                        .listRowSeparator(.hidden)
                     }
                 }
 
@@ -71,6 +66,25 @@ struct AccountView: View {
     }
 }
 
+private struct GoogleOAuthButton: View {
+    let isEnabled: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image("GoogleSignInButton")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 188, height: 44)
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .accessibilityLabel(Text("Sign in with Google"))
+        .accessibilityValue(isEnabled ? Text("") : Text("Connecting"))
+    }
+}
+
 private struct AppleOAuthButton: UIViewRepresentable {
     @Environment(\.colorScheme) private var colorScheme
 
@@ -79,7 +93,7 @@ private struct AppleOAuthButton: UIViewRepresentable {
 
     func makeUIView(context: Context) -> ASAuthorizationAppleIDButton {
         let style: ASAuthorizationAppleIDButton.Style = colorScheme == .dark ? .white : .black
-        let button = ASAuthorizationAppleIDButton(type: .continue, style: style)
+        let button = ASAuthorizationAppleIDButton(type: .signIn, style: style)
         button.cornerRadius = 8
         button.addTarget(context.coordinator, action: #selector(Coordinator.didTap), for: .touchUpInside)
         button.isEnabled = isEnabled
