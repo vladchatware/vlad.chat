@@ -35,6 +35,8 @@ apt-get update -qq
 apt-get install -y -qq --no-install-recommends \
   xvfb x11vnc novnc websockify python3-websockify fonts-liberation curl iproute2 scrot \
   libxi6 at-spi2-core dbus-x11 xdotool python3-tk \
+  python3-gi gir1.2-gtk-3.0 python3-gi-cairo \
+  python3-pil python3-xlib \
   >/dev/null
 rm -rf /var/lib/apt/lists/*
 for b in Xvfb x11vnc websockify curl; do
