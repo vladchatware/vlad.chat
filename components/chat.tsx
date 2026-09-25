@@ -28,6 +28,11 @@ import {
   ToolOutput,
   ToolInput,
 } from '@/components/ai-elements/tool';
+import { ComputerUseCard } from '@/components/computer-use-card';
+import {
+  isComputerToolName,
+  parseComputerToolResult,
+} from '@/lib/computer-use/parse-tool-result';
 import { Fragment, useEffect, useMemo, useRef, useState, useCallback, type ComponentProps } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useUIMessages } from '@convex-dev/agent/react';
@@ -447,6 +452,19 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                       (typeof part.type === 'string' && part.type.startsWith('tool-')
                         ? part.type.slice(5)
                         : part.type)
+
+                    const computerResult = isComputerToolName(rawToolName)
+                      ? parseComputerToolResult(part.output)
+                      : null
+                    if (computerResult) {
+                      return (
+                        <ComputerUseCard
+                          key={`${messageKey}-${partIndex}`}
+                          result={computerResult}
+                          toolName={rawToolName}
+                        />
+                      )
+                    }
 
                     const toolDisplayName = rawToolName?.includes('tavily')
                       ? 'Search'
