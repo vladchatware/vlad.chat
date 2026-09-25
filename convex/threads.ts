@@ -13,6 +13,7 @@ import { paginationOptsValidator } from "convex/server";
 import {
   abortStream,
   getThreadMetadata,
+  listMessages,
   listUIMessages,
   isStepCount,
   syncStreams,
@@ -30,7 +31,10 @@ import {
   type ToolSet,
 } from "ai";
 import { createMCPClient } from "@ai-sdk/mcp";
-import { mergeMobileStreamText } from "@/lib/mobile-stream";
+import {
+  mergeMobileStreamText,
+  projectStoredResponse,
+} from "@/lib/mobile-stream";
 
 export const listThreads = query({
   args: {
@@ -361,26 +365,54 @@ export const getDefaultThreadId = query({
 const mobileToolValidator = v.object({
   id: v.string(),
   name: v.string(),
-  status: v.union(
-    v.literal("running"),
-    v.literal("completed"),
-    v.literal("failed"),
-    v.literal("stopped"),
-  ),
+  title: v.optional(v.string()),
+  // Keep the wire boundary forward-compatible. Swift maps unknown values to
+  // an explicit neutral enum case instead of failing the whole subscription.
+  status: v.string(),
+  inputSummary: v.optional(v.string()),
   output: v.optional(v.string()),
+  outputTruncated: v.optional(v.boolean()),
+  errorText: v.optional(v.string()),
 });
 
+const mobileResponsePartValidator = v.union(
+  v.object({
+    id: v.string(),
+    type: v.union(v.literal("text"), v.literal("reasoning")),
+    text: v.string(),
+    state: v.union(v.literal("streaming"), v.literal("done")),
+  }),
+  v.object({
+    id: v.string(),
+    type: v.literal("source"),
+    sourceId: v.string(),
+    url: v.string(),
+    title: v.optional(v.string()),
+  }),
+  v.object({
+    id: v.string(),
+    type: v.literal("tool"),
+    tool: mobileToolValidator,
+  }),
+  // Unknown future part kinds remain decodable and can be ignored by older
+  // clients while known fields stay available for diagnostics.
+  v.object({
+    id: v.string(),
+    type: v.string(),
+    text: v.optional(v.string()),
+    state: v.optional(v.string()),
+    sourceId: v.optional(v.string()),
+    url: v.optional(v.string()),
+    title: v.optional(v.string()),
+    tool: v.optional(mobileToolValidator),
+  }),
+);
+
 const mobileResponseValidator = v.object({
-  phase: v.union(
-    v.literal("waiting"),
-    v.literal("thinking"),
-    v.literal("tool"),
-    v.literal("responding"),
-    v.literal("complete"),
-    v.literal("stopped"),
-    v.literal("failed"),
-  ),
+  phase: v.string(),
+  parts: v.array(mobileResponsePartValidator),
   tools: v.array(mobileToolValidator),
+  errorText: v.optional(v.string()),
 });
 
 const mobileMessageValidator = v.object({
@@ -391,6 +423,7 @@ const mobileMessageValidator = v.object({
   order: v.number(),
   createdAt: v.number(),
   response: v.optional(mobileResponseValidator),
+  errorText: v.optional(v.string()),
 });
 
 const mobileAccountValidator = v.object({
@@ -405,8 +438,8 @@ const mobileAccountValidator = v.object({
 /**
  * Small, stable transport shape for native clients.
  *
- * Agent UIMessage parts are intentionally flattened here. Swift should not need
- * to mirror the AI SDK's dynamic tool/content union to render basic chat history.
+ * Agent UIMessage parts are projected into a small ordered presentation model.
+ * Swift should not need to mirror the AI SDK's dynamic tool/content union.
  */
 export const getMobileChat = query({
   args: {},
@@ -435,19 +468,34 @@ export const getMobileChat = query({
       };
     }
 
-    const result = await listUIMessages(ctx, components.agent, {
-      threadId,
-      paginationOpts: { cursor: null, numItems: 100 },
-    });
+    const paginationOpts = { cursor: null, numItems: 100 };
+    const [result, canonicalResult] = await Promise.all([
+      listUIMessages(ctx, components.agent, { threadId, paginationOpts }),
+      listMessages(ctx, components.agent, { threadId, paginationOpts }),
+    ]);
+    const errorsByMessageID = new Map<string, string>();
+    for (const message of canonicalResult.page) {
+      if (message.error) {
+        errorsByMessageID.set(message._id, message.error);
+      }
+    }
 
-    const messages = result.page.map((message) => ({
-      id: message.key,
-      role: message.role,
-      text: message.text,
-      status: message.status,
-      order: message.order,
-      createdAt: message._creationTime,
-    }));
+    const messages = result.page.map((message) => {
+      const errorText = errorsByMessageID.get(message.id);
+      const response = message.role === "assistant"
+        ? projectStoredResponse(message.parts, message.status, errorText)
+        : undefined;
+      return {
+        id: message.key,
+        role: message.role,
+        text: message.text,
+        status: message.status,
+        order: message.order,
+        createdAt: message._creationTime,
+        ...(response ? { response } : {}),
+        ...(errorText ? { errorText } : {}),
+      };
+    });
     const activeStreams = await syncStreams(ctx, components.agent, {
       threadId,
       streamArgs: { kind: "list" },
@@ -589,7 +637,13 @@ export const generateReply = action({
         },
       },
       {
-        saveStreamDeltas: true,
+        // The native client renders from these durable deltas. Do not add a
+        // transport delay here; provider output should reach the subscription
+        // as soon as the SDK emits it.
+        saveStreamDeltas: {
+          chunking: "word",
+          throttleMs: 0,
+        },
         storageOptions: { saveMessages: "all" },
       },
     );

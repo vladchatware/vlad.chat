@@ -38,6 +38,12 @@
             ReferencedContainer = "container:VladChat.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
+      <TestPlans>
+         <TestPlanReference
+            reference = "container:TestPlan.xctestplan"
+            default = "YES">
+         </TestPlanReference>
+      </TestPlans>
       <Testables>
          <TestableReference
             skipped = "NO"
@@ -47,6 +53,16 @@
                BlueprintIdentifier = "5F4EFEE3BA068592B87D5F61"
                BuildableName = "VladChatTests.xctest"
                BlueprintName = "VladChatTests"
+               ReferencedContainer = "container:VladChat.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "698DF4F7CAAFF39E1943B9E5"
+               BuildableName = "VladChatUITests.xctest"
+               BlueprintName = "VladChatUITests"
                ReferencedContainer = "container:VladChat.xcodeproj">
             </BuildableReference>
          </TestableReference>

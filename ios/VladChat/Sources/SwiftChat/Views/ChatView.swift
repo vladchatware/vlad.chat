@@ -18,7 +18,6 @@ struct ChatContainer: View {
     @EnvironmentObject private var viewModel: ChatViewModel
 
     @State private var messageText = ""
-
     var body: some View {
         NavigationStack {
             ChatListView(
@@ -29,8 +28,9 @@ struct ChatContainer: View {
             )
                 .background(Color.chatBackground(isDarkMode: colorScheme == .dark))
                 .ignoresSafeArea(edges: .top)
+                .tint(colorScheme == .dark ? .white : .black)
                 .navigationBarTitleDisplayMode(.inline)
-                .applyTransparentToolbarIfAvailable()
+                .applySystemGlassToolbarIfAvailable()
                 .toolbar {
                     ToolbarItem(placement: .principal) {
                         VladIdentityHeader()
@@ -44,7 +44,7 @@ struct ChatContainer: View {
         .onChange(of: colorScheme) { _, _ in
             setupNavigationBarAppearance()
         }
-        .fullScreenCover(isPresented: $viewModel.showImageViewer) {
+            .fullScreenCover(isPresented: $viewModel.showImageViewer) {
             ImageViewerOverlay(
                 images: viewModel.imageViewerImages,
                 initialIndex: viewModel.imageViewerIndex,
@@ -55,18 +55,13 @@ struct ChatContainer: View {
 
     /// Configure navigation bar appearance
     private func setupNavigationBarAppearance() {
-        if #available(iOS 26, *) {
-            let appearance = UINavigationBarAppearance()
-            appearance.configureWithTransparentBackground()
-            appearance.shadowColor = .clear
-            updateAllNavigationBars(with: appearance)
-        } else {
-            let appearance = UINavigationBarAppearance()
-            appearance.configureWithOpaqueBackground()
-            appearance.backgroundColor = colorScheme == .dark ? UIColor(Color.backgroundPrimary) : .white
-            appearance.shadowColor = .clear
-            updateAllNavigationBars(with: appearance)
-        }
+        guard #unavailable(iOS 26) else { return }
+
+        let appearance = UINavigationBarAppearance()
+        appearance.configureWithOpaqueBackground()
+        appearance.backgroundColor = colorScheme == .dark ? UIColor(Color.backgroundPrimary) : .white
+        appearance.shadowColor = .clear
+        updateAllNavigationBars(with: appearance)
     }
 
     private func updateAllNavigationBars(with appearance: UINavigationBarAppearance) {
@@ -149,7 +144,7 @@ struct WelcomeView: View {
             Text("Hello, I am Vlad a software developer.")
 
             Text(.init("Check out my [shop](https://shop.vlad.chat/) or listen to some [music](https://music.vlad.chat/)."))
-                .tint(.accentColor)
+                .tint(isDarkMode ? .white : .black)
         }
         .font(.body)
         .foregroundStyle(isDarkMode ? Color.white : Color.primary)
@@ -186,9 +181,9 @@ extension View {
     }
 
     @ViewBuilder
-    func applyTransparentToolbarIfAvailable() -> some View {
+    func applySystemGlassToolbarIfAvailable() -> some View {
         if #available(iOS 26, *) {
-            self.toolbarBackground(.hidden, for: .navigationBar)
+            self.toolbarBackground(.visible, for: .navigationBar)
         } else {
             self
         }

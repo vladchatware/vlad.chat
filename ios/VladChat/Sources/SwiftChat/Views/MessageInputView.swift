@@ -139,24 +139,14 @@ struct MessageInputView: View {
                                      onSendMessage: submitMessage)
                         .frame(height: textHeight)
                         .padding(.horizontal)
+                        .accessibilityIdentifier("messageInput")
 
                     HStack {
                         attachButton
                         webSearchButton
                         Spacer()
 
-                        Button(action: sendOrCancelMessage) {
-                            Image(systemName: viewModel.isLoading ? "stop.fill" : "arrow.up")
-                                .font(.system(size: 16, weight: .semibold))
-                                .frame(width: 24, height: 24)
-                                .foregroundColor(isDarkMode ? Color.sendButtonForegroundDark : Color.sendButtonForegroundLight)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .buttonBorderShape(.circle)
-                        .glassEffect(.regular.interactive(), in: .circle)
-                        .clipShape(.circle)
-                        .tint(isDarkMode ? Color.sendButtonBackgroundDark : Color.sendButtonBackgroundLight)
-                        .padding(.trailing, 8)
+                        sendButton
                     }
                     .padding(.vertical, 8)
                 }
@@ -192,17 +182,7 @@ struct MessageInputView: View {
                         webSearchButton
                         Spacer()
 
-                        Button(action: sendOrCancelMessage) {
-                            ZStack {
-                                Circle()
-                                    .fill(isDarkMode ? Color.sendButtonBackgroundDark : Color.sendButtonBackgroundLight)
-                                    .frame(width: 32, height: 32)
-                                Image(systemName: viewModel.isLoading ? "stop.fill" : "arrow.up")
-                                    .font(.system(size: 16, weight: .semibold))
-                                    .foregroundColor(isDarkMode ? Color.sendButtonForegroundDark : Color.sendButtonForegroundLight)
-                            }
-                        }
-                        .padding(.trailing, 8)
+                        sendButton
                     }
                     .padding(.vertical, 8)
                 }
@@ -214,6 +194,17 @@ struct MessageInputView: View {
             .padding(.horizontal, 12)
             .padding(.bottom, isKeyboardVisible ? 12 : 0)
         }
+    }
+
+    private var sendButton: some View {
+        Button(action: sendOrCancelMessage) {
+            Image(systemName: viewModel.isLoading ? "stop.fill" : "arrow.up")
+        }
+        .buttonStyle(ComposerIconButtonStyle(isProminent: true, isDarkMode: isDarkMode))
+        .padding(.trailing, 8)
+        .accessibilityLabel(viewModel.isLoading ? "Stop generation" : "Send message")
+        .accessibilityValue(messageText.isEmpty ? "Empty" : "Ready")
+        .accessibilityIdentifier(viewModel.isLoading ? "stopGenerationButton" : "sendMessageButton")
     }
 
     @ViewBuilder
@@ -232,31 +223,16 @@ struct MessageInputView: View {
 
     @ViewBuilder
     private var webSearchButton: some View {
-        Button(action: {
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                viewModel.isWebSearchEnabled.toggle()
-                settings.webSearchEnabled = viewModel.isWebSearchEnabled
-            }
-        }) {
-            if viewModel.isWebSearchEnabled {
-                HStack(spacing: 6) {
-                    Image(systemName: "globe")
-                        .font(.system(size: 14, weight: .semibold))
-                    Text("Web Search")
-                        .font(.system(size: 12, weight: .semibold))
+        WebSearchToggleButton(
+            isEnabled: viewModel.isWebSearchEnabled,
+            isDarkMode: isDarkMode,
+            onToggle: {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    viewModel.isWebSearchEnabled.toggle()
+                    settings.webSearchEnabled = viewModel.isWebSearchEnabled
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(Color.secondary.opacity(0.15))
-                .clipShape(Capsule())
-                .foregroundColor(.blue)
-            } else {
-                Image(systemName: "globe")
-                    .font(.system(size: 20))
-                    .foregroundColor(.secondary)
-                    .frame(width: 24, height: 24)
             }
-        }
+        )
         .padding(.leading, 8)
     }
 
@@ -367,6 +343,64 @@ struct MessageInputView: View {
                 }
             }
         }
+    }
+}
+
+/// Shared geometry and surface for composer actions, independent of system button padding.
+private struct ComposerIconButtonStyle: ButtonStyle {
+    let isProminent: Bool
+    let isDarkMode: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 16, weight: .semibold))
+            .frame(width: Theme.Dimensions.controlHitTarget, height: Theme.Dimensions.controlHitTarget)
+            .background(
+                Circle()
+                    .fill(
+                        isProminent
+                            ? (isDarkMode ? Color.sendButtonBackgroundDark : Color.sendButtonBackgroundLight)
+                            : Color.actionButtonBackground(isDarkMode: isDarkMode)
+                    )
+            )
+            .foregroundStyle(
+                isProminent
+                    ? (isDarkMode ? Color.sendButtonForegroundDark : Color.sendButtonForegroundLight)
+                    : (isDarkMode ? Color.white.opacity(0.72) : Color.black.opacity(0.62))
+            )
+            .contentShape(Circle())
+            .opacity(configuration.isPressed ? 0.8 : 1)
+    }
+}
+
+/// Stable, neutral web-search toggle shared by the composer and the debug gallery.
+struct WebSearchToggleButton: View {
+    let isEnabled: Bool
+    let isDarkMode: Bool
+    let accessibilityIdentifier: String
+    let onToggle: () -> Void
+
+    init(
+        isEnabled: Bool,
+        isDarkMode: Bool,
+        accessibilityIdentifier: String = "webSearchToggle",
+        onToggle: @escaping () -> Void
+    ) {
+        self.isEnabled = isEnabled
+        self.isDarkMode = isDarkMode
+        self.accessibilityIdentifier = accessibilityIdentifier
+        self.onToggle = onToggle
+    }
+
+    var body: some View {
+        Button(action: onToggle) {
+            Image(systemName: "globe")
+        }
+        .buttonStyle(ComposerIconButtonStyle(isProminent: isEnabled, isDarkMode: isDarkMode))
+        .accessibilityLabel("Web search")
+        .accessibilityIdentifier(accessibilityIdentifier)
+        .accessibilityValue(isEnabled ? "On" : "Off")
+        .accessibilityAddTraits(isEnabled ? .isSelected : [])
     }
 }
 
@@ -492,7 +526,7 @@ struct ModelCard: View {
                     }
                     if isSelected {
                         RoundedRectangle(cornerRadius: 16)
-                            .fill(Color.accentPrimary.opacity(0.15))
+                            .fill((isDarkMode ? Color.white : Color.black).opacity(0.12))
                     }
                     if !isSelected {
                         RoundedRectangle(cornerRadius: 16)
@@ -503,12 +537,12 @@ struct ModelCard: View {
                             HStack {
                                 Spacer()
                                 Circle()
-                                    .fill(Color.accentPrimary)
+                                    .fill(isDarkMode ? Color.white : Color.black)
                                     .frame(width: 16, height: 16)
                                     .overlay(
                                         Image(systemName: "checkmark")
                                             .font(.system(size: 9, weight: .bold))
-                                            .foregroundColor(.white)
+                                            .foregroundColor(isDarkMode ? Color.black : Color.white)
                                     )
                             }
                             Spacer()
@@ -536,6 +570,7 @@ struct CustomTextEditor: UIViewRepresentable {
 
     func makeUIView(context: Context) -> UITextView {
         let textView = UITextView()
+        textView.accessibilityIdentifier = "messageInput"
         textView.delegate = context.coordinator
         textView.font = UIFont.preferredFont(forTextStyle: .body)
         textView.backgroundColor = .clear
@@ -546,7 +581,9 @@ struct CustomTextEditor: UIViewRepresentable {
         textView.scrollsToTop = false
         textView.textContainerInset = UIEdgeInsets(top: 16, left: 2, bottom: 8, right: 5)
         textView.textContainer.lineFragmentPadding = 0
-        textView.tintColor = UIColor.systemBlue
+        textView.tintColor = UIColor { traitCollection in
+            traitCollection.userInterfaceStyle == .dark ? .white : .black
+        }
 
         if text.isEmpty {
             textView.text = placeholderText

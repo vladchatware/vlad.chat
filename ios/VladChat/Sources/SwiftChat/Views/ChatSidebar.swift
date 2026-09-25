@@ -209,7 +209,7 @@ struct ChatListItem: View {
 
                             if chat.isBlankChat {
                                 Circle()
-                                    .fill(Color.blue)
+                                    .fill(Color.secondary)
                                     .frame(width: 8, height: 8)
                             }
 
