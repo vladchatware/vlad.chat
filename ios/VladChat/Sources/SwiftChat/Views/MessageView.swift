@@ -87,8 +87,8 @@ struct MessageView: View {
                         // Show loading dots only before any tool activity or web search
                         if message.responseActivity?.isDisplayable != true,
                            message.webSearchState == nil || message.webSearchState?.status != .searching {
-                            Text("Thinking")
-                                .font(.system(size: 15))
+                            Text("Thinking…")
+                                .font(Theme.Typography.thinkingLabel)
                                 .foregroundColor(isDarkMode ? .white.opacity(0.8) : Color.black.opacity(0.7))
                                 .modifier(TextPulseAnimation())
                         }
@@ -297,19 +297,20 @@ struct MessageView: View {
                 }
 
                 }
-                .padding(.vertical, message.role == .user && message.content.isEmpty ? 0 : 8)
-                .padding(.horizontal, message.role == .user && !message.content.isEmpty ? 12 : 0)
+                .padding(.vertical, message.role == .user && message.content.isEmpty ? 0 : Theme.Dimensions.paddingSmall)
+                .padding(.horizontal, message.role == .user && !message.content.isEmpty ? Theme.Dimensions.paddingMedium : 0)
                 .background {
                     if message.role == .user && !message.content.isEmpty {
                         if #available(iOS 26, *) {
-                            RoundedRectangle(cornerRadius: 16)
+                            RoundedRectangle(cornerRadius: Theme.Dimensions.bubbleCornerRadius, style: .continuous)
                                 .fill(.thickMaterial)
                         } else {
-                            Color.userMessageBackground(isDarkMode: isDarkMode)
+                            RoundedRectangle(cornerRadius: Theme.Dimensions.bubbleCornerRadius, style: .continuous)
+                                .fill(Color.userMessageBackground(isDarkMode: isDarkMode))
                         }
                     }
                 }
-                .cornerRadius(16)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Dimensions.bubbleCornerRadius, style: .continuous))
                 .modifier(MessageBubbleModifier(isUserMessage: message.role == .user))
                 .contextMenu {
                     if message.role == .user && !message.content.isEmpty {
@@ -865,7 +866,7 @@ struct MessageBubbleModifier: ViewModifier {
             if isUserMessage {
                 content
                     // User messages get adaptive width based on content with minimum width
-                    .frame(minWidth: 60, idealWidth: nil, maxWidth: max(60, UIScreen.main.bounds.width * 0.85), alignment: .trailing)
+                    .frame(minWidth: 60, idealWidth: nil, maxWidth: max(60, UIScreen.main.bounds.width * Theme.Dimensions.userBubbleMaxWidthFraction), alignment: .trailing)
                     .frame(maxWidth: .infinity, alignment: .trailing)
             } else {
                 content
@@ -948,8 +949,8 @@ struct CollapsibleThinkingBox: View {
                             .truncationMode(.tail)
                             .modifier(TextPulseAnimation())
                     } else {
-                        Text("Thinking")
-                            .font(.system(size: 16))
+                        Text("Thinking…")
+                            .font(Theme.Typography.thinkingLabel)
                             .foregroundColor(isDarkMode ? .white : Color.black.opacity(0.8))
                             .modifier(TextPulseAnimation())
                     }
@@ -1092,17 +1093,17 @@ struct AssistantActivityView: View {
 
     private var thinkingShimmer: some View {
         Text(phaseLabel)
-            .font(.system(size: 15))
+            .font(Theme.Typography.thinkingLabel)
             .foregroundColor(isDarkMode ? .white.opacity(0.8) : Color.black.opacity(0.7))
             .modifier(TextPulseAnimation())
     }
 
     private var phaseLabel: String {
         switch activity.phase {
-        case .thinking: return "Thinking"
-        case .tool: return "Using tools"
-        case .responding: return "Responding"
-        default: return "Thinking"
+        case .thinking: return "Thinking…"
+        case .tool: return "Using tools…"
+        case .responding: return "Responding…"
+        default: return "Thinking…"
         }
     }
 
@@ -1147,7 +1148,8 @@ struct OrderedResponsePartsView: View {
             }
 
             if isStreaming && fallbackContent.isEmpty && !hasVisiblePartContent && activity.phase != .complete && activity.phase != .stopped && activity.phase != .failed {
-                Text("Thinking")
+                Text("Thinking…")
+                    .font(Theme.Typography.thinkingLabel)
                     .foregroundColor(isDarkMode ? .white.opacity(0.8) : Color.black.opacity(0.7))
                     .modifier(TextPulseAnimation())
             }
@@ -1347,7 +1349,7 @@ struct ToolCallRow: View {
         switch tool.status {
         case .pending: return isDarkMode ? .white.opacity(0.55) : Color.black.opacity(0.45)
         case .running: return isDarkMode ? .white.opacity(0.7) : Color.black.opacity(0.6)
-        case .completed: return .green
+        case .completed: return isDarkMode ? .white.opacity(0.62) : Color.black.opacity(0.5)
         case .failed: return .red
         case .stopped: return .orange
         case .unknown: return isDarkMode ? .white.opacity(0.55) : Color.black.opacity(0.45)
@@ -1367,6 +1369,11 @@ struct ToolCallRow: View {
         if normalizedName.contains("notion") {
             return "Notion"
         }
+        if normalizedName.hasPrefix("computer_") {
+            return tool.computerResult?.op.displayTitle
+                ?? ComputerToolOp(rawValue: normalizedName.replacingOccurrences(of: "computer_", with: ""))?.displayTitle
+                ?? "Computer use"
+        }
 
         return tool.name
             .replacingOccurrences(of: "_", with: " ")
@@ -1377,6 +1384,19 @@ struct ToolCallRow: View {
     }
 
     var body: some View {
+        if tool.isComputerUseTool {
+            ComputerUseToolCard(
+                tool: tool,
+                result: tool.computerResult,
+                isDarkMode: isDarkMode,
+                isStreaming: isStreaming
+            )
+        } else {
+            genericToolRow
+        }
+    }
+
+    private var genericToolRow: some View {
         HStack(alignment: .top, spacing: Theme.Dimensions.relatedItemSpacing) {
             Image(systemName: symbol)
                 .font(.system(size: 13, weight: .semibold))
@@ -1386,10 +1406,10 @@ struct ToolCallRow: View {
             VStack(alignment: .leading, spacing: Theme.Dimensions.compactItemSpacing) {
                 HStack(spacing: Theme.Dimensions.compactItemSpacing) {
                     Text(displayName)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(Theme.Typography.activityTitle)
                         .foregroundColor(isDarkMode ? .white.opacity(0.9) : Color.black.opacity(0.8))
                     Text(statusLabel)
-                        .font(.system(size: 11, weight: .medium))
+                        .font(Theme.Typography.caption)
                         .foregroundColor(isDarkMode ? .white.opacity(0.52) : Color.black.opacity(0.5))
                     if tool.status == .running {
                         InlineLoadingDotsView(isDarkMode: isDarkMode)
@@ -1398,7 +1418,7 @@ struct ToolCallRow: View {
 
                 if let inputSummary = tool.inputSummary, !inputSummary.isEmpty {
                     Text(inputSummary)
-                        .font(.system(size: 12))
+                        .font(Theme.Typography.activitySecondary)
                         .foregroundColor(isDarkMode ? .white.opacity(0.62) : Color.black.opacity(0.58))
                         .lineLimit(2)
                         .truncationMode(.tail)
@@ -1406,7 +1426,7 @@ struct ToolCallRow: View {
 
                 if let output = tool.output, !output.isEmpty {
                     Text(preview(output))
-                        .font(.system(size: 12))
+                        .font(Theme.Typography.activitySecondary)
                         .foregroundColor(isDarkMode ? .white.opacity(0.55) : Color.black.opacity(0.55))
                         .lineLimit(3)
                         .truncationMode(.tail)
@@ -1415,13 +1435,13 @@ struct ToolCallRow: View {
 
                 if tool.outputTruncated == true {
                     Text("Preview truncated")
-                        .font(.system(size: 11))
+                        .font(Theme.Typography.caption)
                         .foregroundColor(isDarkMode ? .white.opacity(0.48) : Color.black.opacity(0.48))
                 }
 
                 if let errorText = tool.errorText, !errorText.isEmpty {
                     Text(errorText)
-                        .font(.system(size: 12))
+                        .font(Theme.Typography.activitySecondary)
                         .foregroundColor(.red.opacity(0.82))
                         .lineLimit(2)
                         .truncationMode(.tail)
@@ -1434,11 +1454,8 @@ struct ToolCallRow: View {
                 .font(.system(size: 11, weight: .medium))
                 .foregroundColor(isDarkMode ? .white.opacity(0.38) : Color.black.opacity(0.38))
         }
-        .padding(Theme.Dimensions.paddingMedium)
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(isDarkMode ? Color.white.opacity(0.06) : Color.black.opacity(0.04))
-        )
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .activityCard(isDarkMode: isDarkMode)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityLabel(displayName)
@@ -1486,30 +1503,40 @@ struct ToolOutputSheet: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: Theme.Dimensions.responseSectionSpacing) {
-                    if let inputSummary = tool.inputSummary, !inputSummary.isEmpty {
-                        Text(inputSummary)
-                            .font(.system(.subheadline))
-                            .foregroundColor(isDarkMode ? .white.opacity(0.65) : Color.black.opacity(0.6))
-                    }
+                Group {
+                    if tool.isComputerUseTool {
+                        ComputerUseDetailContent(
+                            tool: tool,
+                            result: tool.computerResult,
+                            isDarkMode: isDarkMode
+                        )
+                    } else {
+                        VStack(alignment: .leading, spacing: Theme.Dimensions.responseSectionSpacing) {
+                            if let inputSummary = tool.inputSummary, !inputSummary.isEmpty {
+                                Text(inputSummary)
+                                    .font(.system(.subheadline))
+                                    .foregroundColor(isDarkMode ? .white.opacity(0.65) : Color.black.opacity(0.6))
+                            }
 
-                    Text(tool.output ?? tool.errorText ?? "No output yet.")
-                        .font(.system(.body, design: .monospaced))
-                        .foregroundColor(tool.errorText == nil
-                            ? (isDarkMode ? .white.opacity(0.9) : Color.black.opacity(0.8))
-                            : .red.opacity(0.82))
-                        .textSelection(.enabled)
+                            Text(tool.output ?? tool.errorText ?? "No output yet.")
+                                .font(.system(.body, design: .monospaced))
+                                .foregroundColor(tool.errorText == nil
+                                    ? (isDarkMode ? .white.opacity(0.9) : Color.black.opacity(0.8))
+                                    : .red.opacity(0.82))
+                                .textSelection(.enabled)
 
-                    if tool.outputTruncated == true {
-                        Text("Preview truncated")
-                            .font(.system(.footnote))
-                            .foregroundColor(isDarkMode ? .white.opacity(0.55) : Color.black.opacity(0.55))
+                            if tool.outputTruncated == true {
+                                Text("Preview truncated")
+                                    .font(.system(.footnote))
+                                    .foregroundColor(isDarkMode ? .white.opacity(0.55) : Color.black.opacity(0.55))
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(16)
+                .padding(Theme.Dimensions.paddingLarge)
             }
-            .navigationTitle(tool.title ?? tool.name.replacingOccurrences(of: "_", with: " "))
+            .navigationTitle(sheetTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -1517,6 +1544,15 @@ struct ToolOutputSheet: View {
                 }
             }
         }
+    }
+
+    private var sheetTitle: String {
+        if let title = tool.title, !title.isEmpty { return title }
+        if tool.isComputerUseTool {
+            return tool.computerResult?.op.displayTitle
+                ?? tool.name.replacingOccurrences(of: "_", with: " ").capitalized
+        }
+        return tool.name.replacingOccurrences(of: "_", with: " ")
     }
 }
 

@@ -102,4 +102,61 @@ struct VladChatTests {
         #expect(retained.parts.map(\.id) == [reasoning.id, finalText.id])
         #expect(retained.parts.filter { $0.type == .reasoning }.count == 1)
     }
+
+    @Test func computerToolResultParsesScreenshotAndHandoff() throws {
+        let screenshotJSON = """
+        {"ok":true,"op":"screenshot","url":"https://example.com","title":"Example","screenshotUrl":"https://cdn.example/shot.png","screenshotId":"abc","mimeType":"image/png","width":1280,"height":720}
+        """
+        let shot = ComputerToolResult.parse(from: screenshotJSON)
+        #expect(shot?.ok == true)
+        #expect(shot?.op == .screenshot)
+        #expect(shot?.hasScreenshot == true)
+        #expect(shot?.screenshotUrl == "https://cdn.example/shot.png")
+
+        let handoffJSON = """
+        {"ok":false,"op":"act","handoff":{"type":"computer_handoff","reason":"sso","message":"Sign in to continue.","requiresUser":true},"error":"Sign in to continue."}
+        """
+        let handoff = ComputerToolResult.parse(from: handoffJSON)
+        #expect(handoff?.hasHandoff == true)
+        #expect(handoff?.handoff?.reason == .sso)
+        #expect(handoff?.handoff?.requiresUser == true)
+
+        let tool = ResponseTool(
+            id: "t1",
+            name: "computer_screenshot",
+            status: .completed,
+            output: screenshotJSON,
+            title: nil,
+            inputSummary: nil,
+            outputTruncated: nil,
+            errorText: nil
+        )
+        #expect(tool.isComputerUseTool)
+        #expect(tool.computerResult?.hasScreenshot == true)
+    }
+
+    @Test func computerToolResultIgnoresNonJSONOutput() {
+        #expect(ComputerToolResult.parse(from: "plain text") == nil)
+        #expect(ComputerToolResult.parse(from: nil) == nil)
+        let tool = ResponseTool(
+            id: "t2",
+            name: "web_search",
+            status: .completed,
+            output: "three sources",
+            title: "Search",
+            inputSummary: "query: cats",
+            outputTruncated: nil,
+            errorText: nil
+        )
+        #expect(tool.isComputerUseTool == false)
+    }
+
+    @Test func unknownHandoffReasonFallsBackGracefully() throws {
+        let json = """
+        {"ok":false,"op":"handoff","handoff":{"type":"computer_handoff","reason":"future_reason","message":"Do the thing.","requiresUser":true}}
+        """.data(using: .utf8)!
+        let result = try JSONDecoder().decode(ComputerToolResult.self, from: json)
+        #expect(result.handoff?.reason == .unknown)
+        #expect(result.op == .handoff)
+    }
 }

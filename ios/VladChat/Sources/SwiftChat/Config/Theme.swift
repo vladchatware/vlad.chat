@@ -43,7 +43,8 @@ enum Theme {
         // Layout roles. Components should use these names instead of inventing
         // a second spacing scale for equivalent content.
         static let transcriptGutter: CGFloat = 16
-        static let messageGroupSpacing: CGFloat = 24
+        /// Vertical rhythm between consecutive messages — looser, Grok-like trail.
+        static let messageGroupSpacing: CGFloat = 28
         static let responseSectionSpacing: CGFloat = 12
         static let relatedItemSpacing: CGFloat = 8
         static let compactItemSpacing: CGFloat = 4
@@ -55,6 +56,23 @@ enum Theme {
         static let cornerRadiusSmall: CGFloat = 8
         static let cornerRadiusMedium: CGFloat = 12
         static let cornerRadiusLarge: CGFloat = 16
+        /// User bubble — slightly rounder than activity cards.
+        static let bubbleCornerRadius: CGFloat = 18
+        /// Tool / search / computer-use cards share this radius.
+        static let activityCardCornerRadius: CGFloat = 14
+        /// Floating composer capsule.
+        static let composerCornerRadius: CGFloat = 26
+        /// Max width fraction for user bubbles (assistant stays full gutter).
+        static let userBubbleMaxWidthFraction: CGFloat = 0.78
+    }
+
+    // MARK: - Typography
+    enum Typography {
+        static let activityTitle = Font.system(size: 13, weight: .semibold)
+        static let activitySecondary = Font.system(size: 12, weight: .regular)
+        static let caption = Font.system(size: 11, weight: .medium)
+        static let thinkingLabel = Font.system(size: 15, weight: .medium)
+        static let composerBody = Font.system(.body)
     }
 
     // MARK: - Animations
@@ -64,6 +82,8 @@ enum Theme {
         static let mediumDuration: Double = 0.3
         static let longDuration: Double = 0.6
         static let copyFeedbackDuration: Double = 1.5
+        /// Shimmer sweep target (matches web ~1.5s).
+        static let shimmerDuration: Double = 1.5
 
         // Spring animations used in various places
         static let springResponse: Double = 0.3

@@ -140,7 +140,7 @@ struct WelcomeView: View {
     let isDarkMode: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Theme.Dimensions.responseSectionSpacing) {
             Text("Hello, I am Vlad a software developer.")
 
             Text(.init("Check out my [shop](https://shop.vlad.chat/) or listen to some [music](https://music.vlad.chat/)."))
@@ -149,9 +149,9 @@ struct WelcomeView: View {
         .font(.body)
         .foregroundStyle(isDarkMode ? Color.white : Color.primary)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 16)
-        .padding(.top, 24)
-        .padding(.bottom, 4)
+        .padding(.horizontal, Theme.Dimensions.transcriptGutter)
+        .padding(.top, Theme.Dimensions.paddingExtraLarge)
+        .padding(.bottom, Theme.Dimensions.paddingExtraSmall)
     }
 }
 

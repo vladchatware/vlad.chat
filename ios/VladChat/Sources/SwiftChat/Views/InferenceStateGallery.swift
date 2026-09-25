@@ -688,9 +688,87 @@ private struct InferenceStateFixture: Identifiable {
             ),
             isStreaming: false
         ),
+        InferenceStateFixture(
+            id: "computer-screenshot",
+            title: "Computer screenshot",
+            description: "V-83 screenshotUrl card — thumbnail, not live VNC.",
+            activity: ResponseActivity(
+                phase: .tool,
+                tools: [computerScreenshotTool()],
+                parts: [toolPart(computerScreenshotTool())]
+            ),
+            isStreaming: false
+        ),
+        InferenceStateFixture(
+            id: "computer-handoff",
+            title: "Computer handoff",
+            description: "Structured computer_handoff banner for SSO / 2FA / captcha.",
+            activity: ResponseActivity(
+                phase: .tool,
+                tools: [computerHandoffTool()],
+                parts: [toolPart(computerHandoffTool())]
+            ),
+            isStreaming: false
+        ),
+        InferenceStateFixture(
+            id: "computer-running",
+            title: "Computer running",
+            description: "In-progress browser action before screenshot returns.",
+            activity: ResponseActivity(
+                phase: .tool,
+                tools: [
+                    ResponseTool(
+                        id: "call-computer-running",
+                        name: "computer_act",
+                        status: .running,
+                        output: nil,
+                        title: "Browser action",
+                        inputSummary: "click (640, 360)",
+                        outputTruncated: nil,
+                        errorText: nil
+                    )
+                ],
+                parts: []
+            ),
+            isStreaming: true
+        ),
     ]
 
+
+    private static func computerScreenshotTool() -> ResponseTool {
+        let output = """
+        {"ok":true,"op":"screenshot","url":"https://example.com/docs","title":"Example Docs","screenshotUrl":"https://picsum.photos/seed/vladchat-v85/1280/720","screenshotId":"shot_demo","mimeType":"image/png","width":1280,"height":720,"budget":{"stepsUsed":3,"stepsRemaining":17,"maxSteps":20,"ttlMs":480000,"elapsedMs":12000,"note":"demo"}}
+        """
+        return ResponseTool(
+            id: "call-computer-shot",
+            name: "computer_screenshot",
+            status: .completed,
+            output: output,
+            title: "Screenshot",
+            inputSummary: nil,
+            outputTruncated: false,
+            errorText: nil
+        )
+    }
+
+    private static func computerHandoffTool() -> ResponseTool {
+        let output = """
+        {"ok":false,"op":"handoff","handoff":{"type":"computer_handoff","reason":"2fa","message":"Enter the verification code to continue.","requiresUser":true},"error":"Enter the verification code to continue."}
+        """
+        return ResponseTool(
+            id: "call-computer-handoff",
+            name: "computer_handoff",
+            status: .failed,
+            output: output,
+            title: "Needs you",
+            inputSummary: nil,
+            outputTruncated: false,
+            errorText: "Enter the verification code to continue."
+        )
+    }
+
     private static func searchTool(id: String = "call-search", status: ResponseTool.Status) -> ResponseTool {
+
         ResponseTool(
             id: id,
             name: "web_search",
