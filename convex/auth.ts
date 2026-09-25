@@ -7,9 +7,12 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
   providers: [Anonymous, Google],
   callbacks: {
     async redirect({ redirectTo }) {
-      if (redirectTo.startsWith("vladchat://")) return redirectTo;
+      const destination = new URL(redirectTo);
+      if (destination.protocol === "vladchat:" && destination.host === "auth") {
+        return redirectTo;
+      }
       const siteUrl = process.env.SITE_URL;
-      if (siteUrl && redirectTo.startsWith(siteUrl)) return redirectTo;
+      if (siteUrl && destination.origin === new URL(siteUrl).origin) return redirectTo;
       throw new Error("Invalid authentication redirect URL");
     },
     async afterUserCreatedOrUpdated(ctx: MutationCtx, { userId }) {
