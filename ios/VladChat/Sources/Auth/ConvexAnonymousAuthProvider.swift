@@ -27,8 +27,8 @@ enum ConvexAnonymousAuthError: LocalizedError {
         switch self {
         case .missingCachedSession: "No cached Vlad session"
         case .missingTokens: "Convex Auth returned no session tokens"
-        case .invalidOAuthResponse: "Convex Auth returned an invalid Google sign-in response"
-        case .missingOAuthCode: "Google sign-in returned no verification code"
+        case .invalidOAuthResponse: "Convex Auth returned an invalid sign-in response"
+        case .missingOAuthCode: "Sign-in returned no verification code"
         }
     }
 }
@@ -87,7 +87,7 @@ final class ConvexAnonymousAuthProvider: AuthProvider, @unchecked Sendable {
         authResult.token
     }
 
-    func completeGoogleSignIn(_ start: ConvexOAuthStartResponse) async throws {
+    func completeOAuthSignIn(_ start: ConvexOAuthStartResponse) async throws {
         guard let redirect = start.redirect,
               let verifier = start.verifier,
               let redirectURL = URL(string: redirect) else {

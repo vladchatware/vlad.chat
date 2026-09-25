@@ -1,10 +1,28 @@
 import { convexAuth } from "@convex-dev/auth/server";
 import { Anonymous } from "@convex-dev/auth/providers/Anonymous"
+import Apple from "@auth/core/providers/apple"
 import Google from "@auth/core/providers/google"
 import { MutationCtx } from "./_generated/server";
 
 export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
-  providers: [Anonymous, Google],
+  providers: [
+    Anonymous,
+    Google,
+    Apple({
+      profile: (appleInfo) => {
+        const name = appleInfo.user
+          ? [appleInfo.user.name.firstName, appleInfo.user.name.lastName]
+              .filter(Boolean)
+              .join(" ") || undefined
+          : undefined;
+        return {
+          id: appleInfo.sub,
+          name,
+          email: appleInfo.email,
+        };
+      },
+    }),
+  ],
   callbacks: {
     async redirect({ redirectTo }) {
       const destination = new URL(redirectTo);

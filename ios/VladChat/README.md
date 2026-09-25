@@ -13,6 +13,7 @@ Native SwiftUI client backed by same Convex deployment as vlad.chat.
 
 - Anonymous Convex Auth session stored in Keychain
 - Google account linking for anonymous sessions
+- Sign in with Apple for anonymous sessions
 - Reactive chat history from Convex
 - Server-owned AI generation, credits, tools, and model access
 - SwiftChat message renderer, sidebar, composer, model picker, and web-search UI
@@ -20,6 +21,11 @@ Native SwiftUI client backed by same Convex deployment as vlad.chat.
 
 StoreKit purchases, Convex attachment uploads, voice transcription and
 multi-thread mutations remain follow-up slices.
+
+To enable Apple sign-in, configure `AUTH_APPLE_ID` with an Apple Services ID
+and `AUTH_APPLE_SECRET` with its generated client secret in the Convex
+deployment. Apple requires the Sign in with Apple capability on the app ID;
+the client secret expires every six months and must be renewed.
 
 ## SwiftChat source
 

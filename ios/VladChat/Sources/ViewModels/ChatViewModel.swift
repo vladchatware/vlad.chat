@@ -285,6 +285,14 @@ final class ChatViewModel: ObservableObject {
     }
 
     func linkGoogleAccount() {
+        linkOAuthAccount(provider: "google")
+    }
+
+    func linkAppleAccount() {
+        linkOAuthAccount(provider: "apple")
+    }
+
+    private func linkOAuthAccount(provider: String) {
         guard let client, let authProvider, account?.isAnonymous != false else { return }
         isLinkingAccount = true
         Task { [weak self] in
@@ -296,9 +304,9 @@ final class ChatViewModel: ObservableObject {
                 ]
                 let start: ConvexOAuthStartResponse = try await client.action(
                     "auth:signIn",
-                    with: ["provider": "google", "params": params]
+                    with: ["provider": provider, "params": params]
                 )
-                try await authProvider.completeGoogleSignIn(start)
+                try await authProvider.completeOAuthSignIn(start)
                 if case .failure(let error) = await client.login() {
                     throw error
                 }
