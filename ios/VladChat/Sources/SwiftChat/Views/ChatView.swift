@@ -35,14 +35,14 @@ struct ChatContainer: View {
                 .applySystemGlassToolbarIfAvailable()
                 .toolbar {
                     ToolbarItem(placement: .principal) {
-                        VladIdentityHeader()
-                    }
-                    ToolbarItem(placement: .topBarTrailing) {
                         Button {
                             isAccountPresented = true
                         } label: {
-                            Label("Account", systemImage: "person.crop.circle")
+                            VladIdentityHeader()
                         }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(Text("Vlad account", comment: "Opens account settings when the user taps Vlad's name or picture in the chat header."))
+                        .accessibilityHint("Opens account settings")
                         .accessibilityIdentifier("openAccount")
                     }
                 }
