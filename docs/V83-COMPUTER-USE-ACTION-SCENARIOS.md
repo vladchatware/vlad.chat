@@ -261,7 +261,7 @@ Result shape: `ComputerToolResult` in `lib/computer-use/types.ts` (`ok`, `op`, `
 | Field | Value |
 |---|---|
 | **Name** | Operational budgets |
-| **What user/agent sees** | `ok: false` + `code`: `step_limit` \| `ttl_exceeded` \| `budget_exceeded`; `budget` on success |
+| **What user/agent sees** | `ok: false` + `code`: `step_limit` | `ttl_exceeded` | `budget_exceeded`; `budget` on success |
 | **Tool / mechanism** | 8 min TTL, 20 steps/session, 1 concurrent/key, 90s idle reclaim (`sandbox.ts` constants) |
 | **Status** | **implemented** |
 | **Notes** | **Observed in our stack.** Default **OFF** (`COMPUTER_USE_ENABLED`). |
@@ -379,4 +379,4 @@ Parity column grounded in public docs ([Use the computer and apps](https://docs.
 
 ## Skills pointer
 
-There is **no** `skills/computer-use/SKILL.md` in this repo yet. When that skill lands, add a short “Action scenarios” link to this doc — do not duplicate the full catalog there.
+See also [`skills/computer-use/SKILL.md`](../skills/computer-use/SKILL.md) (agent loop). That skill should link here for the full scenario catalog — do not duplicate it there.

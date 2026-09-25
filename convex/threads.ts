@@ -24,6 +24,10 @@ import { getAuthUserId } from "@convex-dev/auth/server"
 import { agent } from "./agents/simple";
 import { chatSystemInstructions } from "./agents/prompts";
 import { userNotionInstruction } from "@/lib/ai";
+import {
+  computerUseInstruction,
+  hasComputerUseTools,
+} from "@/lib/computer-use/skill";
 import { isModelEnabled, isPremiumModel } from "@/lib/provider";
 import { z } from "zod/v3";
 import {
@@ -606,6 +610,11 @@ export const generateReply = action({
     const notionInstruction = notionConn
       ? userNotionInstruction(notionConn.workspaceName)
       : "";
+    // skills/computer-use/SKILL.md — inject when computer_* tools are on the MCP surface
+    const computerInstruction = hasComputerUseTools(tools)
+      ? computerUseInstruction()
+      : "";
+    const extraInstructions = `${notionInstruction}${computerInstruction}`;
 
     const threadId = await getOrCreateDefaultThread(ctx, userId);
     const { thread } = await agent.continueThread(ctx, { threadId, userId });
@@ -613,8 +622,8 @@ export const generateReply = action({
     const result = await thread.streamText(
       {
         model: gateway.languageModel(model),
-        instructions: notionInstruction
-          ? `${chatSystemInstructions}${notionInstruction}`
+        instructions: extraInstructions
+          ? `${chatSystemInstructions}${extraInstructions}`
           : undefined,
         prompt: text,
         tools,
