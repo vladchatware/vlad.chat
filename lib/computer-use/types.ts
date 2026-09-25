@@ -27,6 +27,23 @@ export type ComputerHandoffEvent = {
   requiresUser: true;
 };
 
+export type ComputerErrorCode =
+  | "budget_exceeded"
+  | "ttl_exceeded"
+  | "step_limit"
+  | "disabled"
+  | "auth_missing"
+  | "runtime";
+
+export type ComputerBudgetStatus = {
+  stepsUsed: number;
+  stepsRemaining: number;
+  maxSteps: number;
+  ttlMs: number;
+  elapsedMs: number;
+  note: string;
+};
+
 export type ComputerToolResult = {
   ok: boolean;
   op: "open" | "screenshot" | "act" | "handoff" | "end";
@@ -41,6 +58,8 @@ export type ComputerToolResult = {
   handoff?: ComputerHandoffEvent;
   sandboxName?: string;
   error?: string;
+  code?: ComputerErrorCode;
+  budget?: ComputerBudgetStatus;
 };
 
 export type ComputerSession = {
@@ -48,4 +67,5 @@ export type ComputerSession = {
   sandboxName: string;
   createdAt: number;
   lastUsedAt: number;
+  stepCount: number;
 };

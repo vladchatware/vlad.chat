@@ -104,9 +104,51 @@ cd /workspace/v83-sandbox-spike
 node spike-computer-use.mjs https://example.com
 ```
 
+
+## $5/mo viability
+
+**Stance:** Computer use is **not** an always-on desktop at $5. It is a **gated, short-lived, credit-metered** tool.
+
+### Rough unit cost (Vercel Sandbox Pro list prices, 2026)
+
+| Component | Rate (approx) | Notes |
+|---|---|---|
+| Active CPU | ~$0.128 / vCPU-hour | Only while CPU runs (Playwright/install) |
+| Provisioned memory | ~$0.0212 / GB-hour | Wall-clock while sandbox alive |
+| Creations | ~$0.60 / 1M | Negligible at chat volumes |
+| Model tokens | existing chat metering | Screenshots add vision tokens |
+
+**Example (2 vCPU / ~4 GB, 5 min wall, ~30% active CPU):**  
+Active CPU ≈ 2 × 0.05 h × 0.3 × $0.128 ≈ **$0.004**  
+Memory ≈ 4 GB × 0.083 h × $0.0212 ≈ **$0.007**  
+**Sandbox ≈ $0.01–0.03 / short task** before tokens. Cold Playwright install can be much higher — **must use snapshot**.
+
+A handful of tasks/day fits a $5 credit pool **only with hard caps**. Uncapped / always-on is **not viable**.
+
+### Product rules baked into draft
+
+| Cap | Value | Constant |
+|---|---|---|
+| Max TTL | **8 min** | `COMPUTER_USE_MAX_TTL_MS` |
+| Max steps | **20 / session** | `COMPUTER_USE_MAX_STEPS` |
+| Concurrent | **1 / user** | `COMPUTER_USE_MAX_CONCURRENT` |
+| Idle reclaim | **90 s** | `COMPUTER_USE_IDLE_MS` |
+| Default | **OFF** | `COMPUTER_USE_ENABLED` unset |
+| Stream | screenshots only | no live desktop |
+| Fail closed | `ok:false` + `code` | `budget_exceeded` \| `ttl_exceeded` \| `step_limit` |
+
+### Still TODO before paid enable
+
+1. **Live creds proof** — run spike with Vercel token; record real $/task  
+2. **Metering hook** — debit credits per step/minute via existing `usageGate`  
+3. **Blob store** — replace in-process screenshot Map for multi-instance  
+4. **Warm snapshot** — Playwright preinstalled (cold install eats the budget)
+
+**Go for draft / dark ship. No-go for default-on $5 without caps + metering + snapshot.**
+
 ## Go / no-go
 
-**GO (Playwright-in-sandbox).** Wire tools on shared backend; do not wait on cua-driver or Cursor sandbox.
+**GO (Playwright-in-sandbox) for draft/dark.** Viable on $5 **only** with flag default OFF + hard caps + metering + warm snapshot. Uncapped always-on desktop = **NO-GO** at $5.
 
 ## Draft status
 
@@ -118,6 +160,7 @@ node spike-computer-use.mjs https://example.com
 | Screenshot API | `GET /api/computer-use/screenshots/[id]` |
 | Chat wiring | `app/api/chat/route.ts` merges tools when flag+creds |
 | Dep | `@vercel/sandbox` added to `package.json` (install on next `bun install`) |
+| Hard caps | 8 min TTL / 20 steps / 1 concurrent / 90s idle — fail closed |
 | Payments | Fail-closed; `computer_handoff` for payment/signing/SSO/2FA/captcha |
 
 ### Draft gaps (intentional)

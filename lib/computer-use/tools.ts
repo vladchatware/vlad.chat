@@ -1,6 +1,9 @@
 import { tool } from "ai";
 import { z } from "zod";
 import {
+  COMPUTER_USE_MAX_STEPS,
+  COMPUTER_USE_MAX_TTL_MS,
+  ComputerUseCapError,
   computerUseEnabled,
   endComputerSession,
   resolveSandboxCredentials,
@@ -8,7 +11,11 @@ import {
 } from "./sandbox";
 import { putScreenshot, screenshotPublicUrl } from "./artifacts";
 import { handoffMessage, looksLikePaymentOrSigning } from "./safety";
-import type { ComputerHandoffReason, ComputerToolResult } from "./types";
+import type {
+  ComputerBudgetStatus,
+  ComputerHandoffReason,
+  ComputerToolResult,
+} from "./types";
 
 export type ComputerToolContext = {
   userId?: string;
@@ -19,15 +26,60 @@ function sessionKeyFrom(ctx: ComputerToolContext) {
   return ctx.userId || ctx.chatId || "anonymous";
 }
 
+function mapBudget(b: {
+  stepsUsed: number;
+  stepsRemaining: number;
+  maxSteps: number;
+  ttlMs: number;
+  elapsedMs: number;
+  note: string;
+}): ComputerBudgetStatus {
+  return {
+    stepsUsed: b.stepsUsed,
+    stepsRemaining: b.stepsRemaining,
+    maxSteps: b.maxSteps,
+    ttlMs: b.ttlMs,
+    elapsedMs: b.elapsedMs,
+    note: b.note,
+  };
+}
+
+function failCap(op: ComputerToolResult["op"], err: unknown): ComputerToolResult {
+  if (err instanceof ComputerUseCapError) {
+    return {
+      ok: false,
+      op,
+      code: err.code,
+      error: err.message,
+      budget: {
+        stepsUsed: 0,
+        stepsRemaining: 0,
+        maxSteps: COMPUTER_USE_MAX_STEPS,
+        ttlMs: COMPUTER_USE_MAX_TTL_MS,
+        elapsedMs: 0,
+        note: "Computer use burns credits faster than chat. Hard caps protect the $5 plan.",
+      },
+    };
+  }
+  return {
+    ok: false,
+    op,
+    code: "runtime",
+    error: err instanceof Error ? err.message : String(err),
+  };
+}
+
 function attachShot(
   sessionKey: string,
   png: Buffer | null,
   base: ComputerToolResult,
+  budget?: ComputerBudgetStatus,
 ): ComputerToolResult {
-  if (!png || png.length === 0) return base;
+  const withBudget = budget ? { ...base, budget } : base;
+  if (!png || png.length === 0) return withBudget;
   const artifact = putScreenshot(sessionKey, png);
   return {
-    ...base,
+    ...withBudget,
     screenshotId: artifact.id,
     screenshotUrl: screenshotPublicUrl(artifact.id),
     mimeType: "image/png",
@@ -64,6 +116,7 @@ const actionSchema = z.discriminatedUnion("type", [
 
 /**
  * Shared backend tools for the agent loop (web + iOS consume identical results).
+ * Default OFF — COMPUTER_USE_ENABLED must be set explicitly.
  */
 export function createComputerUseTools(ctx: ComputerToolContext = {}) {
   const sessionKey = sessionKeyFrom(ctx);
@@ -71,30 +124,31 @@ export function createComputerUseTools(ctx: ComputerToolContext = {}) {
   return {
     computer_open: tool({
       description:
-        "Open a public URL in the isolated computer-use browser (Vercel Sandbox + Playwright). Returns screenshotUrl for clients.",
+        "Open a public URL in the isolated computer-use browser (Vercel Sandbox + Playwright). Returns screenshotUrl. Uses credits faster than chat; capped at 8 min / 20 steps.",
       inputSchema: z.object({
         url: z.string().url().describe("https URL to open"),
       }),
       execute: async ({ url }): Promise<ComputerToolResult> => {
         try {
-          const { meta, png, sandboxName } = await runComputerOp(sessionKey, {
-            op: "open",
-            url,
-          });
-          return attachShot(sessionKey, png, {
-            ok: true,
-            op: "open",
-            url: String(meta.url || url),
-            title: meta.title ? String(meta.title) : undefined,
-            action: "open",
-            sandboxName,
-          });
+          const { meta, png, sandboxName, budget } = await runComputerOp(
+            sessionKey,
+            { op: "open", url },
+          );
+          return attachShot(
+            sessionKey,
+            png,
+            {
+              ok: true,
+              op: "open",
+              url: String(meta.url || url),
+              title: meta.title ? String(meta.title) : undefined,
+              action: "open",
+              sandboxName,
+            },
+            mapBudget(budget),
+          );
         } catch (error) {
-          return {
-            ok: false,
-            op: "open",
-            error: error instanceof Error ? error.message : String(error),
-          };
+          return failCap("open", error);
         }
       },
     }),
@@ -105,30 +159,32 @@ export function createComputerUseTools(ctx: ComputerToolContext = {}) {
       inputSchema: z.object({}),
       execute: async (): Promise<ComputerToolResult> => {
         try {
-          const { meta, png, sandboxName } = await runComputerOp(sessionKey, {
-            op: "screenshot",
-          });
-          return attachShot(sessionKey, png, {
-            ok: true,
-            op: "screenshot",
-            url: meta.url ? String(meta.url) : undefined,
-            title: meta.title ? String(meta.title) : undefined,
-            action: "screenshot",
-            sandboxName,
-          });
+          const { meta, png, sandboxName, budget } = await runComputerOp(
+            sessionKey,
+            { op: "screenshot" },
+          );
+          return attachShot(
+            sessionKey,
+            png,
+            {
+              ok: true,
+              op: "screenshot",
+              url: meta.url ? String(meta.url) : undefined,
+              title: meta.title ? String(meta.title) : undefined,
+              action: "screenshot",
+              sandboxName,
+            },
+            mapBudget(budget),
+          );
         } catch (error) {
-          return {
-            ok: false,
-            op: "screenshot",
-            error: error instanceof Error ? error.message : String(error),
-          };
+          return failCap("screenshot", error);
         }
       },
     }),
 
     computer_act: tool({
       description:
-        "One browser action (click/type/key/scroll/wait/drag) then a fresh screenshotUrl. Refuses payment/signing text — use computer_handoff.",
+        "One browser action (click/type/key/scroll/wait/drag) then a fresh screenshotUrl. Refuses payment/signing text — use computer_handoff. Counts toward the 20-step cap.",
       inputSchema: z.object({ action: actionSchema }),
       execute: async ({ action }): Promise<ComputerToolResult> => {
         if (action.type === "type" && looksLikePaymentOrSigning(action.text)) {
@@ -145,33 +201,41 @@ export function createComputerUseTools(ctx: ComputerToolContext = {}) {
           };
         }
         try {
-          const { meta, png, sandboxName } = await runComputerOp(sessionKey, {
-            op: "act",
-            action,
-          });
-          return attachShot(sessionKey, png, {
-            ok: true,
-            op: "act",
-            url: meta.url ? String(meta.url) : undefined,
-            title: meta.title ? String(meta.title) : undefined,
-            action: action.type,
-            sandboxName,
-          });
+          const { meta, png, sandboxName, budget } = await runComputerOp(
+            sessionKey,
+            { op: "act", action },
+          );
+          return attachShot(
+            sessionKey,
+            png,
+            {
+              ok: true,
+              op: "act",
+              url: meta.url ? String(meta.url) : undefined,
+              title: meta.title ? String(meta.title) : undefined,
+              action: action.type,
+              sandboxName,
+            },
+            mapBudget(budget),
+          );
         } catch (error) {
-          return {
-            ok: false,
-            op: "act",
-            error: error instanceof Error ? error.message : String(error),
-          };
+          return failCap("act", error);
         }
       },
     }),
 
     computer_handoff: tool({
       description:
-        "User must take over (SSO, 2FA, captcha, payment, signing). Emits structured handoff for web + iOS. Never pays or signs silently.",
+        "User must take over (SSO, 2FA, captcha, payment, signing). Emits structured handoff for web + iOS. Never pays or signs silently. Computer use burns credits — ask user before long tasks.",
       inputSchema: z.object({
-        reason: z.enum(["sso", "2fa", "captcha", "payment", "signing", "unknown"]),
+        reason: z.enum([
+          "sso",
+          "2fa",
+          "captcha",
+          "payment",
+          "signing",
+          "unknown",
+        ]),
         message: z.string().optional(),
       }),
       execute: async ({ reason, message }): Promise<ComputerToolResult> => {
@@ -187,15 +251,21 @@ export function createComputerUseTools(ctx: ComputerToolContext = {}) {
           },
         };
         try {
-          const { meta, png, sandboxName } = await runComputerOp(sessionKey, {
-            op: "screenshot",
-          });
-          shot = attachShot(sessionKey, png, {
-            ...shot,
-            url: meta.url ? String(meta.url) : undefined,
-            title: meta.title ? String(meta.title) : undefined,
-            sandboxName,
-          });
+          const { meta, png, sandboxName, budget } = await runComputerOp(
+            sessionKey,
+            { op: "screenshot" },
+          );
+          shot = attachShot(
+            sessionKey,
+            png,
+            {
+              ...shot,
+              url: meta.url ? String(meta.url) : undefined,
+              title: meta.title ? String(meta.title) : undefined,
+              sandboxName,
+            },
+            mapBudget(budget),
+          );
         } catch {
           /* handoff still valid without shot */
         }
@@ -205,24 +275,21 @@ export function createComputerUseTools(ctx: ComputerToolContext = {}) {
 
     computer_end: tool({
       description:
-        "Tear down the computer-use sandbox for this chat session when the browser task is finished.",
+        "Tear down the computer-use sandbox for this chat session when the browser task is finished. Always call this to stop billing.",
       inputSchema: z.object({}),
       execute: async (): Promise<ComputerToolResult> => {
         try {
           await endComputerSession(sessionKey);
           return { ok: true, op: "end", action: "end" };
         } catch (error) {
-          return {
-            ok: false,
-            op: "end",
-            error: error instanceof Error ? error.message : String(error),
-          };
+          return failCap("end", error);
         }
       },
     }),
   };
 }
 
+/** True when flag is on AND Vercel Sandbox auth can resolve. Default OFF. */
 export function computerUseToolsAvailable(): boolean {
   if (!computerUseEnabled()) return false;
   return resolveSandboxCredentials().mode !== "none";
