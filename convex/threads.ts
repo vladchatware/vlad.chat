@@ -197,13 +197,18 @@ async function getMcpTools(
     return {};
   }
 
-  const notion = await createMCPClient({
-    transport: {
-      type: "http",
-      url: `${siteUrl}/api/mcp`,
-    },
-  });
-  let tools: ToolSet = await notion.tools();
+  let tools: ToolSet = {};
+  try {
+    const notion = await createMCPClient({
+      transport: {
+        type: "http",
+        url: `${siteUrl}/api/mcp`,
+      },
+    });
+    tools = await notion.tools();
+  } catch (error) {
+    console.error("Failed to connect to site Notion MCP:", error);
+  }
 
   if (userNotionToken) {
     try {
