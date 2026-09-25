@@ -155,7 +155,7 @@ A handful of tasks/day fits a $5 credit pool **only with hard caps**. Uncapped /
 | Item | Value |
 |---|---|
 | Branch | `feat/v83-computer-use-vercel-sandbox` |
-| PR | _(filled after open)_ |
+| PR | https://github.com/vladchatware/vlad.chat/pull/43 |
 | Module | `vlad.chat/lib/computer-use/*` |
 | Screenshot API | `GET /api/computer-use/screenshots/[id]` |
 | Chat wiring | `app/api/chat/route.ts` merges tools when flag+creds |
