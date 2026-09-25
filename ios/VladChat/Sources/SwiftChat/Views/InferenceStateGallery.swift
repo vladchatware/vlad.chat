@@ -711,6 +711,18 @@ private struct InferenceStateFixture: Identifiable {
             isStreaming: false
         ),
         InferenceStateFixture(
+            id: "computer-budget",
+            title: "Computer budget exceeded",
+            description: "Structured budget_exceeded error — no raw JSON dump.",
+            activity: ResponseActivity(
+                phase: .failed,
+                tools: [computerBudgetTool()],
+                parts: [toolPart(computerBudgetTool())],
+                errorText: "Step budget exhausted."
+            ),
+            isStreaming: false
+        ),
+        InferenceStateFixture(
             id: "computer-running",
             title: "Computer running",
             description: "In-progress browser action before screenshot returns.",
@@ -764,6 +776,22 @@ private struct InferenceStateFixture: Identifiable {
             inputSummary: nil,
             outputTruncated: false,
             errorText: "Enter the verification code to continue."
+        )
+    }
+
+    private static func computerBudgetTool() -> ResponseTool {
+        let output = """
+        {"ok":false,"op":"act","code":"budget_exceeded","error":"Step budget exhausted.","budget":{"stepsUsed":20,"stepsRemaining":0,"maxSteps":20,"ttlMs":480000,"elapsedMs":60000,"note":"Computer-use session hit an operational limit (TTL, steps, or idle reclaim)."}}
+        """
+        return ResponseTool(
+            id: "call-computer-budget",
+            name: "computer_act",
+            status: .failed,
+            output: output,
+            title: "Browser action",
+            inputSummary: "click (100, 200)",
+            outputTruncated: false,
+            errorText: "Step budget exhausted."
         )
     }
 

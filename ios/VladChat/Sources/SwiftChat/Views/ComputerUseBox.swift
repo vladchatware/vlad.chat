@@ -31,7 +31,9 @@ struct ComputerUseToolCard: View {
     }
 
     private var isEmphasized: Bool {
-        result?.hasHandoff == true || tool.status == .failed
+        result?.hasHandoff == true
+            || tool.status == .failed
+            || result?.ok == false
     }
 
     var body: some View {
@@ -71,6 +73,12 @@ struct ComputerUseToolCard: View {
                     Text("\(budget.stepsUsed)/\(budget.maxSteps) steps")
                         .font(Theme.Typography.caption)
                         .foregroundColor(tertiaryForeground)
+                }
+
+                if !result.ok, let code = result.code, code != .unknown, result.handoff == nil {
+                    Text(code.displayTitle)
+                        .font(Theme.Typography.caption)
+                        .foregroundColor(.red.opacity(0.75))
                 }
             } else if tool.status == .running || tool.status == .pending {
                 Text(tool.inputSummary ?? "Working in the browser…")
@@ -319,16 +327,20 @@ struct ComputerUseDetailContent: View {
                 labeledBlock(title: "Input", body: inputSummary)
             }
 
-            if let output = tool.output, !output.isEmpty {
-                labeledBlock(title: "Raw output", body: output, monospaced: true)
-            } else if result == nil, let errorText = tool.errorText {
-                labeledBlock(title: "Error", body: errorText)
-            }
+            // When structured parse succeeds, keep the card clean — no ugly JSON dump.
+            // Only fall back to raw output / error text when we could not decode ComputerToolResult.
+            if result == nil {
+                if let output = tool.output, !output.isEmpty {
+                    labeledBlock(title: "Raw output", body: output, monospaced: true)
+                } else if let errorText = tool.errorText {
+                    labeledBlock(title: "Error", body: errorText)
+                }
 
-            if tool.outputTruncated == true {
-                Text("Preview truncated")
-                    .font(Theme.Typography.caption)
-                    .foregroundColor(isDarkMode ? .white.opacity(0.55) : Color.black.opacity(0.55))
+                if tool.outputTruncated == true {
+                    Text("Preview truncated")
+                        .font(Theme.Typography.caption)
+                        .foregroundColor(isDarkMode ? .white.opacity(0.55) : Color.black.opacity(0.55))
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -343,8 +355,11 @@ struct ComputerUseDetailContent: View {
             if let action = result.action { metaRow("Action", action) }
             if let budget = result.budget {
                 metaRow("Budget", "\(budget.stepsUsed)/\(budget.maxSteps) steps · \(budget.stepsRemaining) left")
+                if !budget.note.isEmpty {
+                    metaRow("Budget note", budget.note)
+                }
             }
-            if let code = result.code { metaRow("Code", code) }
+            if let code = result.code { metaRow("Code", "\(code.rawValue) · \(code.displayTitle)") }
         }
     }
 
