@@ -48,7 +48,7 @@ iOS may polish UI later; the **protocol is already shared**.
 | `runCommand` / files / snapshots | Same via `@vercel/sandbox` + Playwright install/snapshot warm path |
 | Terminal backend only | Browser automation layer (Playwright persistent profile) |
 | Local cua-driver (separate Hermes feature) | **Out of scope** for in-Sandbox path |
-| — | Tool wiring, credit metering, handoff UX on **both** clients |
+| — | Tool wiring, session/step accounting, handoff UX on **both** clients |
 | — | Screenshot artifact store (draft: in-process; prod: Blob/R2) |
 
 ## Client protocol (tool results)
@@ -105,27 +105,9 @@ node spike-computer-use.mjs https://example.com
 ```
 
 
-## $5/mo viability
+## Operational limits (draft defaults)
 
-**Stance:** Computer use is **not** an always-on desktop at $5. It is a **gated, short-lived, credit-metered** tool.
-
-### Rough unit cost (Vercel Sandbox Pro list prices, 2026)
-
-| Component | Rate (approx) | Notes |
-|---|---|---|
-| Active CPU | ~$0.128 / vCPU-hour | Only while CPU runs (Playwright/install) |
-| Provisioned memory | ~$0.0212 / GB-hour | Wall-clock while sandbox alive |
-| Creations | ~$0.60 / 1M | Negligible at chat volumes |
-| Model tokens | existing chat metering | Screenshots add vision tokens |
-
-**Example (2 vCPU / ~4 GB, 5 min wall, ~30% active CPU):**  
-Active CPU ≈ 2 × 0.05 h × 0.3 × $0.128 ≈ **$0.004**  
-Memory ≈ 4 GB × 0.083 h × $0.0212 ≈ **$0.007**  
-**Sandbox ≈ $0.01–0.03 / short task** before tokens. Cold Playwright install can be much higher — **must use snapshot**.
-
-A handful of tasks/day fits a $5 credit pool **only with hard caps**. Uncapped / always-on is **not viable**.
-
-### Product rules baked into draft
+Short-lived, gated sessions — not an always-on desktop. Limits are normal ops controls (fail closed when hit):
 
 | Cap | Value | Constant |
 |---|---|---|
@@ -134,21 +116,21 @@ A handful of tasks/day fits a $5 credit pool **only with hard caps**. Uncapped /
 | Concurrent | **1 / user** | `COMPUTER_USE_MAX_CONCURRENT` |
 | Idle reclaim | **90 s** | `COMPUTER_USE_IDLE_MS` |
 | Default | **OFF** | `COMPUTER_USE_ENABLED` unset |
-| Stream | screenshots only | no live desktop |
+| Stream | screenshots only | no live desktop / VNC (V-84 follow-up) |
 | Fail closed | `ok:false` + `code` | `budget_exceeded` \| `ttl_exceeded` \| `step_limit` |
 
-### Still TODO before paid enable
+Cold Playwright install is expensive in wall time — prefer a warm `COMPUTER_USE_SNAPSHOT_ID` before enabling widely.
 
-1. **Live creds proof** — run spike with Vercel token; record real $/task  
-2. **Metering hook** — debit credits per step/minute via existing `usageGate`  
+### Still TODO before enabling on preview/prod
+
+1. **Live creds proof** — run spike with Vercel token; create→shot→act→destroy  
+2. **Usage hook** — wire session/step accounting into existing `usageGate` (ops, not a new product tier)  
 3. **Blob store** — replace in-process screenshot Map for multi-instance  
-4. **Warm snapshot** — Playwright preinstalled (cold install eats the budget)
-
-**Go for draft / dark ship. No-go for default-on $5 without caps + metering + snapshot.**
+4. **Warm snapshot** — Playwright preinstalled
 
 ## Go / no-go
 
-**GO (Playwright-in-sandbox) for draft/dark.** Viable on $5 **only** with flag default OFF + hard caps + metering + warm snapshot. Uncapped always-on desktop = **NO-GO** at $5.
+**GO** for flagged Playwright-in-Vercel-Sandbox (draft/dark, default OFF). Shared backend tools for web + iOS. **Blocked** on Vercel creds for live proof. **VNC / live desktop is follow-up V-84** (out of scope here).
 
 ## Draft status
 
@@ -168,11 +150,11 @@ A handful of tasks/day fits a $5 credit pool **only with hard caps**. Uncapped /
 1. Live create not proven (no Vercel creds on box)
 2. Screenshot store is in-process TTL — replace with Blob/R2 before multi-instance prod
 3. iOS UI polish for screenshot/handoff cards deferred (protocol ready)
-4. Credit metering for Active CPU not wired yet
+4. Session/step usage accounting for sandbox runtime not wired yet
 5. OpenAI-compat `/v1/chat/completions` does not auto-inject computer tools (client-supplied tools only) — primary path is `/api/chat`
 
 ## Next slice
 
 1. CTO secret-request → run spike → drop `artifacts/before.png` + `after.png`
 2. Land draft PR; enable flag on preview only
-3. Persist screenshots to Blob; add credit metering + handoff UI on web, then iOS
+3. Persist screenshots to Blob; add usage accounting + handoff UI on web, then iOS

@@ -57,7 +57,7 @@ function failCap(op: ComputerToolResult["op"], err: unknown): ComputerToolResult
         maxSteps: COMPUTER_USE_MAX_STEPS,
         ttlMs: COMPUTER_USE_MAX_TTL_MS,
         elapsedMs: 0,
-        note: "Computer use burns credits faster than chat. Hard caps protect the $5 plan.",
+        note: "Computer-use session hit an operational limit (TTL, steps, or idle reclaim).",
       },
     };
   }
@@ -124,7 +124,7 @@ export function createComputerUseTools(ctx: ComputerToolContext = {}) {
   return {
     computer_open: tool({
       description:
-        "Open a public URL in the isolated computer-use browser (Vercel Sandbox + Playwright). Returns screenshotUrl. Uses credits faster than chat; capped at 8 min / 20 steps.",
+        "Open a public URL in the isolated computer-use browser (Vercel Sandbox + Playwright). Returns screenshotUrl. Sessions capped at 8 min / 20 steps.",
       inputSchema: z.object({
         url: z.string().url().describe("https URL to open"),
       }),
@@ -226,7 +226,7 @@ export function createComputerUseTools(ctx: ComputerToolContext = {}) {
 
     computer_handoff: tool({
       description:
-        "User must take over (SSO, 2FA, captcha, payment, signing). Emits structured handoff for web + iOS. Never pays or signs silently. Computer use burns credits — ask user before long tasks.",
+        "User must take over (SSO, 2FA, captcha, payment, signing). Emits structured handoff for web + iOS. Never pays or signs silently.",
       inputSchema: z.object({
         reason: z.enum([
           "sso",
@@ -275,7 +275,7 @@ export function createComputerUseTools(ctx: ComputerToolContext = {}) {
 
     computer_end: tool({
       description:
-        "Tear down the computer-use sandbox for this chat session when the browser task is finished. Always call this to stop billing.",
+        "Tear down the computer-use sandbox for this chat session when the browser task is finished. Always call this to release the sandbox.",
       inputSchema: z.object({}),
       execute: async (): Promise<ComputerToolResult> => {
         try {

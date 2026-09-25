@@ -2,7 +2,7 @@ import { Sandbox } from "@vercel/sandbox";
 import type { ComputerSession } from "./types";
 import { INSTALL_PLAYWRIGHT_SH, RUNNER_CJS } from "./playwright-scripts";
 
-/** $5/mo babysit caps — tune here; fail closed when hit. */
+/** Session operational limits — tune here; fail closed when hit. */
 export const COMPUTER_USE_MAX_TTL_MS = 8 * 60 * 1000; // 8 min wall clock
 export const COMPUTER_USE_MAX_STEPS = 20; // per session
 export const COMPUTER_USE_MAX_CONCURRENT = 1; // per user/session key
@@ -142,7 +142,7 @@ export function budgetStatus(session: ComputerSession) {
     maxSteps: COMPUTER_USE_MAX_STEPS,
     ttlMs: COMPUTER_USE_MAX_TTL_MS,
     elapsedMs,
-    note: "Computer use burns credits faster than chat. Caps: 8 min / 20 steps / 1 sandbox.",
+    note: "Computer-use sessions are short-lived. Caps: 8 min / 20 steps / 1 sandbox.",
   };
 }
 
@@ -163,7 +163,7 @@ function assertSessionCaps(sessionKey: string, session: ComputerSession | undefi
   if (now - session.lastUsedAt > COMPUTER_USE_IDLE_MS) {
     throw new ComputerUseCapError(
       "budget_exceeded",
-      `Computer-use idle > ${COMPUTER_USE_IDLE_MS / 1000}s — sandbox reclaimed to protect the $5 plan. Open again if needed.`,
+      `Computer-use idle > ${COMPUTER_USE_IDLE_MS / 1000}s — sandbox reclaimed. Open again if needed.`,
     );
   }
   if (session.stepCount >= COMPUTER_USE_MAX_STEPS) {
