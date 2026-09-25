@@ -8,28 +8,34 @@ struct AccountView: View {
     var body: some View {
         NavigationStack {
             List {
-                Section("Account") {
+                Section {
                     if let account = viewModel.account, !account.isAnonymous {
                         LabeledContent("Name", value: account.name ?? "Vlad user")
                         if let email = account.email {
                             LabeledContent("Email", value: email)
                         }
                     } else {
-                        Text("Anonymous account")
-                            .foregroundStyle(.secondary)
-                        Text("Link Google or Apple to keep your chats when you switch devices.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                        VStack(spacing: 12) {
-                            GoogleOAuthButton(isEnabled: !viewModel.isLinkingAccount) {
-                                viewModel.linkGoogleAccount()
+                        VStack(alignment: .leading, spacing: 20) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Anonymous account")
+                                    .font(.headline)
+
+                                Text("Link Google or Apple to keep your chats when you switch devices.")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
                             }
 
-                            AppleOAuthButton(isEnabled: !viewModel.isLinkingAccount) {
-                                viewModel.linkAppleAccount()
+                            VStack(spacing: 12) {
+                                GoogleOAuthButton(isEnabled: !viewModel.isLinkingAccount) {
+                                    viewModel.linkGoogleAccount()
+                                }
+
+                                AppleOAuthButton(isEnabled: !viewModel.isLinkingAccount) {
+                                    viewModel.linkAppleAccount()
+                                }
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 44)
                             }
-                            .frame(width: 188)
-                            .frame(height: 44)
                         }
                         .listRowSeparator(.hidden)
                     }
@@ -67,20 +73,65 @@ struct AccountView: View {
 }
 
 private struct GoogleOAuthButton: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     let isEnabled: Bool
     let action: () -> Void
 
+    private var backgroundColor: Color {
+        colorScheme == .dark
+            ? Color(red: 19.0 / 255, green: 19.0 / 255, blue: 20.0 / 255)
+            : .white
+    }
+
+    private var foregroundColor: Color {
+        colorScheme == .dark
+            ? Color(red: 227.0 / 255, green: 227.0 / 255, blue: 227.0 / 255)
+            : Color(red: 31.0 / 255, green: 31.0 / 255, blue: 31.0 / 255)
+    }
+
+    private var borderColor: Color {
+        colorScheme == .dark
+            ? Color(red: 142.0 / 255, green: 145.0 / 255, blue: 143.0 / 255)
+            : Color(red: 116.0 / 255, green: 119.0 / 255, blue: 117.0 / 255)
+    }
+
     var body: some View {
         Button(action: action) {
-            Image("GoogleSignInButton")
-                .resizable()
-                .scaledToFit()
-                .frame(width: 188, height: 44)
-                .frame(maxWidth: .infinity)
+            ZStack {
+                Text("Continue with Google")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(foregroundColor)
+
+                HStack {
+                    Image("GoogleG")
+                        .resizable()
+                        .scaledToFit()
+                        .padding(3)
+                        .frame(width: 22, height: 22)
+                        .background(.white, in: RoundedRectangle(cornerRadius: 3))
+                        .accessibilityHidden(true)
+
+                    Spacer()
+
+                    if !isEnabled {
+                        ProgressView()
+                            .tint(foregroundColor)
+                    }
+                }
+                .padding(.horizontal, 16)
+            }
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .background(backgroundColor, in: RoundedRectangle(cornerRadius: 8))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(borderColor, lineWidth: 1)
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
         .disabled(!isEnabled)
-        .accessibilityLabel(Text("Sign in with Google"))
+        .accessibilityLabel(Text("Continue with Google"))
         .accessibilityValue(isEnabled ? Text("") : Text("Connecting"))
     }
 }

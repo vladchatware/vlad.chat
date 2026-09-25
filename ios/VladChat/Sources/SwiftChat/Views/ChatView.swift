@@ -50,6 +50,8 @@ struct ChatContainer: View {
         .environmentObject(viewModel)
         .sheet(isPresented: $isAccountPresented) {
             AccountView(viewModel: viewModel)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
         }
         .onAppear {
             setupNavigationBarAppearance()
