@@ -39,3 +39,7 @@ export type {
   ComputerAction,
 } from "./types";
 export { getScreenshot } from "./artifacts";
+export {
+  parseComputerToolResult,
+  isComputerToolName,
+} from "./parse-tool-result";
