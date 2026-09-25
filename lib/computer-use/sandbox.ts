@@ -55,7 +55,7 @@ function createParams(): Record<string, unknown> {
   const snapshotId = process.env.COMPUTER_USE_SNAPSHOT_ID;
   const base: Record<string, unknown> = {
     timeout: SANDBOX_CREATE_TIMEOUT_MS,
-    resources: { vcpus: 8 }, // 2GB/vCPU → 16GB; runner still SIGKILL(137) at 4
+    resources: { vcpus: 8 }, // 2GB/vCPU → 16GB; open skips shot to avoid 137
     persistent: false,
     // noVNC websockify listens on 6080 inside the sandbox.
     ports: [6080],
@@ -304,13 +304,46 @@ export async function runComputerOp(
     const errMeta = errBuf ? JSON.parse(errBuf.toString("utf8")) : null;
     const base =
       errMeta?.error || (await run.stderr()) || `runner exit ${run.exitCode}`;
-    // Desk may be alive even when the CDP runner is OOM-killed — surface viewerUrl.
+    // computer_open: desk/viewerUrl is the acceptance signal. Runner SIGKILL(137)
+    // on navigate+shot used to fail the whole op even though noVNC was healthy.
+    if (cmd.op === "open" && session.viewerUrl) {
+      session.lastUsedAt = Date.now();
+      session.stepCount += 1;
+      sessions.set(sessionKey, session);
+      return {
+        meta: {
+          ok: true,
+          url: typeof cmd.url === "string" ? cmd.url : undefined,
+          action: "open",
+          shot: false,
+          runnerExit: run.exitCode,
+          note: String(base).slice(0, 240),
+        },
+        png: null,
+        sandboxName: session.sandboxName,
+        viewerUrl: session.viewerUrl,
+        budget: budgetStatus(session),
+      };
+    }
     const viewer = session.viewerUrl ? ` viewerUrl=${session.viewerUrl}` : "";
     throw new Error(`${base}${viewer}`);
   }
   const metaBuf = await sandbox.readFileToBuffer({ path: "/tmp/cu/meta.json" });
   const meta = metaBuf ? JSON.parse(metaBuf.toString("utf8")) : { ok: true };
-  const png = await sandbox.readFileToBuffer({ path: "/tmp/cu/shot.png" });
+  // Prefer light JPEG from runner; fall back to legacy PNG path.
+  let png: Buffer | null = null;
+  try {
+    png = await sandbox.readFileToBuffer({ path: "/tmp/cu/shot.jpg" });
+  } catch {
+    /* no jpeg */
+  }
+  if (!png || png.length === 0) {
+    try {
+      png = await sandbox.readFileToBuffer({ path: "/tmp/cu/shot.png" });
+    } catch {
+      png = null;
+    }
+  }
   session.lastUsedAt = Date.now();
   session.stepCount += 1;
   sessions.set(sessionKey, session);

@@ -52,7 +52,7 @@ export type ComputerToolResult = {
   action?: string;
   screenshotUrl?: string;
   screenshotId?: string;
-  mimeType?: "image/png";
+  mimeType?: "image/png" | "image/jpeg";
   width?: number;
   height?: number;
   handoff?: ComputerHandoffEvent;

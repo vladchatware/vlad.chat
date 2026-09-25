@@ -92,9 +92,9 @@ function attachShot(
     ...withBudget,
     screenshotId: artifact.id,
     screenshotUrl: screenshotPublicUrl(artifact.id),
-    mimeType: "image/png",
-    width: 1280,
-    height: 720,
+    mimeType: artifact.contentType,
+    width: 800,
+    height: 560,
   };
 }
 
@@ -297,7 +297,7 @@ export function createComputerUseTools(ctx: ComputerToolContext = {}) {
   return {
     computer_open: tool({
       description:
-        "Open a public URL in the isolated computer-use browser (Vercel Sandbox + Playwright). Returns screenshotUrl + viewerUrl (live noVNC). Sessions capped at 8 min / 20 steps.",
+        "Open a public URL in the isolated computer-use browser (Vercel Sandbox + Playwright). Returns viewerUrl (live noVNC); call computer_screenshot for a light JPEG. Sessions capped at 8 min / 20 steps.",
       inputSchema: z.object({
         url: z.string().url().describe("https URL to open"),
       }),
@@ -307,7 +307,7 @@ export function createComputerUseTools(ctx: ComputerToolContext = {}) {
 
     computer_screenshot: tool({
       description:
-        "Capture the current computer-use browser viewport. Returns screenshotUrl + viewerUrl for web and iOS.",
+        "Capture a light JPEG clip of the computer-use viewport (separate from open). Returns screenshotUrl + viewerUrl.",
       inputSchema: z.object({}),
       execute: async (): Promise<ComputerToolResult> =>
         runComputerToolOp(sessionKey, "screenshot"),

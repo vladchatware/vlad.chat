@@ -3,7 +3,7 @@ export type ScreenshotArtifact = {
   png: Buffer;
   createdAt: number;
   sessionKey: string;
-  contentType: "image/png";
+  contentType: "image/png" | "image/jpeg";
 };
 
 const store = new Map<string, ScreenshotArtifact>();
@@ -22,6 +22,13 @@ function prune() {
   }
 }
 
+function sniffImageContentType(buf: Buffer): "image/png" | "image/jpeg" {
+  if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) {
+    return "image/jpeg";
+  }
+  return "image/png";
+}
+
 export function putScreenshot(sessionKey: string, png: Buffer): ScreenshotArtifact {
   prune();
   const id = `cu_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
@@ -30,7 +37,7 @@ export function putScreenshot(sessionKey: string, png: Buffer): ScreenshotArtifa
     png,
     createdAt: Date.now(),
     sessionKey,
-    contentType: "image/png",
+    contentType: sniffImageContentType(png),
   };
   store.set(id, artifact);
   return artifact;

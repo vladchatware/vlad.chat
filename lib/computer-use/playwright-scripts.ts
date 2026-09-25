@@ -89,11 +89,13 @@ function fail(err) {
     return;
   }
   fs.writeFileSync('/tmp/cu/chrome-exec', exec);
+  // Memory: one renderer, no GPU/raster extras. Avoid --single-process (headed+VNC crashes).
   const args = [
     '--no-sandbox',
     '--disable-setuid-sandbox',
     '--disable-dev-shm-usage',
     '--disable-gpu',
+    '--disable-software-rasterizer',
     '--ozone-platform=x11',
     '--remote-debugging-port=9222',
     '--remote-debugging-address=127.0.0.1',
@@ -102,15 +104,17 @@ function fail(err) {
     '--window-position=0,0',
     '--no-first-run',
     '--no-default-browser-check',
-    '--disable-background-networking',
-    '--disable-features=TranslateUI',
-    '--renderer-process-limit=1',
-    '--disable-features=AudioServiceOutOfProcess,IsolateOrigins,site-per-process',
-    '--disable-software-rasterizer',
-    '--memory-pressure-off',
+    '--disable-extensions',
+    '--disable-component-extensions-with-background-pages',
     '--disable-background-networking',
     '--disable-sync',
     '--disable-default-apps',
+    '--disable-translate',
+    '--metrics-recording-only',
+    '--mute-audio',
+    '--renderer-process-limit=1',
+    '--disable-features=TranslateUI,AudioServiceOutOfProcess,IsolateOrigins,site-per-process',
+    '--js-flags=--max-old-space-size=256',
     'about:blank',
   ];
   const child = spawn(exec, args, {
@@ -315,9 +319,13 @@ const fs = require('fs');
 const path = require('path');
 
 const STATE_PATH = '/tmp/cu/state.json';
-const OUT_SHOT = '/tmp/cu/shot.png';
+const OUT_SHOT = '/tmp/cu/shot.jpg';
 const OUT_META = '/tmp/cu/meta.json';
 const CDP = process.env.CU_CDP_URL || 'http://127.0.0.1:9222';
+// Small JPEG clip — PNG viewport encode was OOM (SIGKILL 137) after desk Chromium.
+const SHOT_W = 800;
+const SHOT_H = 560;
+const SHOT_Q = 40;
 
 function readState() {
   try { return JSON.parse(fs.readFileSync(STATE_PATH, 'utf8')); }
@@ -331,9 +339,27 @@ function writeMeta(m) {
   fs.writeFileSync(OUT_META, JSON.stringify(m));
 }
 
-async function withPage(fn) {
+async function lightScreenshot(page) {
+  try {
+    await page.screenshot({
+      path: OUT_SHOT,
+      type: 'jpeg',
+      quality: SHOT_Q,
+      fullPage: false,
+      clip: { x: 0, y: 0, width: SHOT_W, height: SHOT_H },
+      timeout: 15000,
+    });
+    return true;
+  } catch (e) {
+    try { fs.writeFileSync('/tmp/cu/shot.err', String(e && e.message || e)); } catch {}
+    return false;
+  }
+}
+
+async function withPage(fn, opts) {
+  const skipShot = !!(opts && opts.skipShot);
   const state = readState();
-  // Attach to long-lived headed Chromium on the VNC display (do not close it).
+  // Attach only — never launch a second Chromium (desk already owns :9222).
   const browser = await chromium.connectOverCDP(CDP);
   try {
     const context = browser.contexts()[0] || await browser.newContext({
@@ -341,39 +367,53 @@ async function withPage(fn) {
     });
     const page = context.pages()[0] || await context.newPage();
     if (state.url && state.url !== 'about:blank' && page.url() === 'about:blank') {
-      await page.goto(state.url, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
+      await page.goto(state.url, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
     }
     const result = await fn(page, state);
     const url = page.url();
     const title = await page.title().catch(() => '');
-    await page.screenshot({ path: OUT_SHOT, fullPage: false });
+    let shot = false;
+    if (!skipShot) {
+      shot = await lightScreenshot(page);
+    }
     writeState({ url, title });
     writeMeta({
       ok: true,
       url,
       title,
       action: result && result.action ? result.action : 'screenshot',
-      width: 1024,
-      height: 720,
+      width: SHOT_W,
+      height: SHOT_H,
+      mimeType: 'image/jpeg',
+      shot,
+      shotSkipped: skipShot,
     });
-    process.stdout.write(JSON.stringify({ ok: true, url, title, action: result && result.action }));
+    process.stdout.write(JSON.stringify({
+      ok: true,
+      url,
+      title,
+      action: result && result.action,
+      shot,
+      shotSkipped: skipShot,
+    }));
   } finally {
-    // Intentionally do not call browser.close() — that would kill the headed
-    // Chromium the VNC viewer and subsequent computer_* ops share.
+    // Leave CDP socket to GC on process exit. Do not browser.close() —
+    // some Playwright builds tear down the remote target when closing.
   }
 }
 
 async function main() {
   const cmd = JSON.parse(process.argv[2] || '{"op":"screenshot"}');
   if (cmd.op === 'open') {
+    // Navigate only; screenshot is a separate lighter op (avoids 137 on first open).
     await withPage(async (page) => {
-      await page.goto(cmd.url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+      await page.goto(cmd.url, { waitUntil: 'domcontentloaded', timeout: 45000 });
       return { action: 'open' };
-    });
+    }, { skipShot: true });
     return;
   }
   if (cmd.op === 'screenshot') {
-    await withPage(async () => ({ action: 'screenshot' }));
+    await withPage(async () => ({ action: 'screenshot' }), { skipShot: false });
     return;
   }
   if (cmd.op === 'act') {
@@ -384,7 +424,7 @@ async function main() {
           await page.mouse.click(a.x, a.y, { button: a.button || 'left' });
           break;
         case 'type':
-          await page.keyboard.type(a.text, { delay: 20 });
+          await page.keyboard.type(a.text, { delay: 15 });
           break;
         case 'key':
           await page.keyboard.press(a.key);
@@ -399,15 +439,15 @@ async function main() {
         case 'drag':
           await page.mouse.move(a.fromX, a.fromY);
           await page.mouse.down();
-          await page.mouse.move(a.toX, a.toY, { steps: 12 });
+          await page.mouse.move(a.toX, a.toY, { steps: 8 });
           await page.mouse.up();
           break;
         default:
           throw new Error('Unknown action type: ' + a.type);
       }
-      await page.waitForTimeout(400);
+      await page.waitForTimeout(250);
       return { action: a.type };
-    });
+    }, { skipShot: false });
     return;
   }
   throw new Error('Unknown op: ' + cmd.op);

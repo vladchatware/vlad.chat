@@ -33,7 +33,7 @@ export function registerComputerUseMcpTools(server: McpToolServer): void {
 
   server.tool(
     "computer_open",
-    "Open a public URL in the isolated computer-use browser (Vercel Sandbox + Playwright). Returns JSON with screenshotUrl + viewerUrl (live noVNC). Sessions capped at 8 min / 20 steps.",
+    "Open a public URL in the isolated computer-use browser (Vercel Sandbox + Playwright). Returns viewerUrl (live noVNC); screenshot is deferred to computer_screenshot. Sessions capped at 8 min / 20 steps.",
     {
       url: z.string().url().describe("https URL to open"),
       sessionId: sessionIdField,
@@ -46,7 +46,7 @@ export function registerComputerUseMcpTools(server: McpToolServer): void {
 
   server.tool(
     "computer_screenshot",
-    "Capture the current computer-use browser viewport. Returns JSON with screenshotUrl + viewerUrl for web and iOS.",
+    "Capture a light JPEG clip of the computer-use viewport (separate from open). Returns screenshotUrl + viewerUrl.",
     {
       sessionId: sessionIdField,
     },
