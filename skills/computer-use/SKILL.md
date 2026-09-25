@@ -89,6 +89,10 @@ Tell the user to finish in `viewerUrl`, then continue only after they confirm �
 2. If the driver fails, **CDP / Playwright** is OK for the same gesture.
 3. Keep the **same loop** either way: shot → plan → one act → shot verify.
 
+## Action scenarios
+
+Full catalog (mouse, keyboard, session, takeover, safety, Grok Bot parity): [`docs/V83-COMPUTER-USE-ACTION-SCENARIOS.md`](../../docs/V83-COMPUTER-USE-ACTION-SCENARIOS.md). Keep this skill as the short loop; do not duplicate the catalog here.
+
 ## Done
 
 When the user goal is met (or blocked on handoff they will finish themselves), call `computer_end` unless they still need the live desk open.

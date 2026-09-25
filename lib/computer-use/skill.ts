@@ -1,7 +1,7 @@
 /**
  * Computer-use agent skill — runtime copy of `skills/computer-use/SKILL.md`.
  * Inject into generateReply / chat / lounge instructions when computer_* tools
- * are present. Keep in sync with the SKILL.md body (regenerate from that file).
+ * are present. Keep this file in sync with the SKILL.md body.
  */
 export const COMPUTER_USE_SKILL_NAME = "computer-use" as const;
 
@@ -81,6 +81,10 @@ Tell the user to finish in \`viewerUrl\`, then continue only after they confirm 
 1. Prefer **cua-driver** (desk bridge) for screenshot and act.
 2. If the driver fails, **CDP / Playwright** is OK for the same gesture.
 3. Keep the **same loop** either way: shot → plan → one act → shot verify.
+
+## Action scenarios
+
+Full catalog (mouse, keyboard, session, takeover, safety, Grok Bot parity): [\`docs/V83-COMPUTER-USE-ACTION-SCENARIOS.md\`](../../docs/V83-COMPUTER-USE-ACTION-SCENARIOS.md). Keep this skill as the short loop; do not duplicate the catalog here.
 
 ## Done
 

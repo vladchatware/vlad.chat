@@ -261,7 +261,7 @@ Result shape: `ComputerToolResult` in `lib/computer-use/types.ts` (`ok`, `op`, `
 | Field | Value |
 |---|---|
 | **Name** | Operational budgets |
-| **What user/agent sees** | `ok: false` + `code`: `step_limit` | `ttl_exceeded` | `budget_exceeded`; `budget` on success |
+| **What user/agent sees** | `ok: false` + `code`: `step_limit` | `ttl_exceeded` | `budget_exceeded` (also `disabled` | `auth_missing` | `runtime`); `budget` on success |
 | **Tool / mechanism** | 8 min TTL, 20 steps/session, 1 concurrent/key, 90s idle reclaim (`sandbox.ts` constants) |
 | **Status** | **implemented** |
 | **Notes** | **Observed in our stack.** Default **OFF** (`COMPUTER_USE_ENABLED`). |
@@ -281,7 +281,7 @@ Result shape: `ComputerToolResult` in `lib/computer-use/types.ts` (`ok`, `op`, `
 | Field | Value |
 |---|---|
 | **Name** | Disabled or no sandbox creds |
-| **What user/agent sees** | Tools absent from MCP or `code: disabled` / auth errors |
+| **What user/agent sees** | Tools absent from MCP or `code: disabled` / `auth_missing` |
 | **Tool / mechanism** | `COMPUTER_USE_ENABLED` + OIDC or `VERCEL_TOKEN` + team + project |
 | **Status** | **implemented** |
 | **Notes** | **Observed in our stack.** |
