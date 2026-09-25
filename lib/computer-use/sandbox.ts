@@ -3,11 +3,13 @@ import type { ComputerSession } from "./types";
 import {
   INSTALL_PLAYWRIGHT_SH,
   INSTALL_DESK_SH,
+  INSTALL_CUA_SH,
   START_DESK_SH,
   LAUNCH_CHROME_CJS,
   RUNNER_CJS,
   SHOOTER_CJS,
 } from "./playwright-scripts";
+import { CUA_BRIDGE_CJS } from "./cua-bridge-script";
 
 /** Session operational limits — tune here; fail closed when hit. */
 export const COMPUTER_USE_MAX_TTL_MS = 8 * 60 * 1000; // 8 min wall clock
@@ -170,10 +172,23 @@ export async function getOrCreateSessionSandbox(sessionKey: string): Promise<{
         `Desk install failed: ${(await deskInstall.stderr()) || (await deskInstall.stdout())}`,
       );
     }
+    // cua-driver for sandbox user (not root). Apt deps already in INSTALL_DESK_SH.
+    const cuaInstall = await sandbox.runCommand({
+      cmd: "bash",
+      args: ["-lc", INSTALL_CUA_SH],
+      timeoutMs: 5 * 60 * 1000,
+    });
+    if (cuaInstall.exitCode !== 0) {
+      // Non-fatal — CDP/Playwright fallback still works.
+      console.warn(
+        `cua-driver install failed (fallback to CDP): ${(await cuaInstall.stderr()) || (await cuaInstall.stdout())}`,
+      );
+    }
     await sandbox.writeFiles([
       { path: "/tmp/cu/launch-chrome.cjs", content: Buffer.from(LAUNCH_CHROME_CJS) },
       { path: "/tmp/cu/runner.cjs", content: Buffer.from(RUNNER_CJS) },
       { path: "/tmp/cu/shooter.cjs", content: Buffer.from(SHOOTER_CJS) },
+      { path: "/tmp/cu/cua-bridge.cjs", content: Buffer.from(CUA_BRIDGE_CJS) },
     ]);
     const deskStart = await sandbox.runCommand({
       cmd: "bash",
@@ -220,6 +235,7 @@ export async function getOrCreateSessionSandbox(sessionKey: string): Promise<{
   await sandbox.writeFiles([
     { path: "/tmp/cu/runner.cjs", content: Buffer.from(RUNNER_CJS) },
     { path: "/tmp/cu/shooter.cjs", content: Buffer.from(SHOOTER_CJS) },
+    { path: "/tmp/cu/cua-bridge.cjs", content: Buffer.from(CUA_BRIDGE_CJS) },
   ]);
 
   return { sandbox, session };
@@ -319,6 +335,10 @@ export async function runComputerOp(
     return { meta, png };
   }
 
+  const cuEnv =
+    'export PATH="$HOME/.local/bin:$PATH" DISPLAY=:99; '
+    + "[ -f /tmp/cu/dbus.env ] && . /tmp/cu/dbus.env; ";
+
   async function runShooter(): Promise<{
     exitCode: number | null;
     stderr: () => Promise<string>;
@@ -328,15 +348,39 @@ export async function runComputerOp(
       cmd: "bash",
       args: [
         "-lc",
-        "export NODE_OPTIONS='--max-old-space-size=96'; DISPLAY=:99; node /tmp/cu/shooter.cjs",
+        cuEnv + "export NODE_OPTIONS='--max-old-space-size=96'; node /tmp/cu/shooter.cjs",
       ],
       timeoutMs: 60 * 1000,
     });
   }
 
-  // screenshot: never load Playwright (connect+encode was SIGKILL 137 with desk up).
+  async function runCua(
+    op: "screenshot" | "act" | "refresh-target",
+    actionJson?: string,
+  ): Promise<{
+    exitCode: number | null;
+    stderr: () => Promise<string>;
+  }> {
+    const actArg =
+      op === "act" ? ` '${(actionJson || "{}").replace(/'/g, `'\\''`)}'` : "";
+    return sandbox.runCommand({
+      cmd: "bash",
+      args: [
+        "-lc",
+        cuEnv
+          + "export NODE_OPTIONS='--max-old-space-size=96'; "
+          + `node /tmp/cu/cua-bridge.cjs ${op}${actArg}`,
+      ],
+      timeoutMs: op === "act" ? 90 * 1000 : 60 * 1000,
+    });
+  }
+
+  // screenshot: prefer cua-driver; fall back to CDP/scrot shooter.
   if (cmd.op === "screenshot") {
-    const shot = await runShooter();
+    let shot = await runCua("screenshot");
+    if (shot.exitCode !== 0) {
+      shot = await runShooter();
+    }
     if (shot.exitCode !== 0) {
       let errMeta: { error?: string } | null = null;
       try {
@@ -363,12 +407,78 @@ export async function runComputerOp(
     };
   }
 
+  // act: prefer cua-driver; fall back to Playwright runner + shot.
+  if (cmd.op === "act") {
+    const action = (
+      cmd.action && typeof cmd.action === "object" ? cmd.action : {}
+    ) as Record<string, unknown>;
+    let meta: Record<string, unknown> = { ok: true };
+    let png: Buffer | null = null;
+
+    const cuaAct = await runCua("act", JSON.stringify(action));
+    if (cuaAct.exitCode === 0) {
+      meta = (await readShotMeta()).meta;
+    } else {
+      const payload = JSON.stringify(cmd).replace(/'/g, `'\\''`);
+      const run = await sandbox.runCommand({
+        cmd: "bash",
+        args: [
+          "-lc",
+          cuEnv
+            + "export PLAYWRIGHT_BROWSERS_PATH=/tmp/cu-browsers NODE_OPTIONS='--max-old-space-size=192'; "
+            + `node /tmp/cu/runner.cjs '${payload}'`,
+        ],
+        timeoutMs: 2 * 60 * 1000,
+      });
+      if (run.exitCode !== 0) {
+        const errBuf = await sandbox.readFileToBuffer({ path: "/tmp/cu/meta.json" });
+        const errMeta = errBuf ? JSON.parse(errBuf.toString("utf8")) : null;
+        const base =
+          errMeta?.error || (await run.stderr()) || `runner exit ${run.exitCode}`;
+        const viewer = session.viewerUrl ? ` viewerUrl=${session.viewerUrl}` : "";
+        throw new Error(`${base}${viewer}`);
+      }
+      const runMeta = await readShotMeta();
+      meta = { ...runMeta.meta, via: runMeta.meta.via || "playwright" };
+    }
+
+    let shot = await runCua("screenshot");
+    if (shot.exitCode !== 0) shot = await runShooter();
+    if (shot.exitCode === 0) {
+      const shotMeta = await readShotMeta();
+      meta = {
+        ...meta,
+        ...shotMeta.meta,
+        action: meta.action || shotMeta.meta.action || action.type,
+        shot: true,
+      };
+      png = shotMeta.png;
+    } else {
+      meta = { ...meta, shot: false, shotNote: `shooter exit ${shot.exitCode}` };
+      png = null;
+    }
+
+    session.lastUsedAt = Date.now();
+    session.stepCount += 1;
+    sessions.set(sessionKey, session);
+    return {
+      meta,
+      png,
+      sandboxName: session.sandboxName,
+      viewerUrl: session.viewerUrl,
+      budget: budgetStatus(session),
+    };
+  }
+
+  // open (and other runner ops): Playwright CDP navigate; refresh cua target after open.
   const payload = JSON.stringify(cmd).replace(/'/g, `'\\''`);
   const run = await sandbox.runCommand({
     cmd: "bash",
     args: [
       "-lc",
-      `export PLAYWRIGHT_BROWSERS_PATH=/tmp/cu-browsers NODE_OPTIONS='--max-old-space-size=192'; node /tmp/cu/runner.cjs '${payload}'`,
+      cuEnv
+        + "export PLAYWRIGHT_BROWSERS_PATH=/tmp/cu-browsers NODE_OPTIONS='--max-old-space-size=192'; "
+        + `node /tmp/cu/runner.cjs '${payload}'`,
     ],
     timeoutMs: 2 * 60 * 1000,
   });
@@ -380,6 +490,7 @@ export async function runComputerOp(
     // computer_open: desk/viewerUrl is the acceptance signal. Runner SIGKILL(137)
     // on navigate used to fail the whole op even though noVNC was healthy.
     if (cmd.op === "open" && session.viewerUrl) {
+      await runCua("refresh-target").catch(() => undefined);
       session.lastUsedAt = Date.now();
       session.stepCount += 1;
       sessions.set(sessionKey, session);
@@ -402,36 +513,17 @@ export async function runComputerOp(
     throw new Error(`${base}${viewer}`);
   }
 
-  let meta: Record<string, unknown> = { ok: true };
-  let png: Buffer | null = null;
-  const runMeta = await readShotMeta();
-  meta = runMeta.meta;
-
-  // act: Playwright action first (process exits), then light CDP/scrot shooter.
-  if (cmd.op === "act") {
-    const shot = await runShooter();
-    if (shot.exitCode === 0) {
-      const shotMeta = await readShotMeta();
-      meta = {
-        ...meta,
-        ...shotMeta.meta,
-        action: meta.action || shotMeta.meta.action,
-        shot: true,
-      };
-      png = shotMeta.png;
-    } else {
-      // Keep act success without shot rather than failing the gesture.
-      meta = { ...meta, shot: false, shotNote: `shooter exit ${shot.exitCode}` };
-      png = null;
-    }
+  if (cmd.op === "open") {
+    await runCua("refresh-target").catch(() => undefined);
   }
 
+  const runMeta = await readShotMeta();
   session.lastUsedAt = Date.now();
   session.stepCount += 1;
   sessions.set(sessionKey, session);
   return {
-    meta,
-    png,
+    meta: runMeta.meta,
+    png: null,
     sandboxName: session.sandboxName,
     viewerUrl: session.viewerUrl,
     budget: budgetStatus(session),

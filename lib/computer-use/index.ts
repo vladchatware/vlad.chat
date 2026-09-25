@@ -39,3 +39,9 @@ export type {
   ComputerAction,
 } from "./types";
 export { getScreenshot } from "./artifacts";
+export {
+  COMPUTER_USE_SKILL_NAME,
+  COMPUTER_USE_SKILL_BODY,
+  computerUseInstruction,
+  hasComputerUseTools,
+} from "./skill";

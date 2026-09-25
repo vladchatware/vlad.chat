@@ -2,6 +2,7 @@
  *
  * Editable CJS sources live in `lib/computer-use/sandbox-scripts/`.
  * After editing shooter/runner there, re-embed into SHOOTER_CJS / RUNNER_CJS.
+ * cua-bridge: edit sandbox-scripts/cua-bridge.cjs then regenerate cua-bridge-script.ts.
  */
 
 /** Pin browsers under /tmp so partial installs are detectable and recoverable. */
@@ -33,6 +34,7 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq --no-install-recommends \
   xvfb x11vnc novnc websockify python3-websockify fonts-liberation curl iproute2 scrot \
+  libxi6 at-spi2-core dbus-x11 \
   >/dev/null
 rm -rf /var/lib/apt/lists/*
 for b in Xvfb x11vnc websockify curl; do
@@ -58,6 +60,25 @@ swapon /tmp/cu/swapfile >/dev/null 2>&1 || true
 echo desk-packages-ready
 `;
 
+
+
+/** Install cua-driver for the sandbox user (no sudo — binary lands in ~/.local/bin). */
+export const INSTALL_CUA_SH = `set -euo pipefail
+export PATH="$HOME/.local/bin:$PATH"
+export CUA_DRIVER_NO_MODIFY_PATH=1
+mkdir -p "$HOME/.local/bin" /tmp/cu
+if ! command -v cua-driver >/dev/null 2>&1; then
+  curl -fsSL https://cua.ai/driver/install.sh | bash -s -- --no-modify-path
+fi
+if ! command -v cua-driver >/dev/null 2>&1; then
+  echo "cua-driver missing after install" >&2
+  ls -la "$HOME/.local/bin" >&2 || true
+  exit 1
+fi
+cua-driver telemetry disable >/dev/null 2>&1 || true
+cua-driver --version | tee /tmp/cu/cua-driver.version
+echo cua-driver-ready
+`;
 
 export const LAUNCH_CHROME_CJS = `#!/usr/bin/env node
 process.env.PLAYWRIGHT_BROWSERS_PATH = process.env.PLAYWRIGHT_BROWSERS_PATH || '/tmp/cu-browsers';
@@ -168,7 +189,20 @@ function fail(err) {
 export const START_DESK_SH = `set -euo pipefail
 export DISPLAY=:99
 export PLAYWRIGHT_BROWSERS_PATH=/tmp/cu-browsers
+export PATH="$HOME/.local/bin:$PATH"
 mkdir -p /tmp/cu /tmp/cu-profile
+# Session bus for AT-SPI (cua-driver get_window_state). Persist for later shot/act cmds.
+if [ -z "\${DBUS_SESSION_BUS_ADDRESS:-}" ] && command -v dbus-launch >/dev/null 2>&1; then
+  dbus-launch --sh-syntax > /tmp/cu/dbus.env
+fi
+if [ -f /tmp/cu/dbus.env ]; then
+  # shellcheck disable=SC1091
+  . /tmp/cu/dbus.env
+fi
+if ! pgrep -x at-spi-bus-laun >/dev/null 2>&1 && [ -x /usr/libexec/at-spi-bus-launcher ]; then
+  /usr/libexec/at-spi-bus-launcher --launch-immediately >/tmp/cu/atspi.log 2>&1 &
+  sleep 0.3
+fi
 # Swap softens Chromium CDP spikes (runner was SIGKILL 137 after desk-up).
 if [ ! -f /tmp/cu/swapfile ]; then
   if fallocate -l 2G /tmp/cu/swapfile 2>/dev/null || dd if=/dev/zero of=/tmp/cu/swapfile bs=1M count=2048 status=none; then
@@ -183,7 +217,8 @@ diag() {
   command -v Xvfb x11vnc websockify curl || true
   echo "ports:" >&2
   (ss -ltn 2>/dev/null || netstat -ltn 2>/dev/null || true) | head -40 >&2 || true
-  tail -80 /tmp/cu/chrome.log /tmp/cu/chrome-launch.err /tmp/cu/xvfb.log /tmp/cu/x11vnc.log /tmp/cu/novnc.log 2>/dev/null || true
+  tail -80 /tmp/cu/chrome.log /tmp/cu/chrome-launch.err /tmp/cu/xvfb.log /tmp/cu/x11vnc.log /tmp/cu/novnc.log /tmp/cu/cua-driver.log 2>/dev/null || true
+  command -v cua-driver >/dev/null 2>&1 && cua-driver status >&2 || true
   # -x only: never pgrep -f against this script body (false positive).
   ps -eo pid,comm,args | head -80 >&2 || true
   ls -la /tmp/cu-browsers 2>/dev/null | head -40 >&2 || true
@@ -312,6 +347,29 @@ for i in 1 2 3; do
   fi
   sleep 0.35
 done
+# cua-driver daemon on the same DISPLAY / AT-SPI session as Chromium (best-effort).
+if command -v cua-driver >/dev/null 2>&1; then
+  if ! cua-driver status >/dev/null 2>&1; then
+    cua-driver serve --no-overlay >/tmp/cu/cua-driver.log 2>&1 &
+    echo $! > /tmp/cu/cua-driver.pid
+  fi
+  ok_cua=0
+  for i in $(seq 1 40); do
+    if cua-driver status >/dev/null 2>&1; then ok_cua=1; break; fi
+    sleep 0.25
+  done
+  if [ "$ok_cua" = "1" ]; then
+    echo cua-driver-ready >> /tmp/cu/cua-driver.log || true
+    if [ -f /tmp/cu/cua-bridge.cjs ]; then
+      node /tmp/cu/cua-bridge.cjs refresh-target >/tmp/cu/cua-target.boot.json 2>>/tmp/cu/cua-driver.log || true
+    fi
+  else
+    echo "cua-driver serve not ready (will fall back to CDP/Playwright)" >&2
+    tail -40 /tmp/cu/cua-driver.log >&2 || true
+  fi
+else
+  echo "cua-driver not installed (CDP/Playwright fallback only)" >&2
+fi
 echo desk-ready
 `;
 

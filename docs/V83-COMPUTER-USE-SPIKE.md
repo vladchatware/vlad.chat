@@ -1,7 +1,7 @@
 # V-83 Spike: Computer use for vlad.chat on Vercel Sandbox (Hermes path)
 
 **Date:** 2026-09-25 (Asia/Bangkok)  
-**Status:** **GO — Playwright-in-sandbox** (live create blocked on missing Vercel creds)  
+**Status:** **GO — Playwright desk + in-sandbox cua-driver** (live create may need Vercel creds)  
 **Draft:** `feat/v83-computer-use-vercel-sandbox` in `vlad.chat/` (see Draft section)
 
 ## Verdict
@@ -9,8 +9,8 @@
 | Question | Answer |
 |---|---|
 | Can Vercel Sandbox host Grok-like computer use for vlad.chat? | **YES, via Playwright (headless Chromium) inside the microVM** |
-| Native GUI / cua-driver / desktop in Sandbox? | **NO** — Sandbox SDK is shell + filesystem + ports |
-| Hermes `vercel_sandbox.py` computer-use? | **NO** — terminal-only; Hermes computer-use is separate local `cua-driver` |
+| Native GUI / cua-driver / desktop in Sandbox? | **YES (V-84+)** — Xvfb+noVNC desk; **cua-driver** installed in-sandbox for shot/act |
+| Hermes `vercel_sandbox.py` computer-use? | **NO** — terminal-only; vlad.chat now runs **cua-driver inside** the Sandbox desk |
 | Live create→screenshot→act→destroy on this box? | **Blocked** — no Vercel OIDC/token credentials here |
 
 ## Product constraint: one backend, two clients
@@ -50,7 +50,7 @@ iOS may polish UI later; the **protocol is already shared**.
 | Per-task sandbox create/reuse/teardown patterns | Session→sandbox map keyed by user; `computer_end` |
 | `runCommand` / files / snapshots | Same via `@vercel/sandbox` + Playwright install/snapshot warm path |
 | Terminal backend only | Browser automation layer (Playwright persistent profile) |
-| Local cua-driver (separate Hermes feature) | **Out of scope** for in-Sandbox path |
+| Local cua-driver (Hermes) | **In-sandbox** via INSTALL_CUA_SH + `cua-driver serve` on DISPLAY=:99; CDP/Playwright remains fallback |
 | — | Tool wiring, session/step accounting, handoff UX on **both** clients |
 | — | Screenshot artifact store (draft: in-process; prod: Blob/R2) |
 
@@ -179,6 +179,30 @@ Cold Playwright install is expensive in wall time — prefer a warm `COMPUTER_US
 3. Persist screenshots to Blob; add usage accounting + handoff UI on web, then iOS
 
 
+
+
+## In-sandbox cua-driver (V-84+)
+
+Desk boot now:
+
+1. `INSTALL_DESK_SH` — apt: xvfb/x11vnc/novnc + `libxi6` `at-spi2-core` `dbus-x11`
+2. `INSTALL_CUA_SH` — official installer → `~/.local/bin/cua-driver`, telemetry disabled (no sudo)
+3. `START_DESK_SH` — Xvfb :99 → dbus/AT-SPI → noVNC → Chromium CDP → `cua-driver serve`
+4. `computer_screenshot` / `computer_act` prefer `cua-bridge.cjs` (`get_window_state` / `click` / `type_text` / `press_key` / `scroll`); on failure fall back to SHOOTER_CJS / RUNNER_CJS
+5. `computer_open` stays Playwright CDP navigate; refreshes `/tmp/cu/cua-target.json`
+6. `viewerUrl` / noVNC path unchanged
+
+Agent playbook: `skills/computer-use/SKILL.md`.
+
+### Preview retest
+
+1. Preview with `COMPUTER_USE_ENABLED=1` + sandbox auth
+2. `computer_open` → open `viewerUrl`
+3. `computer_screenshot` — meta should include `via:"cua-driver"` when Driver is healthy
+4. `computer_act` click/type — same; if Driver fails, CDP/Playwright still acts
+5. Confirm `cua-driver doctor` / `/tmp/cu/cua-driver.log` on sandbox if shot falls back
+
+
 ## Live VNC acceptance (V-84 gate)
 
 Acceptance requires a human (CTO/Vlad) to open `viewerUrl` from `computer_open` and **control** the same desk the agent drives. Screenshot-only is **not** enough.
@@ -186,16 +210,17 @@ Acceptance requires a human (CTO/Vlad) to open `viewerUrl` from `computer_open` 
 ### How the desk is started (inside sandbox)
 
 ```bash
-# packages (INSTALL_DESK_SH)
-apt-get install -y xvfb x11vnc novnc websockify fluxbox …
+# packages (INSTALL_DESK_SH) — includes libxi6 at-spi2-core dbus-x11
+# INSTALL_CUA_SH — curl https://cua.ai/driver/install.sh | bash (user ~/.local/bin)
 
-# display + VNC + noVNC (START_DESK_SH)
+# display + VNC + noVNC + cua (START_DESK_SH)
 Xvfb :99 -screen 0 1280x720x24 …
-fluxbox &
+eval "$(dbus-launch --sh-syntax)"   # AT-SPI for cua-driver
 x11vnc -display :99 -rfbport 5900 -localhost -forever -shared -nopw …
 websockify --web=/usr/share/novnc 6080 127.0.0.1:5900 &
-# headed Chromium on :99 with CDP
-chromium --remote-debugging-port=9222 --user-data-dir=/tmp/cu-profile …
+# headed Chromium on :99 with CDP :9222
+node /tmp/cu/launch-chrome.cjs &
+cua-driver serve --no-overlay &     # same DISPLAY
 ```
 
 ### Port exposure (SDK)
