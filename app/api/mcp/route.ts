@@ -61,9 +61,13 @@ const posthog = new PostHog(process.env.NEXT_PUBLIC_POSTHOG_KEY!, {
 
 const handler = createMcpHandler(
   (server) => {
-    instrument(server, posthog)
+    // mcp-handler 1.1 + SDK 1.26 + large Zod tool schemas hit TS "excessively deep" on
+    // notion-search; keep runtime typing via MCP SDK, skip recursive inference here.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentional escape hatch for TS2589
+    const s = server as { tool: (...args: any[]) => any }
+    instrument(s as typeof server, posthog)
     after(posthog.flush())
-    server.tool(
+    s.tool(
       'notion-get-database',
       'Retrieves the schema of a Notion database, including all properties and their types. Use this to discover available properties before constructing filters for database queries.',
       {
@@ -146,7 +150,7 @@ const handler = createMcpHandler(
         }
       }
     )
-    server.tool(
+    s.tool(
       'notion-search',
       `Searches all parent or child pages and databases that have been shared with an integration, OR queries a specific database with filters.
 
@@ -397,7 +401,7 @@ For database queries, first use notion-get-database to discover available proper
         }
       }
     )
-    server.tool(
+    s.tool(
       'notion-fetch',
       'Retrieves a Notion page and converts it to markdown format. This tool recursively fetches all blocks and their children to create a complete markdown representation of the page.',
       {
@@ -438,7 +442,7 @@ For database queries, first use notion-get-database to discover available proper
         }
       }
     )
-    server.tool(
+    s.tool(
       'notion-fetch-database-entry',
       'Retrieves a Notion database entry (page) and formats it with all database properties displayed clearly, followed by the page content. Use this when you have a database entry ID from notion-search results and want to see the full entry details.',
       {

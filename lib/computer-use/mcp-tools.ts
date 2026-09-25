@@ -1,5 +1,7 @@
 import { z } from "zod";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+/** Minimal surface — avoid pulling full MCP Server generics into Next build. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- MCP Server.tool generics are not usable at the route boundary
+type McpToolServer = { tool: (...args: any[]) => unknown };
 import {
   computerActionSchema,
   computerUseToolsAvailable,
@@ -26,7 +28,7 @@ const sessionIdField = z
  * are available. Convex `getMcpTools` already loads `${SITE_URL}/api/mcp`, so
  * lounge generateReply picks these up with no threads.ts tool wiring.
  */
-export function registerComputerUseMcpTools(server: McpServer): void {
+export function registerComputerUseMcpTools(server: McpToolServer): void {
   if (!computerUseToolsAvailable()) return;
 
   server.tool(
