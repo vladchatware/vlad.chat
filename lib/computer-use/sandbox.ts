@@ -10,6 +10,7 @@ import {
   SHOOTER_CJS,
 } from "./playwright-scripts";
 import { CUA_BRIDGE_CJS } from "./cua-bridge-script";
+import { SOFT_CURSOR_PY } from "./soft-cursor-script";
 
 /** Session operational limits — tune here; fail closed when hit. */
 export const COMPUTER_USE_MAX_TTL_MS = 8 * 60 * 1000; // 8 min wall clock
@@ -189,6 +190,7 @@ export async function getOrCreateSessionSandbox(sessionKey: string): Promise<{
       { path: "/tmp/cu/runner.cjs", content: Buffer.from(RUNNER_CJS) },
       { path: "/tmp/cu/shooter.cjs", content: Buffer.from(SHOOTER_CJS) },
       { path: "/tmp/cu/cua-bridge.cjs", content: Buffer.from(CUA_BRIDGE_CJS) },
+      { path: "/tmp/cu/soft-cursor.py", content: Buffer.from(SOFT_CURSOR_PY) },
     ]);
     const deskStart = await sandbox.runCommand({
       cmd: "bash",
@@ -236,6 +238,7 @@ export async function getOrCreateSessionSandbox(sessionKey: string): Promise<{
     { path: "/tmp/cu/runner.cjs", content: Buffer.from(RUNNER_CJS) },
     { path: "/tmp/cu/shooter.cjs", content: Buffer.from(SHOOTER_CJS) },
     { path: "/tmp/cu/cua-bridge.cjs", content: Buffer.from(CUA_BRIDGE_CJS) },
+    { path: "/tmp/cu/soft-cursor.py", content: Buffer.from(SOFT_CURSOR_PY) },
   ]);
 
   return { sandbox, session };

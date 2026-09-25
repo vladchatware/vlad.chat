@@ -34,7 +34,7 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq --no-install-recommends \
   xvfb x11vnc novnc websockify python3-websockify fonts-liberation curl iproute2 scrot \
-  libxi6 at-spi2-core dbus-x11 \
+  libxi6 at-spi2-core dbus-x11 xdotool python3-tk \
   >/dev/null
 rm -rf /var/lib/apt/lists/*
 for b in Xvfb x11vnc websockify curl; do
@@ -350,7 +350,7 @@ done
 # cua-driver daemon on the same DISPLAY / AT-SPI session as Chromium (best-effort).
 if command -v cua-driver >/dev/null 2>&1; then
   if ! cua-driver status >/dev/null 2>&1; then
-    cua-driver serve --no-overlay >/tmp/cu/cua-driver.log 2>&1 &
+    cua-driver serve >/tmp/cu/cua-driver.log 2>&1 &
     echo $! > /tmp/cu/cua-driver.pid
   fi
   ok_cua=0
@@ -369,6 +369,12 @@ if command -v cua-driver >/dev/null 2>&1; then
   fi
 else
   echo "cua-driver not installed (CDP/Playwright fallback only)" >&2
+fi
+# Software cursor: VNC often hides the real X pointer; draw a magenta follow-mouse overlay.
+if [ -f /tmp/cu/soft-cursor.py ]; then
+  pkill -f '/tmp/cu/soft-cursor.py' >/dev/null 2>&1 || true
+  python3 /tmp/cu/soft-cursor.py >/tmp/cu/soft-cursor.log 2>&1 &
+  echo $! > /tmp/cu/soft-cursor.pid
 fi
 echo desk-ready
 `;
