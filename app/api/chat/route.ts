@@ -1,4 +1,4 @@
-import { streamText, UIMessage, convertToModelMessages, isStepCount, smoothStream, gateway } from 'ai';
+import { streamText, UIMessage, convertToModelMessages, isStepCount, smoothStream, gateway, type ToolSet } from 'ai';
 import { createMCPClient } from '@ai-sdk/mcp';
 import { system } from '@/lib/ai'
 import { api } from '@/convex/_generated/api';
@@ -49,7 +49,7 @@ export async function POST(req: Request) {
   const notionTools = await notion.tools()
 
   // Conditionally add Tavily search tools
-  let tools = notionTools
+  let tools: ToolSet = notionTools
   if (searchEnabled && process.env.TVLY) {
     try {
       const tavily = await createMCPClient({
