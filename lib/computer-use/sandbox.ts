@@ -6,6 +6,7 @@ import {
   START_DESK_SH,
   LAUNCH_CHROME_CJS,
   RUNNER_CJS,
+  SHOOTER_CJS,
 } from "./playwright-scripts";
 
 /** Session operational limits — tune here; fail closed when hit. */
@@ -172,6 +173,7 @@ export async function getOrCreateSessionSandbox(sessionKey: string): Promise<{
     await sandbox.writeFiles([
       { path: "/tmp/cu/launch-chrome.cjs", content: Buffer.from(LAUNCH_CHROME_CJS) },
       { path: "/tmp/cu/runner.cjs", content: Buffer.from(RUNNER_CJS) },
+      { path: "/tmp/cu/shooter.cjs", content: Buffer.from(SHOOTER_CJS) },
     ]);
     const deskStart = await sandbox.runCommand({
       cmd: "bash",
@@ -217,6 +219,7 @@ export async function getOrCreateSessionSandbox(sessionKey: string): Promise<{
 
   await sandbox.writeFiles([
     { path: "/tmp/cu/runner.cjs", content: Buffer.from(RUNNER_CJS) },
+    { path: "/tmp/cu/shooter.cjs", content: Buffer.from(SHOOTER_CJS) },
   ]);
 
   return { sandbox, session };
@@ -293,10 +296,80 @@ export async function runComputerOp(
 
   const { sandbox, session } = await getOrCreateSessionSandbox(sessionKey);
   assertSessionCaps(sessionKey, session);
+
+  async function readShotMeta(): Promise<{
+    meta: Record<string, unknown>;
+    png: Buffer | null;
+  }> {
+    const metaBuf = await sandbox.readFileToBuffer({ path: "/tmp/cu/meta.json" });
+    const meta = metaBuf ? JSON.parse(metaBuf.toString("utf8")) : { ok: true };
+    let png: Buffer | null = null;
+    try {
+      png = await sandbox.readFileToBuffer({ path: "/tmp/cu/shot.jpg" });
+    } catch {
+      /* no jpeg */
+    }
+    if (!png || png.length === 0) {
+      try {
+        png = await sandbox.readFileToBuffer({ path: "/tmp/cu/shot.png" });
+      } catch {
+        png = null;
+      }
+    }
+    return { meta, png };
+  }
+
+  async function runShooter(): Promise<{
+    exitCode: number | null;
+    stderr: () => Promise<string>;
+  }> {
+    // No Playwright — raw CDP JPEG (or scrot fallback). Low NODE heap.
+    return sandbox.runCommand({
+      cmd: "bash",
+      args: [
+        "-lc",
+        "export NODE_OPTIONS='--max-old-space-size=96'; DISPLAY=:99; node /tmp/cu/shooter.cjs",
+      ],
+      timeoutMs: 60 * 1000,
+    });
+  }
+
+  // screenshot: never load Playwright (connect+encode was SIGKILL 137 with desk up).
+  if (cmd.op === "screenshot") {
+    const shot = await runShooter();
+    if (shot.exitCode !== 0) {
+      let errMeta: { error?: string } | null = null;
+      try {
+        const errBuf = await sandbox.readFileToBuffer({ path: "/tmp/cu/meta.json" });
+        errMeta = errBuf ? JSON.parse(errBuf.toString("utf8")) : null;
+      } catch {
+        /* no meta */
+      }
+      const base =
+        errMeta?.error || (await shot.stderr()) || `shooter exit ${shot.exitCode}`;
+      const viewer = session.viewerUrl ? ` viewerUrl=${session.viewerUrl}` : "";
+      throw new Error(`${base}${viewer}`);
+    }
+    const { meta, png } = await readShotMeta();
+    session.lastUsedAt = Date.now();
+    session.stepCount += 1;
+    sessions.set(sessionKey, session);
+    return {
+      meta,
+      png,
+      sandboxName: session.sandboxName,
+      viewerUrl: session.viewerUrl,
+      budget: budgetStatus(session),
+    };
+  }
+
   const payload = JSON.stringify(cmd).replace(/'/g, `'\\''`);
   const run = await sandbox.runCommand({
     cmd: "bash",
-    args: ["-lc", `export PLAYWRIGHT_BROWSERS_PATH=/tmp/cu-browsers; node /tmp/cu/runner.cjs '${payload}'`],
+    args: [
+      "-lc",
+      `export PLAYWRIGHT_BROWSERS_PATH=/tmp/cu-browsers NODE_OPTIONS='--max-old-space-size=192'; node /tmp/cu/runner.cjs '${payload}'`,
+    ],
     timeoutMs: 2 * 60 * 1000,
   });
   if (run.exitCode !== 0) {
@@ -305,7 +378,7 @@ export async function runComputerOp(
     const base =
       errMeta?.error || (await run.stderr()) || `runner exit ${run.exitCode}`;
     // computer_open: desk/viewerUrl is the acceptance signal. Runner SIGKILL(137)
-    // on navigate+shot used to fail the whole op even though noVNC was healthy.
+    // on navigate used to fail the whole op even though noVNC was healthy.
     if (cmd.op === "open" && session.viewerUrl) {
       session.lastUsedAt = Date.now();
       session.stepCount += 1;
@@ -328,22 +401,31 @@ export async function runComputerOp(
     const viewer = session.viewerUrl ? ` viewerUrl=${session.viewerUrl}` : "";
     throw new Error(`${base}${viewer}`);
   }
-  const metaBuf = await sandbox.readFileToBuffer({ path: "/tmp/cu/meta.json" });
-  const meta = metaBuf ? JSON.parse(metaBuf.toString("utf8")) : { ok: true };
-  // Prefer light JPEG from runner; fall back to legacy PNG path.
+
+  let meta: Record<string, unknown> = { ok: true };
   let png: Buffer | null = null;
-  try {
-    png = await sandbox.readFileToBuffer({ path: "/tmp/cu/shot.jpg" });
-  } catch {
-    /* no jpeg */
-  }
-  if (!png || png.length === 0) {
-    try {
-      png = await sandbox.readFileToBuffer({ path: "/tmp/cu/shot.png" });
-    } catch {
+  const runMeta = await readShotMeta();
+  meta = runMeta.meta;
+
+  // act: Playwright action first (process exits), then light CDP/scrot shooter.
+  if (cmd.op === "act") {
+    const shot = await runShooter();
+    if (shot.exitCode === 0) {
+      const shotMeta = await readShotMeta();
+      meta = {
+        ...meta,
+        ...shotMeta.meta,
+        action: meta.action || shotMeta.meta.action,
+        shot: true,
+      };
+      png = shotMeta.png;
+    } else {
+      // Keep act success without shot rather than failing the gesture.
+      meta = { ...meta, shot: false, shotNote: `shooter exit ${shot.exitCode}` };
       png = null;
     }
   }
+
   session.lastUsedAt = Date.now();
   session.stepCount += 1;
   sessions.set(sessionKey, session);

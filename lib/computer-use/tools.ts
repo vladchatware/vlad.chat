@@ -93,8 +93,8 @@ function attachShot(
     screenshotId: artifact.id,
     screenshotUrl: screenshotPublicUrl(artifact.id),
     mimeType: artifact.contentType,
-    width: 800,
-    height: 560,
+    width: 640,
+    height: 400,
   };
 }
 

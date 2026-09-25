@@ -1,4 +1,8 @@
-/** Bash + CJS payloads executed inside the Vercel Sandbox microVM. */
+/** Bash + CJS payloads executed inside the Vercel Sandbox microVM.
+ *
+ * Editable CJS sources live in `lib/computer-use/sandbox-scripts/`.
+ * After editing shooter/runner there, re-embed into SHOOTER_CJS / RUNNER_CJS.
+ */
 
 /** Pin browsers under /tmp so partial installs are detectable and recoverable. */
 export const INSTALL_PLAYWRIGHT_SH = `set -euo pipefail
@@ -28,7 +32,7 @@ export DEBIAN_FRONTEND=noninteractive
 # Keep package set minimal — full recommends + WM was a factor in sandbox OOM (exit 137).
 apt-get update -qq
 apt-get install -y -qq --no-install-recommends \
-  xvfb x11vnc novnc websockify python3-websockify fonts-liberation curl iproute2 \
+  xvfb x11vnc novnc websockify python3-websockify fonts-liberation curl iproute2 scrot \
   >/dev/null
 rm -rf /var/lib/apt/lists/*
 for b in Xvfb x11vnc websockify curl; do
@@ -311,151 +315,8 @@ done
 echo desk-ready
 `;
 
+/** Tiny CDP JPEG capture — no Playwright (avoids connect+encode OOM 137). */
+export const SHOOTER_CJS = "#!/usr/bin/env node\n'use strict';\n/**\n * Tiny CDP JPEG capture — no Playwright.\n * Playwright connectOverCDP + page.screenshot was SIGKILL 137 on Vercel Sandbox\n * when headed desk Chromium was already resident.\n */\nconst fs = require('fs');\nconst http = require('http');\nconst net = require('net');\nconst crypto = require('crypto');\nconst { execFileSync } = require('child_process');\nconst path = require('path');\n\nconst STATE_PATH = '/tmp/cu/state.json';\nconst OUT_SHOT = '/tmp/cu/shot.jpg';\nconst OUT_META = '/tmp/cu/meta.json';\nconst CDP_HTTP = process.env.CU_CDP_URL || 'http://127.0.0.1:9222';\nconst SHOT_W = 640;\nconst SHOT_H = 400;\nconst SHOT_Q = 30;\n\nfunction readState() {\n  try {\n    return JSON.parse(fs.readFileSync(STATE_PATH, 'utf8'));\n  } catch {\n    return { url: 'about:blank' };\n  }\n}\n\nfunction writeMeta(m) {\n  fs.mkdirSync(path.dirname(OUT_META), { recursive: true });\n  fs.writeFileSync(OUT_META, JSON.stringify(m));\n}\n\nfunction httpJson(url) {\n  return new Promise((resolve, reject) => {\n    const req = http.get(url, { timeout: 5000 }, (res) => {\n      let d = '';\n      res.on('data', (c) => {\n        d += c;\n      });\n      res.on('end', () => {\n        try {\n          resolve(JSON.parse(d));\n        } catch (e) {\n          reject(e);\n        }\n      });\n    });\n    req.on('error', reject);\n    req.on('timeout', () => {\n      req.destroy();\n      reject(new Error('http timeout'));\n    });\n  });\n}\n\nfunction connectWs(wsUrl) {\n  return new Promise((resolve, reject) => {\n    const u = new URL(wsUrl);\n    const key = crypto.randomBytes(16).toString('base64');\n    const sock = net.connect({ host: u.hostname, port: Number(u.port) || 80 }, () => {\n      sock.write(\n        'GET ' +\n          u.pathname +\n          u.search +\n          ' HTTP/1.1\\r\\n' +\n          'Host: ' +\n          u.host +\n          '\\r\\n' +\n          'Upgrade: websocket\\r\\n' +\n          'Connection: Upgrade\\r\\n' +\n          'Sec-WebSocket-Key: ' +\n          key +\n          '\\r\\n' +\n          'Sec-WebSocket-Version: 13\\r\\n\\r\\n',\n      );\n    });\n    let buf = Buffer.alloc(0);\n    let upgraded = false;\n    const pending = new Map();\n    let nextId = 1;\n\n    function frame(payloadBuf) {\n      const mask = crypto.randomBytes(4);\n      const len = payloadBuf.length;\n      let header;\n      if (len < 126) {\n        header = Buffer.alloc(2);\n        header[0] = 0x81;\n        header[1] = 0x80 | len;\n      } else if (len < 65536) {\n        header = Buffer.alloc(4);\n        header[0] = 0x81;\n        header[1] = 0x80 | 126;\n        header.writeUInt16BE(len, 2);\n      } else {\n        header = Buffer.alloc(10);\n        header[0] = 0x81;\n        header[1] = 0x80 | 127;\n        header.writeUInt32BE(0, 2);\n        header.writeUInt32BE(len, 6);\n      }\n      const masked = Buffer.alloc(len);\n      for (let i = 0; i < len; i++) masked[i] = payloadBuf[i] ^ mask[i % 4];\n      return Buffer.concat([header, mask, masked]);\n    }\n\n    function send(method, params) {\n      const id = nextId++;\n      const body = Buffer.from(JSON.stringify({ id, method, params: params || {} }));\n      sock.write(frame(body));\n      return new Promise((res, rej) => {\n        const t = setTimeout(() => {\n          if (pending.has(id)) {\n            pending.delete(id);\n            rej(new Error('CDP timeout: ' + method));\n          }\n        }, 15000);\n        pending.set(id, { res, rej, t });\n      });\n    }\n\n    function handlePayload(payload) {\n      let msg;\n      try {\n        msg = JSON.parse(payload.toString());\n      } catch {\n        return;\n      }\n      if (msg.id != null && pending.has(msg.id)) {\n        const p = pending.get(msg.id);\n        pending.delete(msg.id);\n        clearTimeout(p.t);\n        if (msg.error) p.rej(new Error(JSON.stringify(msg.error)));\n        else p.res(msg.result || {});\n      }\n    }\n\n    sock.on('data', (chunk) => {\n      buf = Buffer.concat([buf, chunk]);\n      if (!upgraded) {\n        const idx = buf.indexOf('\\r\\n\\r\\n');\n        if (idx < 0) return;\n        const head = buf.slice(0, idx).toString();\n        if (!/\\s101\\s/.test(head)) {\n          reject(new Error('WS upgrade failed: ' + head.slice(0, 180)));\n          sock.destroy();\n          return;\n        }\n        upgraded = true;\n        buf = buf.slice(idx + 4);\n        resolve({\n          send,\n          close() {\n            try {\n              sock.destroy();\n            } catch {\n              /* ignore */\n            }\n          },\n        });\n      }\n      while (upgraded && buf.length >= 2) {\n        const b0 = buf[0];\n        const b1 = buf[1];\n        const opcode = b0 & 0x0f;\n        const masked = (b1 & 0x80) !== 0;\n        let len = b1 & 0x7f;\n        let off = 2;\n        if (len === 126) {\n          if (buf.length < 4) return;\n          len = buf.readUInt16BE(2);\n          off = 4;\n        } else if (len === 127) {\n          if (buf.length < 10) return;\n          const hi = buf.readUInt32BE(2);\n          const lo = buf.readUInt32BE(6);\n          if (hi !== 0) {\n            sock.destroy();\n            return;\n          }\n          len = lo;\n          off = 10;\n        }\n        const maskLen = masked ? 4 : 0;\n        if (buf.length < off + maskLen + len) return;\n        let payload = buf.slice(off + maskLen, off + maskLen + len);\n        if (masked) {\n          const m = buf.slice(off, off + 4);\n          const out = Buffer.alloc(len);\n          for (let i = 0; i < len; i++) out[i] = payload[i] ^ m[i % 4];\n          payload = out;\n        }\n        buf = buf.slice(off + maskLen + len);\n        if (opcode === 0x8) {\n          sock.destroy();\n          return;\n        }\n        if (opcode === 0x9) {\n          const pongHdr = Buffer.from([0x8a, payload.length & 0x7f]);\n          sock.write(Buffer.concat([pongHdr, payload]));\n          continue;\n        }\n        if (opcode === 0x1 || opcode === 0x2) handlePayload(payload);\n      }\n    });\n    sock.on('error', reject);\n    sock.setTimeout(20000, () => {\n      reject(new Error('WS socket timeout'));\n      sock.destroy();\n    });\n  });\n}\n\nasync function cdpShot() {\n  const base = CDP_HTTP.replace(/\\/$/, '');\n  const targets = await httpJson(base + '/json/list');\n  if (!Array.isArray(targets) || !targets.length) throw new Error('no CDP targets');\n  const page =\n    targets.find((t) => t.type === 'page' && t.webSocketDebuggerUrl && !String(t.url || '').startsWith('chrome-extension:')) ||\n    targets.find((t) => t.type === 'page' && t.webSocketDebuggerUrl) ||\n    targets.find((t) => t.webSocketDebuggerUrl && t.type !== 'service_worker' && t.type !== 'background_page') ||\n    targets.find((t) => t.webSocketDebuggerUrl);\n  if (!page || !page.webSocketDebuggerUrl) throw new Error('no page websocket');\n  const ws = await connectWs(page.webSocketDebuggerUrl);\n  try {\n    await ws.send('Page.enable').catch(() => {});\n    const result = await ws.send('Page.captureScreenshot', {\n      format: 'jpeg',\n      quality: SHOT_Q,\n      fromSurface: true,\n      clip: { x: 0, y: 0, width: SHOT_W, height: SHOT_H, scale: 1 },\n    });\n    if (!result || !result.data) throw new Error('empty CDP screenshot');\n    fs.writeFileSync(OUT_SHOT, Buffer.from(result.data, 'base64'));\n    return {\n      url: page.url || readState().url || 'about:blank',\n      title: page.title || readState().title || '',\n      via: 'cdp',\n    };\n  } finally {\n    ws.close();\n  }\n}\n\nfunction x11Shot() {\n  const env = { ...process.env, DISPLAY: ':99' };\n  try {\n    execFileSync(\n      'scrot',\n      ['-a', '0,0,' + SHOT_W + ',' + SHOT_H, '-q', String(SHOT_Q), OUT_SHOT],\n      {\n        env,\n        timeout: 12000,\n        stdio: ['ignore', 'ignore', 'pipe'],\n      },\n    );\n    if (fs.existsSync(OUT_SHOT) && fs.statSync(OUT_SHOT).size > 32) {\n      const st = readState();\n      return { url: st.url || 'about:blank', title: st.title || '', via: 'scrot' };\n    }\n  } catch (e) {\n    try {\n      fs.writeFileSync('/tmp/cu/shot.err', 'scrot: ' + String((e && e.message) || e));\n    } catch {\n      /* ignore */\n    }\n  }\n  return null;\n}\n\n(async () => {\n  fs.mkdirSync('/tmp/cu', { recursive: true });\n  let info = null;\n  let err = null;\n  try {\n    info = await cdpShot();\n  } catch (e) {\n    err = e;\n    try {\n      fs.writeFileSync('/tmp/cu/shot.err', 'cdp: ' + String((e && e.stack) || e));\n    } catch {\n      /* ignore */\n    }\n    info = x11Shot();\n  }\n  if (!info) {\n    writeMeta({ ok: false, error: String((err && err.message) || err || 'screenshot failed') });\n    process.exit(1);\n  }\n  const meta = {\n    ok: true,\n    url: info.url,\n    title: info.title,\n    action: 'screenshot',\n    width: SHOT_W,\n    height: SHOT_H,\n    mimeType: 'image/jpeg',\n    shot: true,\n    via: info.via,\n  };\n  writeMeta(meta);\n  process.stdout.write(JSON.stringify(meta));\n  process.exit(0);\n})().catch((e) => {\n  writeMeta({ ok: false, error: String((e && e.message) || e) });\n  console.error(e);\n  process.exit(1);\n});\n";
 
-export const RUNNER_CJS = `#!/usr/bin/env node
-process.env.PLAYWRIGHT_BROWSERS_PATH = process.env.PLAYWRIGHT_BROWSERS_PATH || '/tmp/cu-browsers';
-const { chromium } = require('/tmp/cu-npm/node_modules/playwright');
-const fs = require('fs');
-const path = require('path');
-
-const STATE_PATH = '/tmp/cu/state.json';
-const OUT_SHOT = '/tmp/cu/shot.jpg';
-const OUT_META = '/tmp/cu/meta.json';
-const CDP = process.env.CU_CDP_URL || 'http://127.0.0.1:9222';
-// Small JPEG clip — PNG viewport encode was OOM (SIGKILL 137) after desk Chromium.
-const SHOT_W = 800;
-const SHOT_H = 560;
-const SHOT_Q = 40;
-
-function readState() {
-  try { return JSON.parse(fs.readFileSync(STATE_PATH, 'utf8')); }
-  catch { return { url: 'about:blank' }; }
-}
-function writeState(s) {
-  fs.mkdirSync(path.dirname(STATE_PATH), { recursive: true });
-  fs.writeFileSync(STATE_PATH, JSON.stringify(s));
-}
-function writeMeta(m) {
-  fs.writeFileSync(OUT_META, JSON.stringify(m));
-}
-
-async function lightScreenshot(page) {
-  try {
-    await page.screenshot({
-      path: OUT_SHOT,
-      type: 'jpeg',
-      quality: SHOT_Q,
-      fullPage: false,
-      clip: { x: 0, y: 0, width: SHOT_W, height: SHOT_H },
-      timeout: 15000,
-    });
-    return true;
-  } catch (e) {
-    try { fs.writeFileSync('/tmp/cu/shot.err', String(e && e.message || e)); } catch {}
-    return false;
-  }
-}
-
-async function withPage(fn, opts) {
-  const skipShot = !!(opts && opts.skipShot);
-  const state = readState();
-  // Attach only — never launch a second Chromium (desk already owns :9222).
-  const browser = await chromium.connectOverCDP(CDP);
-  try {
-    const context = browser.contexts()[0] || await browser.newContext({
-      viewport: { width: 1024, height: 720 },
-    });
-    const page = context.pages()[0] || await context.newPage();
-    if (state.url && state.url !== 'about:blank' && page.url() === 'about:blank') {
-      await page.goto(state.url, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
-    }
-    const result = await fn(page, state);
-    const url = page.url();
-    const title = await page.title().catch(() => '');
-    let shot = false;
-    if (!skipShot) {
-      shot = await lightScreenshot(page);
-    }
-    writeState({ url, title });
-    writeMeta({
-      ok: true,
-      url,
-      title,
-      action: result && result.action ? result.action : 'screenshot',
-      width: SHOT_W,
-      height: SHOT_H,
-      mimeType: 'image/jpeg',
-      shot,
-      shotSkipped: skipShot,
-    });
-    process.stdout.write(JSON.stringify({
-      ok: true,
-      url,
-      title,
-      action: result && result.action,
-      shot,
-      shotSkipped: skipShot,
-    }));
-  } finally {
-    // Leave CDP socket to GC on process exit. Do not browser.close() —
-    // some Playwright builds tear down the remote target when closing.
-  }
-}
-
-async function main() {
-  const cmd = JSON.parse(process.argv[2] || '{"op":"screenshot"}');
-  if (cmd.op === 'open') {
-    // Navigate only; screenshot is a separate lighter op (avoids 137 on first open).
-    await withPage(async (page) => {
-      await page.goto(cmd.url, { waitUntil: 'domcontentloaded', timeout: 45000 });
-      return { action: 'open' };
-    }, { skipShot: true });
-    return;
-  }
-  if (cmd.op === 'screenshot') {
-    await withPage(async () => ({ action: 'screenshot' }), { skipShot: false });
-    return;
-  }
-  if (cmd.op === 'act') {
-    await withPage(async (page) => {
-      const a = cmd.action || {};
-      switch (a.type) {
-        case 'click':
-          await page.mouse.click(a.x, a.y, { button: a.button || 'left' });
-          break;
-        case 'type':
-          await page.keyboard.type(a.text, { delay: 15 });
-          break;
-        case 'key':
-          await page.keyboard.press(a.key);
-          break;
-        case 'scroll':
-          await page.mouse.move(a.x, a.y);
-          await page.mouse.wheel(a.deltaX || 0, a.deltaY || 0);
-          break;
-        case 'wait':
-          await page.waitForTimeout(Math.min(a.ms || 1000, 10000));
-          break;
-        case 'drag':
-          await page.mouse.move(a.fromX, a.fromY);
-          await page.mouse.down();
-          await page.mouse.move(a.toX, a.toY, { steps: 8 });
-          await page.mouse.up();
-          break;
-        default:
-          throw new Error('Unknown action type: ' + a.type);
-      }
-      await page.waitForTimeout(250);
-      return { action: a.type };
-    }, { skipShot: false });
-    return;
-  }
-  throw new Error('Unknown op: ' + cmd.op);
-}
-
-main().catch((err) => {
-  writeMeta({ ok: false, error: String(err && err.message || err) });
-  console.error(err);
-  process.exit(1);
-});
-`;
+/** Playwright CDP attach for navigate/act only — shots go through SHOOTER_CJS. */
+export const RUNNER_CJS = '#!/usr/bin/env node\nprocess.env.PLAYWRIGHT_BROWSERS_PATH = process.env.PLAYWRIGHT_BROWSERS_PATH || \'/tmp/cu-browsers\';\nconst { chromium } = require(\'/tmp/cu-npm/node_modules/playwright\');\nconst fs = require(\'fs\');\nconst path = require(\'path\');\n\nconst STATE_PATH = \'/tmp/cu/state.json\';\nconst OUT_META = \'/tmp/cu/meta.json\';\nconst CDP = process.env.CU_CDP_URL || \'http://127.0.0.1:9222\';\n\nfunction readState() {\n  try {\n    return JSON.parse(fs.readFileSync(STATE_PATH, \'utf8\'));\n  } catch {\n    return { url: \'about:blank\' };\n  }\n}\nfunction writeState(s) {\n  fs.mkdirSync(path.dirname(STATE_PATH), { recursive: true });\n  fs.writeFileSync(STATE_PATH, JSON.stringify(s));\n}\nfunction writeMeta(m) {\n  fs.writeFileSync(OUT_META, JSON.stringify(m));\n}\n\nasync function withPage(fn) {\n  const state = readState();\n  // Attach only — never launch a second Chromium (desk already owns :9222).\n  const browser = await chromium.connectOverCDP(CDP);\n  try {\n    const context =\n      browser.contexts()[0] ||\n      (await browser.newContext({\n        viewport: { width: 1024, height: 720 },\n      }));\n    const page = context.pages()[0] || (await context.newPage());\n    if (state.url && state.url !== \'about:blank\' && page.url() === \'about:blank\') {\n      await page.goto(state.url, { waitUntil: \'domcontentloaded\', timeout: 45000 }).catch(() => {});\n    }\n    const result = await fn(page, state);\n    const url = page.url();\n    const title = await page.title().catch(() => \'\');\n    writeState({ url, title });\n    writeMeta({\n      ok: true,\n      url,\n      title,\n      action: result && result.action ? result.action : \'ok\',\n      shot: false,\n      shotSkipped: true,\n    });\n    process.stdout.write(\n      JSON.stringify({\n        ok: true,\n        url,\n        title,\n        action: result && result.action,\n        shot: false,\n        shotSkipped: true,\n      }),\n    );\n  } finally {\n    // Leave CDP socket to GC on process exit. Do not browser.close() —\n    // some Playwright builds tear down the remote target when closing.\n  }\n}\n\nasync function main() {\n  const cmd = JSON.parse(process.argv[2] || \'{"op":"open"}\');\n  if (cmd.op === \'open\') {\n    await withPage(async (page) => {\n      await page.goto(cmd.url, { waitUntil: \'domcontentloaded\', timeout: 45000 });\n      return { action: \'open\' };\n    });\n    return;\n  }\n  if (cmd.op === \'act\') {\n    await withPage(async (page) => {\n      const a = cmd.action || {};\n      switch (a.type) {\n        case \'click\':\n          await page.mouse.click(a.x, a.y, { button: a.button || \'left\' });\n          break;\n        case \'type\':\n          await page.keyboard.type(a.text, { delay: 15 });\n          break;\n        case \'key\':\n          await page.keyboard.press(a.key);\n          break;\n        case \'scroll\':\n          await page.mouse.move(a.x, a.y);\n          await page.mouse.wheel(a.deltaX || 0, a.deltaY || 0);\n          break;\n        case \'wait\':\n          await page.waitForTimeout(Math.min(a.ms || 1000, 10000));\n          break;\n        case \'drag\':\n          await page.mouse.move(a.fromX, a.fromY);\n          await page.mouse.down();\n          await page.mouse.move(a.toX, a.toY, { steps: 8 });\n          await page.mouse.up();\n          break;\n        default:\n          throw new Error(\'Unknown action type: \' + a.type);\n      }\n      await page.waitForTimeout(250);\n      return { action: a.type };\n    });\n    return;\n  }\n  throw new Error(\'Unknown op (use shooter.cjs for screenshot): \' + cmd.op);\n}\n\nmain().catch((err) => {\n  writeMeta({ ok: false, error: String((err && err.message) || err) });\n  console.error(err);\n  process.exit(1);\n});\n';
