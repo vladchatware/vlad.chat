@@ -55,7 +55,7 @@ function createParams(): Record<string, unknown> {
   const snapshotId = process.env.COMPUTER_USE_SNAPSHOT_ID;
   const base: Record<string, unknown> = {
     timeout: SANDBOX_CREATE_TIMEOUT_MS,
-    resources: { vcpus: 4 }, // 2GB RAM per vCPU → 8GB; desk+Chromium was OOMing at 2
+    resources: { vcpus: 8 }, // 2GB/vCPU → 16GB; runner still SIGKILL(137) at 4
     persistent: false,
     // noVNC websockify listens on 6080 inside the sandbox.
     ports: [6080],
@@ -302,9 +302,11 @@ export async function runComputerOp(
   if (run.exitCode !== 0) {
     const errBuf = await sandbox.readFileToBuffer({ path: "/tmp/cu/meta.json" });
     const errMeta = errBuf ? JSON.parse(errBuf.toString("utf8")) : null;
-    throw new Error(
-      errMeta?.error || (await run.stderr()) || `runner exit ${run.exitCode}`,
-    );
+    const base =
+      errMeta?.error || (await run.stderr()) || `runner exit ${run.exitCode}`;
+    // Desk may be alive even when the CDP runner is OOM-killed — surface viewerUrl.
+    const viewer = session.viewerUrl ? ` viewerUrl=${session.viewerUrl}` : "";
+    throw new Error(`${base}${viewer}`);
   }
   const metaBuf = await sandbox.readFileToBuffer({ path: "/tmp/cu/meta.json" });
   const meta = metaBuf ? JSON.parse(metaBuf.toString("utf8")) : { ok: true };

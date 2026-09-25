@@ -43,6 +43,14 @@ if [ ! -f /usr/share/novnc/vnc.html ] && [ ! -f /usr/share/novnc/vnc_lite.html ]
   ls -la /usr/share/novnc >&2 || true
   exit 1
 fi
+# 2G swap for Chromium (desk-up then runner was still OOM at 8GB).
+if [ ! -f /tmp/cu/swapfile ]; then
+  mkdir -p /tmp/cu
+  fallocate -l 2G /tmp/cu/swapfile 2>/dev/null || dd if=/dev/zero of=/tmp/cu/swapfile bs=1M count=2048 status=none
+  chmod 600 /tmp/cu/swapfile
+  mkswap /tmp/cu/swapfile >/dev/null
+fi
+swapon /tmp/cu/swapfile >/dev/null 2>&1 || true
 echo desk-packages-ready
 `;
 
@@ -90,13 +98,14 @@ function fail(err) {
     '--remote-debugging-port=9222',
     '--remote-debugging-address=127.0.0.1',
     '--user-data-dir=/tmp/cu-profile',
-    '--window-size=1280,720',
+    '--window-size=1024,720',
     '--window-position=0,0',
     '--no-first-run',
     '--no-default-browser-check',
     '--disable-background-networking',
     '--disable-features=TranslateUI',
-    '--renderer-process-limit=2',
+    '--renderer-process-limit=1',
+    '--disable-features=AudioServiceOutOfProcess,IsolateOrigins,site-per-process',
     '--disable-software-rasterizer',
     '--memory-pressure-off',
     '--disable-background-networking',
@@ -152,6 +161,14 @@ export const START_DESK_SH = `set -euo pipefail
 export DISPLAY=:99
 export PLAYWRIGHT_BROWSERS_PATH=/tmp/cu-browsers
 mkdir -p /tmp/cu /tmp/cu-profile
+# Swap softens Chromium CDP spikes (runner was SIGKILL 137 after desk-up).
+if [ ! -f /tmp/cu/swapfile ]; then
+  if fallocate -l 2G /tmp/cu/swapfile 2>/dev/null || dd if=/dev/zero of=/tmp/cu/swapfile bs=1M count=2048 status=none; then
+    chmod 600 /tmp/cu/swapfile
+    mkswap /tmp/cu/swapfile >/dev/null 2>&1 || true
+  fi
+fi
+swapon /tmp/cu/swapfile >/dev/null 2>&1 || true
 diag() {
   echo "=== desk diagnostics ===" >&2
   echo "binaries:" >&2
@@ -320,7 +337,7 @@ async function withPage(fn) {
   const browser = await chromium.connectOverCDP(CDP);
   try {
     const context = browser.contexts()[0] || await browser.newContext({
-      viewport: { width: 1280, height: 720 },
+      viewport: { width: 1024, height: 720 },
     });
     const page = context.pages()[0] || await context.newPage();
     if (state.url && state.url !== 'about:blank' && page.url() === 'about:blank') {
@@ -336,7 +353,7 @@ async function withPage(fn) {
       url,
       title,
       action: result && result.action ? result.action : 'screenshot',
-      width: 1280,
+      width: 1024,
       height: 720,
     });
     process.stdout.write(JSON.stringify({ ok: true, url, title, action: result && result.action }));
