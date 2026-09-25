@@ -10,14 +10,14 @@ if [ ! -d /tmp/cu-npm/node_modules/playwright ]; then
   npm i playwright@1.49.1 --no-fund --no-audit
 fi
 has_browser() {
-  ls /tmp/cu-browsers/chromium-*/chrome-linux*/chrome >/dev/null 2>&1 \\
-    || ls /tmp/cu-browsers/chromium_headless_shell-*/chrome-linux*/headless_shell >/dev/null 2>&1
+  # Headed VNC desk needs full chromium, not headless_shell.
+  ls /tmp/cu-browsers/chromium-*/chrome-linux*/chrome >/dev/null 2>&1
 }
 if ! has_browser; then
   npx playwright install --with-deps chromium
 fi
 if ! has_browser; then
-  echo "Playwright chromium binary missing under PLAYWRIGHT_BROWSERS_PATH=/tmp/cu-browsers" >&2
+  echo "Playwright full chromium missing under PLAYWRIGHT_BROWSERS_PATH=/tmp/cu-browsers (headed desk)" >&2
   ls -laR /tmp/cu-browsers >&2 || true
   exit 1
 fi
@@ -32,21 +32,123 @@ fi
 mkdir -p /tmp/cu /tmp/cu-profile
 `;
 
+export const LAUNCH_CHROME_CJS = `#!/usr/bin/env node
+process.env.PLAYWRIGHT_BROWSERS_PATH = process.env.PLAYWRIGHT_BROWSERS_PATH || '/tmp/cu-browsers';
+process.env.DISPLAY = process.env.DISPLAY || ':99';
+const fs = require('fs');
+const http = require('http');
+const { spawn } = require('child_process');
+const { chromium } = require('/tmp/cu-npm/node_modules/playwright');
+
+fs.mkdirSync('/tmp/cu', { recursive: true });
+fs.mkdirSync('/tmp/cu-profile', { recursive: true });
+
+function fail(err) {
+  try { fs.writeFileSync('/tmp/cu/chrome-launch.err', String(err && err.stack || err)); } catch {}
+  console.error(err);
+  process.exit(1);
+}
+
+(async () => {
+  let exec;
+  try {
+    exec = chromium.executablePath();
+  } catch (e) {
+    fail(e);
+    return;
+  }
+  if (!exec || !fs.existsSync(exec)) {
+    fail(new Error('chromium.executablePath missing: ' + exec));
+    return;
+  }
+  if (String(exec).includes('headless_shell')) {
+    fail(new Error('headed desk needs full chromium, got headless_shell: ' + exec));
+    return;
+  }
+  fs.writeFileSync('/tmp/cu/chrome-exec', exec);
+  const args = [
+    '--no-sandbox',
+    '--disable-setuid-sandbox',
+    '--disable-dev-shm-usage',
+    '--disable-gpu',
+    '--ozone-platform=x11',
+    '--remote-debugging-port=9222',
+    '--remote-debugging-address=127.0.0.1',
+    '--user-data-dir=/tmp/cu-profile',
+    '--window-size=1280,720',
+    '--window-position=0,0',
+    '--no-first-run',
+    '--no-default-browser-check',
+    '--disable-background-networking',
+    '--disable-features=TranslateUI',
+    'about:blank',
+  ];
+  const child = spawn(exec, args, {
+    env: { ...process.env, DISPLAY: ':99', PLAYWRIGHT_BROWSERS_PATH: '/tmp/cu-browsers' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+    detached: true,
+  });
+  fs.writeFileSync('/tmp/cu/chrome.pid', String(child.pid));
+  const log = fs.createWriteStream('/tmp/cu/chrome-child.log', { flags: 'a' });
+  child.stdout.pipe(log);
+  child.stderr.pipe(log);
+  child.on('exit', (code, signal) => {
+    try {
+      fs.writeFileSync('/tmp/cu/chrome-launch.err', 'chrome exited code=' + code + ' signal=' + signal);
+    } catch {}
+  });
+  await new Promise((resolve, reject) => {
+    let tries = 0;
+    const tick = () => {
+      tries += 1;
+      if (child.exitCode != null) {
+        reject(new Error('chrome exited before CDP ready, code=' + child.exitCode));
+        return;
+      }
+      const req = http.get('http://127.0.0.1:9222/json/version', (res) => {
+        res.resume();
+        if (res.statusCode === 200) {
+          fs.writeFileSync('/tmp/cu/cdp-ready', '1');
+          resolve(undefined);
+          return;
+        }
+        if (tries > 100) reject(new Error('CDP HTTP not 200 after spawn'));
+        else setTimeout(tick, 250);
+      });
+      req.on('error', () => {
+        if (tries > 100) reject(new Error('CDP not reachable after spawn: ' + tries));
+        else setTimeout(tick, 250);
+      });
+    };
+    tick();
+  });
+  child.unref();
+  await new Promise(() => {});
+})().catch(fail);
+`;
+
 export const START_DESK_SH = `set -euo pipefail
 export DISPLAY=:99
+export PLAYWRIGHT_BROWSERS_PATH=/tmp/cu-browsers
 mkdir -p /tmp/cu /tmp/cu-profile
+diag() {
+  echo "=== desk diagnostics ===" >&2
+  tail -80 /tmp/cu/chrome.log /tmp/cu/chrome-launch.err /tmp/cu/xvfb.log /tmp/cu/x11vnc.log /tmp/cu/novnc.log /tmp/cu/fluxbox.log 2>/dev/null || true
+  ps -ef | head -60 >&2 || true
+  ls -la /tmp/cu-browsers 2>/dev/null | head -40 >&2 || true
+}
 if ! pgrep -f 'Xvfb :99' >/dev/null 2>&1; then
   rm -f /tmp/.X99-lock /tmp/.X11-unix/X99 2>/dev/null || true
   Xvfb :99 -screen 0 1280x720x24 -ac +extension RANDR +render -noreset -nolisten tcp >/tmp/cu/xvfb.log 2>&1 &
-  sleep 0.6
+  sleep 0.8
 fi
 if ! pgrep -x fluxbox >/dev/null 2>&1; then
   fluxbox >/tmp/cu/fluxbox.log 2>&1 &
-  sleep 0.3
+  sleep 0.4
 fi
 if ! pgrep -f 'x11vnc.*5900' >/dev/null 2>&1; then
   x11vnc -display :99 -rfbport 5900 -localhost -forever -shared -nopw -xkb -repeat >/tmp/cu/x11vnc.log 2>&1 &
-  sleep 0.4
+  sleep 0.5
 fi
 NOVNC_WEB=""
 for d in /usr/share/novnc /usr/share/novnc/utils/.. /usr/share/novnc; do
@@ -55,6 +157,7 @@ done
 if [ -z "$NOVNC_WEB" ] && [ -d /usr/share/novnc ]; then NOVNC_WEB=/usr/share/novnc; fi
 if [ -z "$NOVNC_WEB" ]; then
   echo "noVNC web root not found" >&2
+  diag
   exit 1
 fi
 echo "$NOVNC_WEB" > /tmp/cu/novnc-web
@@ -63,9 +166,8 @@ ENTRY=vnc.html
 echo "$ENTRY" > /tmp/cu/novnc-entry
 if ! pgrep -f 'websockify.*6080' >/dev/null 2>&1; then
   websockify --web="$NOVNC_WEB" 6080 127.0.0.1:5900 >/tmp/cu/novnc.log 2>&1 &
-  sleep 0.4
+  sleep 0.5
 fi
-# Wait for noVNC HTTP
 ok=0
 for i in $(seq 1 40); do
   if curl -fsS -o /dev/null "http://127.0.0.1:6080/" 2>/dev/null; then ok=1; break; fi
@@ -74,40 +176,58 @@ for i in $(seq 1 40); do
 done
 if [ "$ok" != "1" ]; then
   echo "noVNC HTTP not ready on :6080" >&2
-  tail -40 /tmp/cu/novnc.log /tmp/cu/x11vnc.log /tmp/cu/xvfb.log >&2 || true
+  diag
   exit 1
 fi
-# Persist headed Chromium on the shared display via CDP (agent + human share one desk).
-if ! curl -fsS http://127.0.0.1:9222/json/version >/dev/null 2>&1; then
-  export PLAYWRIGHT_BROWSERS_PATH=/tmp/cu-browsers
-  CHROME=""
-  for c in /tmp/cu-browsers/chromium-*/chrome-linux*/chrome; do
-    if [ -x "$c" ]; then CHROME="$c"; break; fi
-  done
-  if [ -z "$CHROME" ]; then
-    echo "chromium binary not found for headed desk" >&2
-    ls -laR /tmp/cu-browsers >&2 || true
+# Headed Chromium via Playwright keep-alive (shared with VNC + computer_* CDP).
+cdp_up() { curl -fsS http://127.0.0.1:9222/json/version >/dev/null 2>&1; }
+if ! cdp_up; then
+  if [ ! -f /tmp/cu/launch-chrome.cjs ]; then
+    echo "launch-chrome.cjs missing" >&2
+    diag
     exit 1
   fi
-  DISPLAY=:99 "$CHROME" \
-    --no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage \
-    --disable-gpu --ozone-platform=x11 \
-    --remote-debugging-port=9222 --remote-debugging-address=127.0.0.1 \
-    --user-data-dir=/tmp/cu-profile \
-    --window-size=1280,720 --window-position=0,0 \
-    about:blank >/tmp/cu/chrome.log 2>&1 &
+  rm -f /tmp/cu/cdp-ready /tmp/cu/chrome-launch.err
+  # Kill stale chrome/launchers that may hold the profile lock.
+  pkill -f 'launch-chrome.cjs' >/dev/null 2>&1 || true
+  pkill -f 'chrome.*remote-debugging-port=9222' >/dev/null 2>&1 || true
+  sleep 0.3
+  node /tmp/cu/launch-chrome.cjs >/tmp/cu/chrome.log 2>&1 &
+  echo $! > /tmp/cu/chrome-launcher.pid
   ok=0
-  for i in $(seq 1 60); do
-    if curl -fsS http://127.0.0.1:9222/json/version >/dev/null 2>&1; then ok=1; break; fi
+  for i in $(seq 1 90); do
+    if [ -f /tmp/cu/cdp-ready ] && cdp_up; then ok=1; break; fi
+    if [ -f /tmp/cu/chrome-launch.err ]; then
+      echo "chrome launcher failed" >&2
+      diag
+      exit 1
+    fi
+    # If launcher pid died without cdp-ready, fail fast with logs.
+    if [ -f /tmp/cu/chrome-launcher.pid ]; then
+      lp=$(cat /tmp/cu/chrome-launcher.pid)
+      if ! kill -0 "$lp" 2>/dev/null; then
+        echo "chrome launcher exited early" >&2
+        diag
+        exit 1
+      fi
+    fi
     sleep 0.5
   done
   if [ "$ok" != "1" ]; then
-    echo "CDP :9222 not ready" >&2
-    tail -50 /tmp/cu/chrome.log >&2 || true
+    echo "CDP :9222 not ready after Playwright launch" >&2
+    diag
     exit 1
   fi
 fi
-curl -fsS http://127.0.0.1:9222/json/version >/dev/null
+# Stable for 1s
+for i in 1 2 3; do
+  if ! cdp_up; then
+    echo "CDP dropped after ready" >&2
+    diag
+    exit 1
+  fi
+  sleep 0.35
+done
 echo desk-ready
 `;
 

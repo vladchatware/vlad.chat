@@ -4,6 +4,7 @@ import {
   INSTALL_PLAYWRIGHT_SH,
   INSTALL_DESK_SH,
   START_DESK_SH,
+  LAUNCH_CHROME_CJS,
   RUNNER_CJS,
 } from "./playwright-scripts";
 
@@ -124,8 +125,7 @@ export async function getOrCreateSessionSandbox(sessionKey: string): Promise<{
       "-lc",
       "export PLAYWRIGHT_BROWSERS_PATH=/tmp/cu-browsers; "
         + "if [ -d /tmp/cu-npm/node_modules/playwright ] && "
-        + "{ ls /tmp/cu-browsers/chromium-*/chrome-linux*/chrome >/dev/null 2>&1 "
-        + "|| ls /tmp/cu-browsers/chromium_headless_shell-*/chrome-linux*/headless_shell >/dev/null 2>&1; }; "
+        + "ls /tmp/cu-browsers/chromium-*/chrome-linux*/chrome >/dev/null 2>&1; "
         + "then echo ready; else echo missing; fi",
     ],
   });
@@ -169,10 +169,14 @@ export async function getOrCreateSessionSandbox(sessionKey: string): Promise<{
         `Desk install failed: ${(await deskInstall.stderr()) || (await deskInstall.stdout())}`,
       );
     }
+    await sandbox.writeFiles([
+      { path: "/tmp/cu/launch-chrome.cjs", content: Buffer.from(LAUNCH_CHROME_CJS) },
+      { path: "/tmp/cu/runner.cjs", content: Buffer.from(RUNNER_CJS) },
+    ]);
     const deskStart = await sandbox.runCommand({
       cmd: "bash",
       args: ["-lc", START_DESK_SH],
-      timeoutMs: 2 * 60 * 1000,
+      timeoutMs: 3 * 60 * 1000,
     });
     if (deskStart.exitCode !== 0) {
       throw new Error(
