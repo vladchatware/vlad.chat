@@ -1,16 +1,30 @@
 /** Bash + CJS payloads executed inside the Vercel Sandbox microVM. */
 
+/** Pin browsers under /tmp so partial installs are detectable and recoverable. */
 export const INSTALL_PLAYWRIGHT_SH = `set -euo pipefail
-mkdir -p /tmp/cu /tmp/cu-profile /tmp/cu-npm
+export PLAYWRIGHT_BROWSERS_PATH=/tmp/cu-browsers
+mkdir -p /tmp/cu /tmp/cu-profile /tmp/cu-npm /tmp/cu-browsers
+cd /tmp/cu-npm
 if [ ! -d /tmp/cu-npm/node_modules/playwright ]; then
-  cd /tmp/cu-npm
   npm init -y >/dev/null 2>&1
   npm i playwright@1.49.1 --no-fund --no-audit
+fi
+has_browser() {
+  ls /tmp/cu-browsers/chromium-*/chrome-linux*/chrome >/dev/null 2>&1 \\
+    || ls /tmp/cu-browsers/chromium_headless_shell-*/chrome-linux*/headless_shell >/dev/null 2>&1
+}
+if ! has_browser; then
   npx playwright install --with-deps chromium
+fi
+if ! has_browser; then
+  echo "Playwright chromium binary missing under PLAYWRIGHT_BROWSERS_PATH=/tmp/cu-browsers" >&2
+  ls -laR /tmp/cu-browsers >&2 || true
+  exit 1
 fi
 `;
 
 export const RUNNER_CJS = `#!/usr/bin/env node
+process.env.PLAYWRIGHT_BROWSERS_PATH = process.env.PLAYWRIGHT_BROWSERS_PATH || '/tmp/cu-browsers';
 const { chromium } = require('/tmp/cu-npm/node_modules/playwright');
 const fs = require('fs');
 const path = require('path');

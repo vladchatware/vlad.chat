@@ -108,11 +108,16 @@ export async function getOrCreateSessionSandbox(sessionKey: string): Promise<{
   };
   sessions.set(sessionKey, session);
 
+  // Re-run install whenever chromium binary is missing (npm package alone is insufficient).
   const marker = await sandbox.runCommand({
     cmd: "bash",
     args: [
       "-lc",
-      "test -d /tmp/cu-npm/node_modules/playwright && echo ready || echo missing",
+      "export PLAYWRIGHT_BROWSERS_PATH=/tmp/cu-browsers; "
+        + "if [ -d /tmp/cu-npm/node_modules/playwright ] && "
+        + "{ ls /tmp/cu-browsers/chromium-*/chrome-linux*/chrome >/dev/null 2>&1 "
+        + "|| ls /tmp/cu-browsers/chromium_headless_shell-*/chrome-linux*/headless_shell >/dev/null 2>&1; }; "
+        + "then echo ready; else echo missing; fi",
     ],
   });
   if (!(await marker.stdout()).includes("ready")) {
@@ -123,7 +128,9 @@ export async function getOrCreateSessionSandbox(sessionKey: string): Promise<{
       timeoutMs: 8 * 60 * 1000,
     });
     if (install.exitCode !== 0) {
-      throw new Error(`Playwright install failed: ${await install.stderr()}`);
+      throw new Error(
+        `Playwright install failed: ${(await install.stderr()) || (await install.stdout())}`,
+      );
     }
   }
 
@@ -207,7 +214,7 @@ export async function runComputerOp(
   const payload = JSON.stringify(cmd).replace(/'/g, `'\\''`);
   const run = await sandbox.runCommand({
     cmd: "bash",
-    args: ["-lc", `node /tmp/cu/runner.cjs '${payload}'`],
+    args: ["-lc", `export PLAYWRIGHT_BROWSERS_PATH=/tmp/cu-browsers; node /tmp/cu/runner.cjs '${payload}'`],
     timeoutMs: 2 * 60 * 1000,
   });
   if (run.exitCode !== 0) {
