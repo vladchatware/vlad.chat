@@ -26,10 +26,12 @@ balances.
 StoreKit purchases, Convex attachment uploads, voice transcription and
 multi-thread mutations remain follow-up slices.
 
-To enable Apple sign-in, configure `AUTH_APPLE_ID` with an Apple Services ID
-and `AUTH_APPLE_SECRET` with its generated client secret in the Convex
-deployment. Apple requires the Sign in with Apple capability on the app ID;
-the client secret expires every six months and must be renewed.
+To enable Apple sign-in, enable Sign in with Apple on the app ID, create an
+Apple Services ID and key, then set `AUTH_APPLE_ID` and `AUTH_APPLE_SECRET` in
+each Convex deployment. Register the callback URL
+`https://<deployment>.convex.site/api/auth/callback/apple` with Apple. Keep the
+client secret in Convex environment variables, outside the repo; it expires
+every six months and must be renewed.
 
 ## SwiftChat source
 
