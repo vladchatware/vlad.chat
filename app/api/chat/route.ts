@@ -66,7 +66,8 @@ export async function POST(req: Request) {
     }
   }
 
-  // Computer use (V-83): shared backend tools for web + iOS. Feature-flagged.
+  // Computer use (V-83): legacy/styleguide path. Product lounge uses Convex
+  // generateReply → getMcpTools → /api/mcp (computer_* registered there).
   // Clients only render tool JSON (screenshotUrl / handoff); no UI-only orchestration.
   if (computerUseToolsAvailable()) {
     const computerTools = createComputerUseTools({

@@ -12,6 +12,7 @@ import {
 import { putScreenshot, screenshotPublicUrl } from "./artifacts";
 import { handoffMessage, looksLikePaymentOrSigning } from "./safety";
 import type {
+  ComputerAction,
   ComputerBudgetStatus,
   ComputerHandoffReason,
   ComputerToolResult,
@@ -20,6 +21,15 @@ import type {
 export type ComputerToolContext = {
   userId?: string;
   chatId?: string;
+};
+
+export type ComputerOpName = ComputerToolResult["op"];
+
+export type ComputerOpArgs = {
+  url?: string;
+  action?: ComputerAction;
+  reason?: ComputerHandoffReason;
+  message?: string;
 };
 
 function sessionKeyFrom(ctx: ComputerToolContext) {
@@ -88,7 +98,7 @@ function attachShot(
   };
 }
 
-const actionSchema = z.discriminatedUnion("type", [
+export const computerActionSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("click"),
     x: z.number(),
@@ -115,8 +125,167 @@ const actionSchema = z.discriminatedUnion("type", [
 ]);
 
 /**
+ * Shared execute path for AI SDK tools and MCP registration.
+ * Clients stay dumb — only render the returned JSON (screenshotUrl / handoff).
+ */
+export async function runComputerToolOp(
+  sessionKey: string,
+  op: ComputerOpName,
+  args: ComputerOpArgs = {},
+): Promise<ComputerToolResult> {
+  switch (op) {
+    case "open": {
+      const url = args.url;
+      if (!url) {
+        return { ok: false, op: "open", code: "runtime", error: "url is required" };
+      }
+      try {
+        const { meta, png, sandboxName, budget } = await runComputerOp(
+          sessionKey,
+          { op: "open", url },
+        );
+        return attachShot(
+          sessionKey,
+          png,
+          {
+            ok: true,
+            op: "open",
+            url: String(meta.url || url),
+            title: meta.title ? String(meta.title) : undefined,
+            action: "open",
+            sandboxName,
+          },
+          mapBudget(budget),
+        );
+      } catch (error) {
+        return failCap("open", error);
+      }
+    }
+    case "screenshot": {
+      try {
+        const { meta, png, sandboxName, budget } = await runComputerOp(
+          sessionKey,
+          { op: "screenshot" },
+        );
+        return attachShot(
+          sessionKey,
+          png,
+          {
+            ok: true,
+            op: "screenshot",
+            url: meta.url ? String(meta.url) : undefined,
+            title: meta.title ? String(meta.title) : undefined,
+            action: "screenshot",
+            sandboxName,
+          },
+          mapBudget(budget),
+        );
+      } catch (error) {
+        return failCap("screenshot", error);
+      }
+    }
+    case "act": {
+      const action = args.action;
+      if (!action) {
+        return {
+          ok: false,
+          op: "act",
+          code: "runtime",
+          error: "action is required",
+        };
+      }
+      if (action.type === "type" && looksLikePaymentOrSigning(action.text)) {
+        return {
+          ok: false,
+          op: "act",
+          error: handoffMessage("payment"),
+          handoff: {
+            type: "computer_handoff",
+            reason: "payment",
+            message: handoffMessage("payment"),
+            requiresUser: true,
+          },
+        };
+      }
+      try {
+        const { meta, png, sandboxName, budget } = await runComputerOp(
+          sessionKey,
+          { op: "act", action },
+        );
+        return attachShot(
+          sessionKey,
+          png,
+          {
+            ok: true,
+            op: "act",
+            url: meta.url ? String(meta.url) : undefined,
+            title: meta.title ? String(meta.title) : undefined,
+            action: action.type,
+            sandboxName,
+          },
+          mapBudget(budget),
+        );
+      } catch (error) {
+        return failCap("act", error);
+      }
+    }
+    case "handoff": {
+      const reason = (args.reason || "unknown") as ComputerHandoffReason;
+      let shot: ComputerToolResult = {
+        ok: true,
+        op: "handoff",
+        handoff: {
+          type: "computer_handoff",
+          reason,
+          message: args.message || handoffMessage(reason),
+          requiresUser: true,
+        },
+      };
+      try {
+        const { meta, png, sandboxName, budget } = await runComputerOp(
+          sessionKey,
+          { op: "screenshot" },
+        );
+        shot = attachShot(
+          sessionKey,
+          png,
+          {
+            ...shot,
+            url: meta.url ? String(meta.url) : undefined,
+            title: meta.title ? String(meta.title) : undefined,
+            sandboxName,
+          },
+          mapBudget(budget),
+        );
+      } catch {
+        /* handoff still valid without shot */
+      }
+      return shot;
+    }
+    case "end": {
+      try {
+        await endComputerSession(sessionKey);
+        return { ok: true, op: "end", action: "end" };
+      } catch (error) {
+        return failCap("end", error);
+      }
+    }
+    default: {
+      const _exhaustive: never = op;
+      return {
+        ok: false,
+        op: "screenshot",
+        code: "runtime",
+        error: `Unknown op: ${String(_exhaustive)}`,
+      };
+    }
+  }
+}
+
+/**
  * Shared backend tools for the agent loop (web + iOS consume identical results).
  * Default OFF — COMPUTER_USE_ENABLED must be set explicitly.
+ * Product lounge path mounts these via site MCP (`/api/mcp`); `/api/chat` is legacy/styleguide.
  */
 export function createComputerUseTools(ctx: ComputerToolContext = {}) {
   const sessionKey = sessionKeyFrom(ctx);
@@ -128,100 +297,26 @@ export function createComputerUseTools(ctx: ComputerToolContext = {}) {
       inputSchema: z.object({
         url: z.string().url().describe("https URL to open"),
       }),
-      execute: async ({ url }): Promise<ComputerToolResult> => {
-        try {
-          const { meta, png, sandboxName, budget } = await runComputerOp(
-            sessionKey,
-            { op: "open", url },
-          );
-          return attachShot(
-            sessionKey,
-            png,
-            {
-              ok: true,
-              op: "open",
-              url: String(meta.url || url),
-              title: meta.title ? String(meta.title) : undefined,
-              action: "open",
-              sandboxName,
-            },
-            mapBudget(budget),
-          );
-        } catch (error) {
-          return failCap("open", error);
-        }
-      },
+      execute: async ({ url }): Promise<ComputerToolResult> =>
+        runComputerToolOp(sessionKey, "open", { url }),
     }),
 
     computer_screenshot: tool({
       description:
         "Capture the current computer-use browser viewport. Returns screenshotUrl for web and iOS.",
       inputSchema: z.object({}),
-      execute: async (): Promise<ComputerToolResult> => {
-        try {
-          const { meta, png, sandboxName, budget } = await runComputerOp(
-            sessionKey,
-            { op: "screenshot" },
-          );
-          return attachShot(
-            sessionKey,
-            png,
-            {
-              ok: true,
-              op: "screenshot",
-              url: meta.url ? String(meta.url) : undefined,
-              title: meta.title ? String(meta.title) : undefined,
-              action: "screenshot",
-              sandboxName,
-            },
-            mapBudget(budget),
-          );
-        } catch (error) {
-          return failCap("screenshot", error);
-        }
-      },
+      execute: async (): Promise<ComputerToolResult> =>
+        runComputerToolOp(sessionKey, "screenshot"),
     }),
 
     computer_act: tool({
       description:
         "One browser action (click/type/key/scroll/wait/drag) then a fresh screenshotUrl. Refuses payment/signing text — use computer_handoff. Counts toward the 20-step cap.",
-      inputSchema: z.object({ action: actionSchema }),
-      execute: async ({ action }): Promise<ComputerToolResult> => {
-        if (action.type === "type" && looksLikePaymentOrSigning(action.text)) {
-          return {
-            ok: false,
-            op: "act",
-            error: handoffMessage("payment"),
-            handoff: {
-              type: "computer_handoff",
-              reason: "payment",
-              message: handoffMessage("payment"),
-              requiresUser: true,
-            },
-          };
-        }
-        try {
-          const { meta, png, sandboxName, budget } = await runComputerOp(
-            sessionKey,
-            { op: "act", action },
-          );
-          return attachShot(
-            sessionKey,
-            png,
-            {
-              ok: true,
-              op: "act",
-              url: meta.url ? String(meta.url) : undefined,
-              title: meta.title ? String(meta.title) : undefined,
-              action: action.type,
-              sandboxName,
-            },
-            mapBudget(budget),
-          );
-        } catch (error) {
-          return failCap("act", error);
-        }
-      },
+      inputSchema: z.object({ action: computerActionSchema }),
+      execute: async ({ action }): Promise<ComputerToolResult> =>
+        runComputerToolOp(sessionKey, "act", {
+          action: action as ComputerAction,
+        }),
     }),
 
     computer_handoff: tool({
@@ -238,53 +333,16 @@ export function createComputerUseTools(ctx: ComputerToolContext = {}) {
         ]),
         message: z.string().optional(),
       }),
-      execute: async ({ reason, message }): Promise<ComputerToolResult> => {
-        const r = reason as ComputerHandoffReason;
-        let shot: ComputerToolResult = {
-          ok: true,
-          op: "handoff",
-          handoff: {
-            type: "computer_handoff",
-            reason: r,
-            message: message || handoffMessage(r),
-            requiresUser: true,
-          },
-        };
-        try {
-          const { meta, png, sandboxName, budget } = await runComputerOp(
-            sessionKey,
-            { op: "screenshot" },
-          );
-          shot = attachShot(
-            sessionKey,
-            png,
-            {
-              ...shot,
-              url: meta.url ? String(meta.url) : undefined,
-              title: meta.title ? String(meta.title) : undefined,
-              sandboxName,
-            },
-            mapBudget(budget),
-          );
-        } catch {
-          /* handoff still valid without shot */
-        }
-        return shot;
-      },
+      execute: async ({ reason, message }): Promise<ComputerToolResult> =>
+        runComputerToolOp(sessionKey, "handoff", { reason, message }),
     }),
 
     computer_end: tool({
       description:
         "Tear down the computer-use sandbox for this chat session when the browser task is finished. Always call this to release the sandbox.",
       inputSchema: z.object({}),
-      execute: async (): Promise<ComputerToolResult> => {
-        try {
-          await endComputerSession(sessionKey);
-          return { ok: true, op: "end", action: "end" };
-        } catch (error) {
-          return failCap("end", error);
-        }
-      },
+      execute: async (): Promise<ComputerToolResult> =>
+        runComputerToolOp(sessionKey, "end"),
     }),
   };
 }

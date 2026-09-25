@@ -191,6 +191,8 @@ async function failPendingMessages(
 async function getMcpTools(
   searchEnabled: boolean,
   userNotionToken?: string,
+  /** Stable sandbox session for computer_* MCP tools (userId). */
+  computerSessionKey?: string,
 ): Promise<ToolSet> {
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
   if (!siteUrl) {
@@ -203,8 +205,16 @@ async function getMcpTools(
       transport: {
         type: "http",
         url: `${siteUrl}/api/mcp`,
+        ...(computerSessionKey
+          ? {
+              headers: {
+                "x-computer-session": computerSessionKey,
+              },
+            }
+          : {}),
       },
     });
+    // Site MCP includes Notion tools and, when enabled, computer_* (V-83).
     tools = await notion.tools();
   } catch (error) {
     console.error("Failed to connect to site Notion MCP:", error);
@@ -585,7 +595,13 @@ export const generateReply = action({
     });
     const userNotionToken = await getValidNotionToken(ctx, notionConn);
 
-    const tools = await getMcpTools(searchEnabled, userNotionToken ?? undefined);
+    // computer_* arrives via site MCP when COMPUTER_USE_ENABLED + sandbox creds;
+    // pass userId as x-computer-session for sandbox isolation.
+    const tools = await getMcpTools(
+      searchEnabled,
+      userNotionToken ?? undefined,
+      String(userId),
+    );
 
     const notionInstruction = notionConn
       ? userNotionInstruction(notionConn.workspaceName)

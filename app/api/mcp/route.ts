@@ -5,6 +5,11 @@ import { getRelativeTime } from "@/lib/utils"
 import { after } from "next/server"
 import { PostHog, instrument } from "@posthog/mcp"
 import { createMcpHandler } from "mcp-handler"
+import {
+  computerSessionAls,
+  computerSessionFromRequest,
+  registerComputerUseMcpTools,
+} from "@/lib/computer-use"
 import type {
   PageObjectResponse,
   DatabaseObjectResponse,
@@ -598,9 +603,29 @@ For database queries, first use notion-get-database to discover available proper
         }
       }
     )
+
+    // V-83 computer use: same tools as lib/computer-use. Product lounge loads
+    // them via Convex getMcpTools → this MCP endpoint (no threads.ts wiring).
+    registerComputerUseMcpTools(server)
   },
   {},
   { basePath: '/api' },
 );
 
-export { handler as GET, handler as POST, handler as DELETE };
+/**
+ * Bind x-computer-session for sandbox isolation when Convex (or other clients)
+ * pass the header. Tool arg sessionId still wins when provided.
+ */
+async function withComputerSession(req: Request): Promise<Response> {
+  const session = computerSessionFromRequest(req)
+  if (session) {
+    return await computerSessionAls.run(session, () => handler(req))
+  }
+  return handler(req)
+}
+
+export {
+  withComputerSession as GET,
+  withComputerSession as POST,
+  withComputerSession as DELETE,
+};

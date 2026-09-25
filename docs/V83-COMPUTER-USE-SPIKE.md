@@ -17,19 +17,22 @@
 
 vlad.chat has **web + iOS**, but **one agent/tool loop**. Computer use MUST:
 
-- Live in the **shared backend** (`/api/chat` tool registration), not in Next.js UI-only code
+- Live in the **shared backend** (site MCP `/api/mcp` tool registration → Convex `getMcpTools`), not in Next.js UI-only code
 - Return **client-agnostic tool JSON** both surfaces can render
 - Expose screenshots as **URLs** (or short artifact ids), not megabyte base64 inside the mobile tool-output stream (~4k cap)
 - Emit **structured handoff events** (`computer_handoff`) for SSO / 2FA / captcha / payment / signing
 - Never silently pay or sign
 
 ```
-Web app ─┐
-         ├─→ POST /api/chat  → streamText({ tools: notion|tavily|computer_* })
-iOS app ─┘                         │
-                                   ├─ Vercel Sandbox + Playwright
-                                   ├─ GET /api/computer-use/screenshots/:id
-                                   └─ tool result JSON (screenshotUrl, handoff)
+Web / iOS / lounge
+  → Convex threads.generateReply
+      → getMcpTools → ${NEXT_PUBLIC_SITE_URL}/api/mcp
+           ├─ notion-* tools
+           └─ computer_* (when COMPUTER_USE_ENABLED + sandbox creds)
+                ├─ Vercel Sandbox + Playwright
+                ├─ GET /api/computer-use/screenshots/:id
+                └─ tool JSON (screenshotUrl, handoff)
+Legacy styleguide: POST /api/chat still merges createComputerUseTools.
 ```
 
 iOS may polish UI later; the **protocol is already shared**.
@@ -89,6 +92,20 @@ Tools (feature-flagged): `computer_open`, `computer_screenshot`, `computer_act`,
 
 **Do not paste tokens in chat.** CTO: secret-request card.
 
+### Preview enable (lounge)
+
+On **Vercel Preview** (Next host that serves `/api/mcp`):
+
+| Var | Value |
+|---|---|
+| `COMPUTER_USE_ENABLED` | `1` |
+| Sandbox auth | OIDC auto on Vercel, or `VERCEL_TOKEN` + `VERCEL_TEAM_ID` + `VERCEL_PROJECT_ID` |
+| `NEXT_PUBLIC_SITE_URL` | Preview URL Convex should call (or stable preview alias) |
+
+On **Convex** dashboard for that deployment: set `NEXT_PUBLIC_SITE_URL` to the same Preview host so `getMcpTools` hits the MCP that has computer_*. No bridge secret — MCP is the surface.
+
+Leave Production flag off unless intentionally enabling.
+
 ## Proof artifacts
 
 | Path | What |
@@ -140,7 +157,8 @@ Cold Playwright install is expensive in wall time — prefer a warm `COMPUTER_US
 | PR | https://github.com/vladchatware/vlad.chat/pull/43 |
 | Module | `vlad.chat/lib/computer-use/*` |
 | Screenshot API | `GET /api/computer-use/screenshots/[id]` |
-| Chat wiring | `app/api/chat/route.ts` merges tools when flag+creds |
+| MCP wiring | `app/api/mcp/route.ts` registers computer_* when flag+creds; Convex getMcpTools loads them |
+| Legacy chat | `app/api/chat/route.ts` still merges tools (styleguide); product path is MCP |
 | Dep | `@vercel/sandbox` added to `package.json` (install on next `bun install`) |
 | Hard caps | 8 min TTL / 20 steps / 1 concurrent / 90s idle — fail closed |
 | Payments | Fail-closed; `computer_handoff` for payment/signing/SSO/2FA/captcha |
@@ -151,7 +169,8 @@ Cold Playwright install is expensive in wall time — prefer a warm `COMPUTER_US
 2. Screenshot store is in-process TTL — replace with Blob/R2 before multi-instance prod
 3. iOS UI polish for screenshot/handoff cards deferred (protocol ready)
 4. Session/step usage accounting for sandbox runtime not wired yet
-5. OpenAI-compat `/v1/chat/completions` does not auto-inject computer tools (client-supplied tools only) — primary path is `/api/chat`
+5. OpenAI-compat `/v1/chat/completions` does not auto-inject computer tools (client-supplied tools only) — primary product path is site MCP via Convex `getMcpTools`
+6. Session key: tool arg `sessionId` > header `x-computer-session` (Convex passes userId) > `mcp-default`
 
 ## Next slice
 
