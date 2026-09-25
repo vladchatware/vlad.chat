@@ -25,16 +25,19 @@ fi
 
 export const INSTALL_DESK_SH = `set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
+# Keep package set minimal — full recommends + WM was a factor in sandbox OOM (exit 137).
 apt-get update -qq
-apt-get install -y -qq xvfb x11vnc novnc websockify python3-websockify fluxbox xterm fonts-liberation curl net-tools >/dev/null
-# Fail closed with clear paths — do not trust "command -v" alone across sudo/non-sudo.
+apt-get install -y -qq --no-install-recommends \
+  xvfb x11vnc novnc websockify python3-websockify fonts-liberation curl iproute2 \
+  >/dev/null
+rm -rf /var/lib/apt/lists/*
 for b in Xvfb x11vnc websockify curl; do
   if ! command -v "$b" >/dev/null 2>&1; then
     echo "desk install missing binary: $b" >&2
     exit 1
   fi
 done
-mkdir -p /tmp/cu /tmp/cu-profile /usr/share/novnc
+mkdir -p /tmp/cu /tmp/cu-profile
 if [ ! -f /usr/share/novnc/vnc.html ] && [ ! -f /usr/share/novnc/vnc_lite.html ]; then
   echo "noVNC web assets missing under /usr/share/novnc" >&2
   ls -la /usr/share/novnc >&2 || true
@@ -42,6 +45,7 @@ if [ ! -f /usr/share/novnc/vnc.html ] && [ ! -f /usr/share/novnc/vnc_lite.html ]
 fi
 echo desk-packages-ready
 `;
+
 
 export const LAUNCH_CHROME_CJS = `#!/usr/bin/env node
 process.env.PLAYWRIGHT_BROWSERS_PATH = process.env.PLAYWRIGHT_BROWSERS_PATH || '/tmp/cu-browsers';
@@ -92,6 +96,12 @@ function fail(err) {
     '--no-default-browser-check',
     '--disable-background-networking',
     '--disable-features=TranslateUI',
+    '--renderer-process-limit=2',
+    '--disable-software-rasterizer',
+    '--memory-pressure-off',
+    '--disable-background-networking',
+    '--disable-sync',
+    '--disable-default-apps',
     'about:blank',
   ];
   const child = spawn(exec, args, {
@@ -148,7 +158,7 @@ diag() {
   command -v Xvfb x11vnc websockify curl || true
   echo "ports:" >&2
   (ss -ltn 2>/dev/null || netstat -ltn 2>/dev/null || true) | head -40 >&2 || true
-  tail -80 /tmp/cu/chrome.log /tmp/cu/chrome-launch.err /tmp/cu/xvfb.log /tmp/cu/x11vnc.log /tmp/cu/novnc.log /tmp/cu/fluxbox.log 2>/dev/null || true
+  tail -80 /tmp/cu/chrome.log /tmp/cu/chrome-launch.err /tmp/cu/xvfb.log /tmp/cu/x11vnc.log /tmp/cu/novnc.log 2>/dev/null || true
   # -x only: never pgrep -f against this script body (false positive).
   ps -eo pid,comm,args | head -80 >&2 || true
   ls -la /tmp/cu-browsers 2>/dev/null | head -40 >&2 || true
@@ -175,10 +185,6 @@ if ! pgrep -x Xvfb >/dev/null 2>&1; then
     diag
     exit 1
   fi
-fi
-if ! pgrep -x fluxbox >/dev/null 2>&1; then
-  fluxbox >/tmp/cu/fluxbox.log 2>&1 &
-  sleep 0.4
 fi
 if ! pgrep -x x11vnc >/dev/null 2>&1; then
   x11vnc -display :99 -rfbport 5900 -localhost -forever -shared -nopw -xkb -repeat >/tmp/cu/x11vnc.log 2>&1 &

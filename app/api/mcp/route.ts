@@ -20,6 +20,11 @@ import type {
   QueryDataSourceParameters
 } from "@notionhq/client";
 
+/** Computer-use desk boot (apt + Chromium) needs a long window. */
+export const maxDuration = 300;
+export const runtime = "nodejs";
+
+
 const NOTION_FETCH_LIMITS = {
   maxChars: 90000,
   preserveStructureOnTrim: true,

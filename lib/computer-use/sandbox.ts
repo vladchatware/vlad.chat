@@ -55,7 +55,7 @@ function createParams(): Record<string, unknown> {
   const snapshotId = process.env.COMPUTER_USE_SNAPSHOT_ID;
   const base: Record<string, unknown> = {
     timeout: SANDBOX_CREATE_TIMEOUT_MS,
-    resources: { vcpus: 2 },
+    resources: { vcpus: 4 }, // 2GB RAM per vCPU → 8GB; desk+Chromium was OOMing at 2
     persistent: false,
     // noVNC websockify listens on 6080 inside the sandbox.
     ports: [6080],
