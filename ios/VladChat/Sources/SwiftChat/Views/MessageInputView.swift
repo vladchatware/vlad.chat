@@ -51,7 +51,7 @@ struct MessageInputView: View {
     @ViewBuilder
     var body: some View {
         inputContent
-            .alert("Attachment Error", isPresented: showAttachmentError) {
+            .alert("Vlad Error", isPresented: showAttachmentError) {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text(viewModel.attachmentError ?? "An error occurred")
