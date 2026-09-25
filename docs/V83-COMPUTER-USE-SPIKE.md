@@ -133,7 +133,7 @@ Short-lived, gated sessions — not an always-on desktop. Limits are normal ops 
 | Concurrent | **1 / user** | `COMPUTER_USE_MAX_CONCURRENT` |
 | Idle reclaim | **90 s** | `COMPUTER_USE_IDLE_MS` |
 | Default | **OFF** | `COMPUTER_USE_ENABLED` unset |
-| Stream | screenshots only | no live desktop / VNC (V-84 follow-up) |
+| Stream | screenshots + **live noVNC** (`viewerUrl`) | V-84 acceptance gate |
 | Fail closed | `ok:false` + `code` | `budget_exceeded` \| `ttl_exceeded` \| `step_limit` |
 
 Cold Playwright install is expensive in wall time — prefer a warm `COMPUTER_USE_SNAPSHOT_ID` before enabling widely.
@@ -147,7 +147,7 @@ Cold Playwright install is expensive in wall time — prefer a warm `COMPUTER_US
 
 ## Go / no-go
 
-**GO** for flagged Playwright-in-Vercel-Sandbox (draft/dark, default OFF). Shared backend tools for web + iOS. **Blocked** on Vercel creds for live proof. **VNC / live desktop is follow-up V-84** (out of scope here).
+**GO** for flagged Playwright-in-Vercel-Sandbox (draft/dark, default OFF). Shared backend tools for web + iOS. **Live VNC (`viewerUrl`) wired for V-84 acceptance.** Still blocked on Vercel creds for live create→viewer proof from this box.
 
 ## Draft status
 
@@ -181,9 +181,39 @@ Cold Playwright install is expensive in wall time — prefer a warm `COMPUTER_US
 
 ## Live VNC acceptance (V-84 gate)
 
-Acceptance requires a human (CTO/Vlad) to open `viewerUrl` from `computer_open` and control the same desk the agent drives.
+Acceptance requires a human (CTO/Vlad) to open `viewerUrl` from `computer_open` and **control** the same desk the agent drives. Screenshot-only is **not** enough.
 
-- Sandbox create exposes port **6080** (noVNC/websockify → x11vnc → Xvfb `:99`)
-- Headed Chromium on that display with CDP `:9222`
-- Tool results include `viewerUrl` (e.g. `https://….vercel.run/vnc.html?autoconnect=1&resize=scale`)
-- Screenshots remain the history trail; VNC is the live desk
+### How the desk is started (inside sandbox)
+
+```bash
+# packages (INSTALL_DESK_SH)
+apt-get install -y xvfb x11vnc novnc websockify fluxbox …
+
+# display + VNC + noVNC (START_DESK_SH)
+Xvfb :99 -screen 0 1280x720x24 …
+fluxbox &
+x11vnc -display :99 -rfbport 5900 -localhost -forever -shared -nopw …
+websockify --web=/usr/share/novnc 6080 127.0.0.1:5900 &
+# headed Chromium on :99 with CDP
+chromium --remote-debugging-port=9222 --user-data-dir=/tmp/cu-profile …
+```
+
+### Port exposure (SDK)
+
+```ts
+Sandbox.create({ ports: [6080], … })
+// optional repair on resume:
+await sandbox.update({ ports: [6080] })
+const viewerUrl = `${sandbox.domain(6080)}/vnc.html?autoconnect=1&resize=scale`
+```
+
+Exact JSON field: **`viewerUrl`** (alongside `screenshotUrl`).
+
+### CTO manual verify
+
+1. Ensure Preview has `COMPUTER_USE_ENABLED=1` + sandbox auth (OIDC or token triplet).
+2. Call `computer_open` with a public URL (via lounge / MCP).
+3. Open the returned `viewerUrl` in a browser (HTTPS noVNC).
+4. Confirm Chromium is visible; click/type in the viewer — mouse should move on the desk.
+5. Have the agent `computer_act` — you should see the same page update live.
+6. `computer_end` tears down the sandbox (viewer dies).

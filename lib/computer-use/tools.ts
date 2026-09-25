@@ -154,7 +154,7 @@ export async function runComputerToolOp(
             title: meta.title ? String(meta.title) : undefined,
             action: "open",
             sandboxName,
-          viewerUrl,
+            viewerUrl,
           },
           mapBudget(budget),
         );
@@ -178,7 +178,7 @@ export async function runComputerToolOp(
             title: meta.title ? String(meta.title) : undefined,
             action: "screenshot",
             sandboxName,
-          viewerUrl,
+            viewerUrl,
           },
           mapBudget(budget),
         );
@@ -224,7 +224,7 @@ export async function runComputerToolOp(
             title: meta.title ? String(meta.title) : undefined,
             action: action.type,
             sandboxName,
-          viewerUrl,
+            viewerUrl,
           },
           mapBudget(budget),
         );
@@ -257,7 +257,7 @@ export async function runComputerToolOp(
             url: meta.url ? String(meta.url) : undefined,
             title: meta.title ? String(meta.title) : undefined,
             sandboxName,
-          viewerUrl,
+            viewerUrl,
           },
           mapBudget(budget),
         );
@@ -297,7 +297,7 @@ export function createComputerUseTools(ctx: ComputerToolContext = {}) {
   return {
     computer_open: tool({
       description:
-        "Open a public URL in the isolated computer-use browser (Vercel Sandbox + Playwright). Returns screenshotUrl. Sessions capped at 8 min / 20 steps.",
+        "Open a public URL in the isolated computer-use browser (Vercel Sandbox + Playwright). Returns screenshotUrl + viewerUrl (live noVNC). Sessions capped at 8 min / 20 steps.",
       inputSchema: z.object({
         url: z.string().url().describe("https URL to open"),
       }),
@@ -307,7 +307,7 @@ export function createComputerUseTools(ctx: ComputerToolContext = {}) {
 
     computer_screenshot: tool({
       description:
-        "Capture the current computer-use browser viewport. Returns screenshotUrl for web and iOS.",
+        "Capture the current computer-use browser viewport. Returns screenshotUrl + viewerUrl for web and iOS.",
       inputSchema: z.object({}),
       execute: async (): Promise<ComputerToolResult> =>
         runComputerToolOp(sessionKey, "screenshot"),

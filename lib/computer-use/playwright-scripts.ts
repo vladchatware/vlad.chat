@@ -34,9 +34,11 @@ mkdir -p /tmp/cu /tmp/cu-profile
 
 export const START_DESK_SH = `set -euo pipefail
 export DISPLAY=:99
+mkdir -p /tmp/cu /tmp/cu-profile
 if ! pgrep -f 'Xvfb :99' >/dev/null 2>&1; then
-  Xvfb :99 -screen 0 1280x720x24 -ac +extension GLX +render -noreset >/tmp/cu/xvfb.log 2>&1 &
-  sleep 0.5
+  rm -f /tmp/.X99-lock /tmp/.X11-unix/X99 2>/dev/null || true
+  Xvfb :99 -screen 0 1280x720x24 -ac +extension RANDR +render -noreset -nolisten tcp >/tmp/cu/xvfb.log 2>&1 &
+  sleep 0.6
 fi
 if ! pgrep -x fluxbox >/dev/null 2>&1; then
   fluxbox >/tmp/cu/fluxbox.log 2>&1 &
@@ -44,16 +46,36 @@ if ! pgrep -x fluxbox >/dev/null 2>&1; then
 fi
 if ! pgrep -f 'x11vnc.*5900' >/dev/null 2>&1; then
   x11vnc -display :99 -rfbport 5900 -localhost -forever -shared -nopw -xkb -repeat >/tmp/cu/x11vnc.log 2>&1 &
-  sleep 0.3
+  sleep 0.4
 fi
 NOVNC_WEB=""
 for d in /usr/share/novnc /usr/share/novnc/utils/.. /usr/share/novnc; do
   if [ -f "$d/vnc.html" ] || [ -f "$d/vnc_lite.html" ]; then NOVNC_WEB="$d"; break; fi
 done
 if [ -z "$NOVNC_WEB" ] && [ -d /usr/share/novnc ]; then NOVNC_WEB=/usr/share/novnc; fi
+if [ -z "$NOVNC_WEB" ]; then
+  echo "noVNC web root not found" >&2
+  exit 1
+fi
+echo "$NOVNC_WEB" > /tmp/cu/novnc-web
+ENTRY=vnc.html
+[ -f "$NOVNC_WEB/$ENTRY" ] || ENTRY=vnc_lite.html
+echo "$ENTRY" > /tmp/cu/novnc-entry
 if ! pgrep -f 'websockify.*6080' >/dev/null 2>&1; then
   websockify --web="$NOVNC_WEB" 6080 127.0.0.1:5900 >/tmp/cu/novnc.log 2>&1 &
-  sleep 0.3
+  sleep 0.4
+fi
+# Wait for noVNC HTTP
+ok=0
+for i in $(seq 1 40); do
+  if curl -fsS -o /dev/null "http://127.0.0.1:6080/" 2>/dev/null; then ok=1; break; fi
+  if curl -fsS -o /dev/null "http://127.0.0.1:6080/$ENTRY" 2>/dev/null; then ok=1; break; fi
+  sleep 0.25
+done
+if [ "$ok" != "1" ]; then
+  echo "noVNC HTTP not ready on :6080" >&2
+  tail -40 /tmp/cu/novnc.log /tmp/cu/x11vnc.log /tmp/cu/xvfb.log >&2 || true
+  exit 1
 fi
 # Persist headed Chromium on the shared display via CDP (agent + human share one desk).
 if ! curl -fsS http://127.0.0.1:9222/json/version >/dev/null 2>&1; then
@@ -69,13 +91,21 @@ if ! curl -fsS http://127.0.0.1:9222/json/version >/dev/null 2>&1; then
   fi
   DISPLAY=:99 "$CHROME" \
     --no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage \
-    --remote-debugging-port=9222 --user-data-dir=/tmp/cu-profile \
+    --disable-gpu --ozone-platform=x11 \
+    --remote-debugging-port=9222 --remote-debugging-address=127.0.0.1 \
+    --user-data-dir=/tmp/cu-profile \
     --window-size=1280,720 --window-position=0,0 \
     about:blank >/tmp/cu/chrome.log 2>&1 &
-  for i in 1 2 3 4 5 6 7 8 9 10; do
-    if curl -fsS http://127.0.0.1:9222/json/version >/dev/null 2>&1; then break; fi
+  ok=0
+  for i in $(seq 1 60); do
+    if curl -fsS http://127.0.0.1:9222/json/version >/dev/null 2>&1; then ok=1; break; fi
     sleep 0.5
   done
+  if [ "$ok" != "1" ]; then
+    echo "CDP :9222 not ready" >&2
+    tail -50 /tmp/cu/chrome.log >&2 || true
+    exit 1
+  fi
 fi
 curl -fsS http://127.0.0.1:9222/json/version >/dev/null
 echo desk-ready

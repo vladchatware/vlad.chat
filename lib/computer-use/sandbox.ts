@@ -145,7 +145,19 @@ export async function getOrCreateSessionSandbox(sessionKey: string): Promise<{
 
 
   // Live desk: Xvfb + x11vnc + noVNC + headed Chromium (CDP :9222) so humans can VNC-control.
-  if (!session.deskReady) {
+  // Re-run START when in-memory deskReady but CDP died (warm lambda / crashed chrome).
+  let deskOk = Boolean(session.deskReady && session.viewerUrl);
+  if (deskOk) {
+    const cdp = await sandbox.runCommand({
+      cmd: "bash",
+      args: ["-lc", "curl -fsS http://127.0.0.1:9222/json/version >/dev/null && echo up || echo down"],
+    });
+    if (!(await cdp.stdout()).includes("up")) {
+      deskOk = false;
+      session.deskReady = false;
+    }
+  }
+  if (!deskOk) {
     const deskInstall = await sandbox.runCommand({
       cmd: "bash",
       args: ["-lc", INSTALL_DESK_SH],
@@ -180,8 +192,15 @@ export async function getOrCreateSessionSandbox(sessionKey: string): Promise<{
     try {
       const base = sandbox.domain(6080);
       const root = base.replace(/\/$/, "");
-      // Debian novnc package ships vnc.html; fall back to root.
-      viewerUrl = `${root}/vnc.html?autoconnect=1&resize=scale`;
+      let entry = "vnc.html";
+      try {
+        const entryBuf = await sandbox.readFileToBuffer({ path: "/tmp/cu/novnc-entry" });
+        const raw = entryBuf?.toString("utf8").trim();
+        if (raw && raw.endsWith(".html")) entry = raw;
+      } catch {
+        /* default vnc.html */
+      }
+      viewerUrl = `${root}/${entry}?autoconnect=1&resize=scale`;
     } catch (err) {
       throw new Error(
         `Sandbox port 6080 not routed for noVNC: ${err instanceof Error ? err.message : String(err)}`,
