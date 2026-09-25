@@ -177,3 +177,13 @@ Cold Playwright install is expensive in wall time — prefer a warm `COMPUTER_US
 1. CTO secret-request → run spike → drop `artifacts/before.png` + `after.png`
 2. Land draft PR; enable flag on preview only
 3. Persist screenshots to Blob; add usage accounting + handoff UI on web, then iOS
+
+
+## Live VNC acceptance (V-84 gate)
+
+Acceptance requires a human (CTO/Vlad) to open `viewerUrl` from `computer_open` and control the same desk the agent drives.
+
+- Sandbox create exposes port **6080** (noVNC/websockify → x11vnc → Xvfb `:99`)
+- Headed Chromium on that display with CDP `:9222`
+- Tool results include `viewerUrl` (e.g. `https://….vercel.run/vnc.html?autoconnect=1&resize=scale`)
+- Screenshots remain the history trail; VNC is the live desk

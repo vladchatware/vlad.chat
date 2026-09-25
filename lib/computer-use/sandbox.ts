@@ -1,6 +1,11 @@
 import { Sandbox } from "@vercel/sandbox";
 import type { ComputerSession } from "./types";
-import { INSTALL_PLAYWRIGHT_SH, RUNNER_CJS } from "./playwright-scripts";
+import {
+  INSTALL_PLAYWRIGHT_SH,
+  INSTALL_DESK_SH,
+  START_DESK_SH,
+  RUNNER_CJS,
+} from "./playwright-scripts";
 
 /** Session operational limits — tune here; fail closed when hit. */
 export const COMPUTER_USE_MAX_TTL_MS = 8 * 60 * 1000; // 8 min wall clock
@@ -51,6 +56,8 @@ function createParams(): Record<string, unknown> {
     timeout: SANDBOX_CREATE_TIMEOUT_MS,
     resources: { vcpus: 2 },
     persistent: false,
+    // noVNC websockify listens on 6080 inside the sandbox.
+    ports: [6080],
   };
   if (snapshotId) {
     base.source = { type: "snapshot", snapshotId };
@@ -105,6 +112,8 @@ export async function getOrCreateSessionSandbox(sessionKey: string): Promise<{
     createdAt: existing?.createdAt ?? Date.now(),
     lastUsedAt: Date.now(),
     stepCount: existing?.stepCount ?? 0,
+    viewerUrl: existing?.viewerUrl,
+    deskReady: existing?.deskReady,
   };
   sessions.set(sessionKey, session);
 
@@ -132,6 +141,55 @@ export async function getOrCreateSessionSandbox(sessionKey: string): Promise<{
         `Playwright install failed: ${(await install.stderr()) || (await install.stdout())}`,
       );
     }
+  }
+
+
+  // Live desk: Xvfb + x11vnc + noVNC + headed Chromium (CDP :9222) so humans can VNC-control.
+  if (!session.deskReady) {
+    const deskInstall = await sandbox.runCommand({
+      cmd: "bash",
+      args: ["-lc", INSTALL_DESK_SH],
+      sudo: true,
+      timeoutMs: 5 * 60 * 1000,
+    });
+    if (deskInstall.exitCode !== 0) {
+      throw new Error(
+        `Desk install failed: ${(await deskInstall.stderr()) || (await deskInstall.stdout())}`,
+      );
+    }
+    const deskStart = await sandbox.runCommand({
+      cmd: "bash",
+      args: ["-lc", START_DESK_SH],
+      timeoutMs: 2 * 60 * 1000,
+    });
+    if (deskStart.exitCode !== 0) {
+      throw new Error(
+        `Desk start failed: ${(await deskStart.stderr()) || (await deskStart.stdout())}`,
+      );
+    }
+    try {
+      if (typeof (sandbox as { update?: (p: { ports: number[] }) => Promise<unknown> }).update === "function") {
+        await (sandbox as { update: (p: { ports: number[] }) => Promise<unknown> }).update({
+          ports: [6080],
+        });
+      }
+    } catch {
+      /* port may already be mapped from create */
+    }
+    let viewerUrl: string | undefined;
+    try {
+      const base = sandbox.domain(6080);
+      const root = base.replace(/\/$/, "");
+      // Debian novnc package ships vnc.html; fall back to root.
+      viewerUrl = `${root}/vnc.html?autoconnect=1&resize=scale`;
+    } catch (err) {
+      throw new Error(
+        `Sandbox port 6080 not routed for noVNC: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    session.viewerUrl = viewerUrl;
+    session.deskReady = true;
+    sessions.set(sessionKey, session);
   }
 
   await sandbox.writeFiles([
@@ -196,6 +254,7 @@ export async function runComputerOp(
   meta: Record<string, unknown>;
   png: Buffer | null;
   sandboxName: string;
+  viewerUrl?: string;
   budget: ReturnType<typeof budgetStatus>;
 }> {
   // Idle reclaim before create/reuse (fail closed — no silent burn).
@@ -230,7 +289,13 @@ export async function runComputerOp(
   session.lastUsedAt = Date.now();
   session.stepCount += 1;
   sessions.set(sessionKey, session);
-  return { meta, png, sandboxName: session.sandboxName, budget: budgetStatus(session) };
+  return {
+    meta,
+    png,
+    sandboxName: session.sandboxName,
+    viewerUrl: session.viewerUrl,
+    budget: budgetStatus(session),
+  };
 }
 
 export async function endComputerSession(sessionKey: string): Promise<void> {

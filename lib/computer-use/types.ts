@@ -57,6 +57,8 @@ export type ComputerToolResult = {
   height?: number;
   handoff?: ComputerHandoffEvent;
   sandboxName?: string;
+  /** Live noVNC desk (same display the agent drives). */
+  viewerUrl?: string;
   error?: string;
   code?: ComputerErrorCode;
   budget?: ComputerBudgetStatus;
@@ -68,4 +70,7 @@ export type ComputerSession = {
   createdAt: number;
   lastUsedAt: number;
   stepCount: number;
+  /** Public noVNC URL for this sandbox (port 6080). */
+  viewerUrl?: string;
+  deskReady?: boolean;
 };

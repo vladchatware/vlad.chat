@@ -140,7 +140,7 @@ export async function runComputerToolOp(
         return { ok: false, op: "open", code: "runtime", error: "url is required" };
       }
       try {
-        const { meta, png, sandboxName, budget } = await runComputerOp(
+        const { meta, png, sandboxName, viewerUrl, budget } = await runComputerOp(
           sessionKey,
           { op: "open", url },
         );
@@ -154,6 +154,7 @@ export async function runComputerToolOp(
             title: meta.title ? String(meta.title) : undefined,
             action: "open",
             sandboxName,
+          viewerUrl,
           },
           mapBudget(budget),
         );
@@ -163,7 +164,7 @@ export async function runComputerToolOp(
     }
     case "screenshot": {
       try {
-        const { meta, png, sandboxName, budget } = await runComputerOp(
+        const { meta, png, sandboxName, viewerUrl, budget } = await runComputerOp(
           sessionKey,
           { op: "screenshot" },
         );
@@ -177,6 +178,7 @@ export async function runComputerToolOp(
             title: meta.title ? String(meta.title) : undefined,
             action: "screenshot",
             sandboxName,
+          viewerUrl,
           },
           mapBudget(budget),
         );
@@ -208,7 +210,7 @@ export async function runComputerToolOp(
         };
       }
       try {
-        const { meta, png, sandboxName, budget } = await runComputerOp(
+        const { meta, png, sandboxName, viewerUrl, budget } = await runComputerOp(
           sessionKey,
           { op: "act", action },
         );
@@ -222,6 +224,7 @@ export async function runComputerToolOp(
             title: meta.title ? String(meta.title) : undefined,
             action: action.type,
             sandboxName,
+          viewerUrl,
           },
           mapBudget(budget),
         );
@@ -242,7 +245,7 @@ export async function runComputerToolOp(
         },
       };
       try {
-        const { meta, png, sandboxName, budget } = await runComputerOp(
+        const { meta, png, sandboxName, viewerUrl, budget } = await runComputerOp(
           sessionKey,
           { op: "screenshot" },
         );
@@ -254,6 +257,7 @@ export async function runComputerToolOp(
             url: meta.url ? String(meta.url) : undefined,
             title: meta.title ? String(meta.title) : undefined,
             sandboxName,
+          viewerUrl,
           },
           mapBudget(budget),
         );
