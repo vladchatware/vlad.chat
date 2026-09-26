@@ -15,27 +15,44 @@ import SwiftUI
 /// The primary SwiftUI container for the single chat interface.
 struct ChatContainer: View {
     @Environment(\.colorScheme) var colorScheme
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @EnvironmentObject private var viewModel: ChatViewModel
 
     @State private var messageText = ""
     @State private var isAccountPromptPresented = false
     @State private var isAccountSheetPresented = false
+    @State private var selectedThreadID: String?
+    @State private var columnVisibility = NavigationSplitViewVisibility.automatic
 
     var body: some View {
-        NavigationStack {
-            ChatListView(
-                isDarkMode: colorScheme == .dark,
-                isLoading: viewModel.isLoading,
-                viewModel: viewModel,
-                messageText: $messageText,
-                isAccountPromptPresented: $isAccountPromptPresented
-            )
+        NavigationSplitView(columnVisibility: $columnVisibility) {
+            ChatSidebar(selection: $selectedThreadID, viewModel: viewModel)
+                .navigationSplitViewColumnWidth(min: 260, ideal: 300, max: 360)
+        } detail: {
+            NavigationStack {
+                ChatListView(
+                    isDarkMode: colorScheme == .dark,
+                    isLoading: viewModel.isLoading,
+                    viewModel: viewModel,
+                    messageText: $messageText,
+                    isAccountPromptPresented: $isAccountPromptPresented
+                )
                 .background(Color.chatBackground(isDarkMode: colorScheme == .dark))
                 .ignoresSafeArea(edges: .top)
                 .tint(colorScheme == .dark ? .white : .black)
                 .navigationBarTitleDisplayMode(.inline)
+                .navigationBarBackButtonHidden(true)
                 .applySystemGlassToolbarIfAvailable()
                 .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button(action: showChats) {
+                            Image(systemName: "sidebar.left")
+                        }
+                        .accessibilityLabel("Chats")
+                        .accessibilityHint("Shows your chat list")
+                        .accessibilityIdentifier("showChats")
+                    }
+
                     ToolbarItem(placement: .principal) {
                         Button {
                             isAccountSheetPresented = true
@@ -48,28 +65,57 @@ struct ChatContainer: View {
                         .accessibilityIdentifier("openAccount")
                     }
                 }
-        }
-        .sheet(isPresented: $isAccountSheetPresented) {
-            AccountView(viewModel: viewModel) {
-                isAccountSheetPresented = false
+                .simultaneousGesture(returnToChatsGesture)
             }
-            .presentationDetents([.medium, .large])
-            .presentationDragIndicator(.visible)
         }
-        .environmentObject(viewModel)
+        .navigationSplitViewStyle(.balanced)
         .onAppear {
+            selectedThreadID = viewModel.currentChat?.id
             setupNavigationBarAppearance()
+        }
+        .onChange(of: selectedThreadID) { _, threadID in
+            guard let threadID,
+                  let chat = viewModel.chats.first(where: { $0.id == threadID }) else { return }
+            viewModel.selectChat(chat)
+        }
+        .onChange(of: viewModel.currentChat?.id) { _, threadID in
+            selectedThreadID = threadID
         }
         .onChange(of: colorScheme) { _, _ in
             setupNavigationBarAppearance()
         }
-            .fullScreenCover(isPresented: $viewModel.showImageViewer) {
+        .sheet(isPresented: $isAccountSheetPresented) {
+            AccountView(viewModel: viewModel)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
+        .environmentObject(viewModel)
+        .fullScreenCover(isPresented: $viewModel.showImageViewer) {
             ImageViewerOverlay(
                 images: viewModel.imageViewerImages,
                 initialIndex: viewModel.imageViewerIndex,
                 onDismiss: { viewModel.showImageViewer = false }
             )
         }
+    }
+
+    private func showChats() {
+        if horizontalSizeClass == .compact {
+            selectedThreadID = nil
+        } else {
+            columnVisibility = .all
+        }
+    }
+
+    private var returnToChatsGesture: some Gesture {
+        DragGesture(minimumDistance: 12, coordinateSpace: .local)
+            .onEnded { value in
+                let horizontal = value.translation.width
+                guard value.startLocation.x <= 28,
+                      horizontal >= 56,
+                      horizontal > abs(value.translation.height) * 1.3 else { return }
+                selectedThreadID = nil
+            }
     }
 
     /// Configure navigation bar appearance

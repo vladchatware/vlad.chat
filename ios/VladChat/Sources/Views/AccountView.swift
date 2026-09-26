@@ -3,19 +3,17 @@ import AuthenticationServices
 
 struct AccountView: View {
     @ObservedObject var viewModel: ChatViewModel
-    let onDismiss: () -> Void
 
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
                 AccountDetailsCard(
                     account: viewModel.account,
-                    usageSummary: viewModel.usageSummary,
-                    onDismiss: onDismiss
+                    usageSummary: viewModel.usageSummary
                 )
 
                 if viewModel.account?.isAnonymous ?? true {
-                    AccountLinkingButtons(viewModel: viewModel)
+                    AccountLinkingButtons(viewModel: viewModel, stacked: true)
                 } else {
                     Button(action: viewModel.logOut) {
                         HStack(spacing: 8) {
@@ -39,6 +37,7 @@ struct AccountView: View {
             }
             .padding(.horizontal, 16)
             .padding(.top, 16)
+            .padding(.bottom, 24)
         }
         .scrollIndicators(.hidden)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -48,7 +47,6 @@ struct AccountView: View {
 private struct AccountDetailsCard: View {
     let account: MobileAccount?
     let usageSummary: MobileUsageSummary?
-    let onDismiss: () -> Void
 
     private var isAnonymous: Bool { account?.isAnonymous ?? true }
 
@@ -73,25 +71,23 @@ private struct AccountDetailsCard: View {
                     }
                 }
 
-                Spacer(minLength: 0)
-
-                Button(action: onDismiss) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 44, height: 44)
-                        .contentShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Close Account")
             }
 
             HStack(spacing: 16) {
-                tokenValue(title: "Trial tokens left", value: account?.trialTokens.formatted() ?? "—")
+                if isAnonymous {
+                    tokenValue(
+                        title: "Free messages left",
+                        value: account?.trialMessages.formatted()
+                            ?? usageSummary?.freeMessagesLeft.formatted()
+                            ?? "—"
+                    )
+                } else {
+                    tokenValue(title: "Trial tokens left", value: account?.trialTokens.formatted() ?? "—")
+                }
                 tokenValue(title: "Total tokens used", value: usageSummary?.totalTokensTracked.formatted() ?? "—")
             }
 
-            AccountUsageSection(summary: usageSummary)
+            AccountUsageSection(summary: usageSummary, isAnonymous: isAnonymous)
         }
         .padding(.horizontal, 22)
         .padding(.vertical, 28)
@@ -122,6 +118,7 @@ private struct AccountDetailsCard: View {
 
 private struct AccountUsageSection: View {
     let summary: MobileUsageSummary?
+    let isAnonymous: Bool
 
     private var usage: Double {
         min(max(summary?.usageTrackedPercent ?? 0, 0), 100)
@@ -149,7 +146,7 @@ private struct AccountUsageSection: View {
             ProgressView(value: usage, total: 100)
                 .tint(.primary)
 
-            if let summary, !summary.isAnonymous {
+            if let summary, !isAnonymous {
                 UsageWindowRow(
                     title: "5h",
                     used: summary.fiveHourCreditsUsed,
@@ -162,7 +159,7 @@ private struct AccountUsageSection: View {
                 )
             }
 
-            if let summary, summary.isAnonymous {
+            if let summary, isAnonymous {
                 Text("\(summary.freeMessagesLeft.formatted()) messages left")
                     .foregroundStyle(.secondary)
                     .font(.caption)
@@ -171,10 +168,7 @@ private struct AccountUsageSection: View {
     }
 
     private var usageLabel: LocalizedStringResource {
-        guard let summary else { return "Usage" }
-        return summary.isAnonymous
-            ? "Free Message Usage"
-            : "Trial Usage"
+        isAnonymous ? "Free Message Usage" : "Trial Usage"
     }
 }
 
@@ -278,19 +272,36 @@ struct AccountPromptView: View {
 
 private struct AccountLinkingButtons: View {
     @ObservedObject var viewModel: ChatViewModel
+    var stacked = false
 
     var body: some View {
-        HStack(spacing: 8) {
-            GoogleOAuthButton(isEnabled: !viewModel.isLinkingAccount) {
-                viewModel.linkGoogleAccount()
+        Group {
+            if stacked {
+                VStack(spacing: 8) {
+                    googleButton
+                    appleButton
+                }
+            } else {
+                HStack(spacing: 8) {
+                    googleButton
+                    appleButton
+                }
             }
-
-            AppleOAuthButton(isEnabled: !viewModel.isLinkingAccount) {
-                viewModel.linkAppleAccount()
-            }
-            .frame(maxWidth: .infinity)
-            .frame(height: 44)
         }
+    }
+
+    private var googleButton: some View {
+        GoogleOAuthButton(isEnabled: !viewModel.isLinkingAccount) {
+            viewModel.linkGoogleAccount()
+        }
+    }
+
+    private var appleButton: some View {
+        AppleOAuthButton(isEnabled: !viewModel.isLinkingAccount) {
+            viewModel.linkAppleAccount()
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 44)
     }
 }
 
