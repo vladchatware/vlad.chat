@@ -27,7 +27,8 @@ struct WebSearchBox: View {
                         .foregroundColor(isDarkMode ? .white.opacity(0.4) : .black.opacity(0.4))
                 }
             }
-            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .activityCard(isDarkMode: isDarkMode)
             .contentShape(Rectangle())
         }
         .buttonStyle(NoHighlightButtonStyle())

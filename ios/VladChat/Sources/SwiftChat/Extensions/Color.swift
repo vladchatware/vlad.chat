@@ -40,11 +40,16 @@ extension Color {
     // Reasoning and messaging surfaces
     static let thinkingBackgroundDark = chatSurfaceDark
     static let thinkingBackgroundLight = chatSurfaceLight
-    static let userMessageBackgroundDark = chatSurfaceDark
-    static let userMessageBackgroundLight = chatSurfaceLight
+    static let userMessageBackgroundDark = Color(hex: "2A2A2C")
+    static let userMessageBackgroundLight = Color(hex: "EFEFF4")
     static let userMessageForegroundDark = Color.white
     static let userMessageForegroundLight = Color.black
 
+    // Tool / activity card surfaces (search, generic tools, computer-use)
+    static let toolCardBackgroundDark = Color.white.opacity(0.055)
+    static let toolCardBackgroundLight = Color.black.opacity(0.035)
+    static let toolCardStrokeDark = Color.white.opacity(0.10)
+    static let toolCardStrokeLight = Color.black.opacity(0.07)
 
     // Convenience helpers for common surfaces
     static func chatSurface(isDarkMode: Bool) -> Color {
@@ -85,5 +90,13 @@ extension Color {
 
     static func actionButtonBackground(isDarkMode: Bool) -> Color {
         isDarkMode ? actionButtonBackgroundDark : actionButtonBackgroundLight
+    }
+
+    static func toolCardBackground(isDarkMode: Bool) -> Color {
+        isDarkMode ? toolCardBackgroundDark : toolCardBackgroundLight
+    }
+
+    static func toolCardStroke(isDarkMode: Bool) -> Color {
+        isDarkMode ? toolCardStrokeDark : toolCardStrokeLight
     }
 }

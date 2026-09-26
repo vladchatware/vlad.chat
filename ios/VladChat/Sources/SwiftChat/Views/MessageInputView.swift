@@ -126,13 +126,13 @@ struct MessageInputView: View {
                             thumbnails: viewModel.pendingImageThumbnails,
                             onRemove: { id in viewModel.removePendingAttachment(id: id) }
                         )
-                        .padding(.horizontal, 12)
+                        .padding(.horizontal, Theme.Dimensions.paddingMedium)
                         .padding(.top, 8)
                     }
 
                     CustomTextEditor(text: $messageText,
                                      textHeight: $textHeight,
-                                     placeholderText: viewModel.currentChat?.messages.isEmpty ?? true ? "What's on your mind?" : "Message",
+                                     placeholderText: viewModel.currentChat?.messages.isEmpty ?? true ? "Ask anything" : "Message",
                                      shouldFocusInput: viewModel.shouldFocusInput,
                                      isLoading: viewModel.isLoading,
                                      onFocusHandled: { viewModel.shouldFocusInput = false },
@@ -150,9 +150,9 @@ struct MessageInputView: View {
                     }
                     .padding(.vertical, 8)
                 }
-                .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 26))
+                .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: Theme.Dimensions.composerCornerRadius, style: .continuous))
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, Theme.Dimensions.paddingMedium)
             .padding(.bottom, isKeyboardVisible ? 12 : 0)
         } else {
             VStack(spacing: 4) {
@@ -163,13 +163,13 @@ struct MessageInputView: View {
                             thumbnails: viewModel.pendingImageThumbnails,
                             onRemove: { id in viewModel.removePendingAttachment(id: id) }
                         )
-                        .padding(.horizontal, 12)
+                        .padding(.horizontal, Theme.Dimensions.paddingMedium)
                         .padding(.top, 8)
                     }
 
                     CustomTextEditor(text: $messageText,
                                      textHeight: $textHeight,
-                                     placeholderText: viewModel.currentChat?.messages.isEmpty ?? true ? "What's on your mind?" : "Message",
+                                     placeholderText: viewModel.currentChat?.messages.isEmpty ?? true ? "Ask anything" : "Message",
                                      shouldFocusInput: viewModel.shouldFocusInput,
                                      isLoading: viewModel.isLoading,
                                      onFocusHandled: { viewModel.shouldFocusInput = false },
@@ -187,11 +187,11 @@ struct MessageInputView: View {
                     .padding(.vertical, 8)
                 }
                 .background {
-                    RoundedRectangle(cornerRadius: 26)
+                    RoundedRectangle(cornerRadius: Theme.Dimensions.composerCornerRadius, style: .continuous)
                         .fill(.thickMaterial)
                 }
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, Theme.Dimensions.paddingMedium)
             .padding(.bottom, isKeyboardVisible ? 12 : 0)
         }
     }

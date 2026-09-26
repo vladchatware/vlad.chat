@@ -887,7 +887,7 @@ struct ObservableMessageCell: View {
                 )
                 .environmentObject(viewModel)
                 .opacity(wrapper.isArchived ? 0.6 : 1.0)
-                .padding(.vertical, Theme.Dimensions.paddingSmall)
+                .padding(.vertical, Theme.Dimensions.messageGroupSpacing / 2)
                 .padding(.horizontal, UIDevice.current.userInterfaceIdiom == .pad ? 100 : Theme.Dimensions.transcriptGutter)
                 .if(UIDevice.current.userInterfaceIdiom == .pad) { view in
                     view.frame(maxWidth: 900)
