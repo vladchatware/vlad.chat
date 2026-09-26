@@ -13,6 +13,7 @@ import type * as agents_simple from "../agents/simple.js";
 import type * as apiKeys from "../apiKeys.js";
 import type * as auth from "../auth.js";
 import type * as billing from "../billing.js";
+import type * as computerUseScreenshots from "../computerUseScreenshots.js";
 import type * as crons from "../crons.js";
 import type * as http from "../http.js";
 import type * as lounge from "../lounge.js";
@@ -36,6 +37,7 @@ declare const fullApi: ApiFromModules<{
   apiKeys: typeof apiKeys;
   auth: typeof auth;
   billing: typeof billing;
+  computerUseScreenshots: typeof computerUseScreenshots;
   crons: typeof crons;
   http: typeof http;
   lounge: typeof lounge;

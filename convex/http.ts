@@ -5,6 +5,10 @@ import Stripe from "stripe";
 import { internal } from "./_generated/api";
 import { TOP_UP_PRICE_USD, TOP_UP_TOKENS } from "@/lib/provider";
 import { SUBSCRIPTION_GRANT_CREDITS } from "@/lib/billing";
+import {
+  download as downloadComputerUseScreenshot,
+  upload as uploadComputerUseScreenshot,
+} from "./computerUseScreenshots";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY)
 const webhook_secret = process.env.STRIPE_WEBHOOK_SECRET
@@ -16,6 +20,18 @@ function stripeIdOf(customer: string | Stripe.Customer | Stripe.DeletedCustomer 
 const http = httpRouter();
 
 auth.addHttpRoutes(http);
+
+http.route({
+  path: "/computer-use/screenshots",
+  method: "POST",
+  handler: uploadComputerUseScreenshot,
+});
+
+http.route({
+  pathPrefix: "/computer-use/screenshots/",
+  method: "GET",
+  handler: downloadComputerUseScreenshot,
+});
 
 http.route({
   path: '/webhook',
