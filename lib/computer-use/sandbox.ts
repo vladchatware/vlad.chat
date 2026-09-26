@@ -1,10 +1,13 @@
 import { Sandbox } from "@vercel/sandbox";
+import { createHash } from "node:crypto";
 import type { ComputerSession } from "./types";
 import {
   INSTALL_PLAYWRIGHT_SH,
   INSTALL_DESK_SH,
   INSTALL_CUA_SH,
   START_DESK_SH,
+  COMPUTER_USE_SNAPSHOT_VERSION,
+  COMPUTER_USE_SNAPSHOT_MARKER,
   LAUNCH_CHROME_CJS,
   RUNNER_CJS,
   SHOOTER_CJS,
@@ -80,6 +83,11 @@ function sandboxNameFor(sessionKey: string): string {
   return `vlad-cu-${safe}`.slice(0, 63);
 }
 
+function snapshotSandboxName(sessionKey: string, snapshotId: string): string {
+  const fingerprint = createHash("sha256").update(snapshotId).digest("hex").slice(0, 8);
+  return `${sandboxNameFor(sessionKey).slice(0, 54)}-${fingerprint}`;
+}
+
 function credFields(params: Record<string, unknown>) {
   if (typeof params.token === "string") {
     return {
@@ -96,7 +104,12 @@ export async function getOrCreateSessionSandbox(sessionKey: string): Promise<{
   session: ComputerSession;
 }> {
   const existing = sessions.get(sessionKey);
-  const name = existing?.sandboxName || sandboxNameFor(sessionKey);
+  const configuredSnapshot = process.env.COMPUTER_USE_SNAPSHOT_ID;
+  const name =
+    existing?.sandboxName ||
+    (configuredSnapshot
+      ? snapshotSandboxName(sessionKey, configuredSnapshot)
+      : sandboxNameFor(sessionKey));
   const params = { ...createParams(), name };
 
   let sandbox: Sandbox;
@@ -104,11 +117,15 @@ export async function getOrCreateSessionSandbox(sessionKey: string): Promise<{
     sandbox = await Sandbox.create(
       params as Parameters<typeof Sandbox.create>[0],
     );
-  } catch {
-    sandbox = await Sandbox.get({
-      name,
-      ...credFields(params),
-    } as Parameters<typeof Sandbox.get>[0]);
+  } catch (createError) {
+    try {
+      sandbox = await Sandbox.get({
+        name,
+        ...credFields(params),
+      } as Parameters<typeof Sandbox.get>[0]);
+    } catch {
+      throw createError;
+    }
   }
 
   const session: ComputerSession = {
@@ -122,18 +139,27 @@ export async function getOrCreateSessionSandbox(sessionKey: string): Promise<{
   };
   sessions.set(sessionKey, session);
 
-  // Re-run install whenever chromium binary is missing (npm package alone is insufficient).
-  const marker = await sandbox.runCommand({
+  const setupCheck = await sandbox.runCommand({
     cmd: "bash",
     args: [
       "-lc",
-      "export PLAYWRIGHT_BROWSERS_PATH=/tmp/cu-browsers; "
-        + "if [ -d /tmp/cu-npm/node_modules/playwright ] && "
-        + "ls /tmp/cu-browsers/chromium-*/chrome-linux*/chrome >/dev/null 2>&1; "
-        + "then echo ready; else echo missing; fi",
+      `if [ "$(cat "$HOME/${COMPUTER_USE_SNAPSHOT_MARKER}" 2>/dev/null)" = "${COMPUTER_USE_SNAPSHOT_VERSION}" ] `
+        + "&& [ -d /tmp/cu-npm/node_modules/playwright ] "
+        + "&& ls /tmp/cu-browsers/chromium-*/chrome-linux*/chrome >/dev/null 2>&1 "
+        + "&& command -v Xvfb >/dev/null 2>&1 "
+        + "&& command -v x11vnc >/dev/null 2>&1 "
+        + "&& command -v websockify >/dev/null 2>&1 "
+        + "&& command -v curl >/dev/null 2>&1 "
+        + "&& { [ -f /usr/share/novnc/vnc.html ] || [ -f /usr/share/novnc/vnc_lite.html ]; }; then echo ready; else echo missing; fi",
     ],
   });
-  if (!(await marker.stdout()).includes("ready")) {
+  const setupReady = (await setupCheck.stdout()).trim().endsWith("ready");
+  if (configuredSnapshot && !setupReady) {
+    throw new Error(
+      `Configured computer-use snapshot is missing setup ${COMPUTER_USE_SNAPSHOT_VERSION}; recreate it before using COMPUTER_USE_SNAPSHOT_ID.`,
+    );
+  }
+  if (!setupReady) {
     const install = await sandbox.runCommand({
       cmd: "bash",
       args: ["-lc", INSTALL_PLAYWRIGHT_SH],
@@ -145,8 +171,57 @@ export async function getOrCreateSessionSandbox(sessionKey: string): Promise<{
         `Playwright install failed: ${(await install.stderr()) || (await install.stdout())}`,
       );
     }
+    const deskInstall = await sandbox.runCommand({
+      cmd: "bash",
+      args: ["-lc", INSTALL_DESK_SH],
+      sudo: true,
+      timeoutMs: 5 * 60 * 1000,
+    });
+    if (deskInstall.exitCode !== 0) {
+      throw new Error(
+        `Desk install failed: ${(await deskInstall.stderr()) || (await deskInstall.stdout())}`,
+      );
+    }
+    const markSetup = await sandbox.runCommand({
+      cmd: "bash",
+      args: [
+        "-lc",
+        `mkdir -p "$HOME/.local/share/vladchat" && printf '%s' '${COMPUTER_USE_SNAPSHOT_VERSION}' > "$HOME/${COMPUTER_USE_SNAPSHOT_MARKER}"`,
+      ],
+    });
+    if (markSetup.exitCode !== 0) {
+      throw new Error(
+        `Could not mark computer-use setup ready: ${(await markSetup.stderr()) || (await markSetup.stdout())}`,
+      );
+    }
   }
 
+  const cuaCheck = await sandbox.runCommand({
+    cmd: "bash",
+    args: [
+      "-lc",
+      "export PATH=\"$HOME/.local/bin:$PATH\"; command -v cua-driver >/dev/null 2>&1 && echo ready || echo missing",
+    ],
+  });
+  const cuaReady = (await cuaCheck.stdout()).trim().endsWith("ready");
+  if (configuredSnapshot && !cuaReady) {
+    throw new Error(
+      "Configured computer-use snapshot is missing cua-driver; recreate it with the snapshot script.",
+    );
+  }
+  if (!cuaReady) {
+    const cuaInstall = await sandbox.runCommand({
+      cmd: "bash",
+      args: ["-lc", INSTALL_CUA_SH],
+      timeoutMs: 5 * 60 * 1000,
+    });
+    if (cuaInstall.exitCode !== 0) {
+      // Non-fatal — CDP/Playwright fallback still works.
+      console.warn(
+        `cua-driver install failed (fallback to CDP): ${(await cuaInstall.stderr()) || (await cuaInstall.stdout())}`,
+      );
+    }
+  }
 
   // Live desk: Xvfb + x11vnc + noVNC + headed Chromium (CDP :9222) so humans can VNC-control.
   // Re-run START when in-memory deskReady but CDP died (warm lambda / crashed chrome).
@@ -162,29 +237,6 @@ export async function getOrCreateSessionSandbox(sessionKey: string): Promise<{
     }
   }
   if (!deskOk) {
-    const deskInstall = await sandbox.runCommand({
-      cmd: "bash",
-      args: ["-lc", INSTALL_DESK_SH],
-      sudo: true,
-      timeoutMs: 5 * 60 * 1000,
-    });
-    if (deskInstall.exitCode !== 0) {
-      throw new Error(
-        `Desk install failed: ${(await deskInstall.stderr()) || (await deskInstall.stdout())}`,
-      );
-    }
-    // cua-driver for sandbox user (not root). Apt deps already in INSTALL_DESK_SH.
-    const cuaInstall = await sandbox.runCommand({
-      cmd: "bash",
-      args: ["-lc", INSTALL_CUA_SH],
-      timeoutMs: 5 * 60 * 1000,
-    });
-    if (cuaInstall.exitCode !== 0) {
-      // Non-fatal — CDP/Playwright fallback still works.
-      console.warn(
-        `cua-driver install failed (fallback to CDP): ${(await cuaInstall.stderr()) || (await cuaInstall.stdout())}`,
-      );
-    }
     await sandbox.writeFiles([
       { path: "/tmp/cu/launch-chrome.cjs", content: Buffer.from(LAUNCH_CHROME_CJS) },
       { path: "/tmp/cu/runner.cjs", content: Buffer.from(RUNNER_CJS) },

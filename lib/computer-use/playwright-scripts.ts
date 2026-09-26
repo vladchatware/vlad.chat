@@ -28,16 +28,26 @@ if ! has_browser; then
 fi
 `;
 
+export const COMPUTER_USE_SNAPSHOT_VERSION = "computer-use-base-v1";
+export const COMPUTER_USE_SNAPSHOT_MARKER = ".local/share/vladchat/computer-use-snapshot-version";
+
 export const INSTALL_DESK_SH = `set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 # Keep package set minimal — full recommends + WM was a factor in sandbox OOM (exit 137).
-apt-get update -qq
-apt-get install -y -qq --no-install-recommends \
+mkdir -p /tmp/cu /tmp/cu-profile
+if ! apt-get update -qq >/tmp/cu/desk-apt-update.log 2>&1; then
+  tail -100 /tmp/cu/desk-apt-update.log >&2 || true
+  exit 1
+fi
+if ! apt-get install -y -qq --no-install-recommends \
   xvfb x11vnc novnc websockify python3-websockify fonts-liberation curl iproute2 scrot \
   libxi6 at-spi2-core dbus-x11 xdotool python3-tk \
   python3-gi gir1.2-gtk-3.0 python3-gi-cairo \
   python3-pil python3-xlib \
-  >/dev/null
+  >/tmp/cu/desk-apt-install.log 2>&1; then
+  tail -120 /tmp/cu/desk-apt-install.log >&2 || true
+  exit 1
+fi
 rm -rf /var/lib/apt/lists/*
 for b in Xvfb x11vnc websockify curl; do
   if ! command -v "$b" >/dev/null 2>&1; then
@@ -45,7 +55,6 @@ for b in Xvfb x11vnc websockify curl; do
     exit 1
   fi
 done
-mkdir -p /tmp/cu /tmp/cu-profile
 if [ ! -f /usr/share/novnc/vnc.html ] && [ ! -f /usr/share/novnc/vnc_lite.html ]; then
   echo "noVNC web assets missing under /usr/share/novnc" >&2
   ls -la /usr/share/novnc >&2 || true
