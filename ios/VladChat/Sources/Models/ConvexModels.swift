@@ -162,6 +162,13 @@ struct MobileAccount: Decodable, Equatable, Sendable {
     let tokens: Double
 }
 
+struct MobileUsageSummary: Decodable, Equatable, Sendable {
+    let isAnonymous: Bool
+    let totalTokensTracked: Double
+    let freeMessagesLeft: Double
+    let usageTrackedPercent: Double
+}
+
 struct GenerationResult: Decodable, Sendable {
     let threadId: String
     let order: Double

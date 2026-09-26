@@ -28,6 +28,7 @@ final class ChatViewModel: ObservableObject {
     @Published var attachmentError: String?
     @Published var pendingImageThumbnails: [String: String] = [:]
     @Published var account: MobileAccount?
+    @Published var usageSummary: MobileUsageSummary?
     @Published var isLinkingAccount = false
     @Published var isLoggingOut = false
 
@@ -36,6 +37,7 @@ final class ChatViewModel: ObservableObject {
     private var client: ConvexClientWithAuth<ConvexAuthSession>?
     private var authProvider: ConvexAnonymousAuthProvider?
     private var subscriptionTask: Task<Void, Never>?
+    private var usageSubscriptionTask: Task<Void, Never>?
     private var presentationTask: Task<Void, Never>?
     private var presentationTaskID: UUID?
     private var pendingMobileChat: MobileChat?
@@ -299,6 +301,8 @@ final class ChatViewModel: ObservableObject {
         Task { [weak self] in
             guard let self else { return }
             defer { isLoggingOut = false }
+            subscriptionTask?.cancel()
+            usageSubscriptionTask?.cancel()
             await client.logout()
             do {
                 if case .failure(let error) = await client.login() {
@@ -338,6 +342,7 @@ final class ChatViewModel: ObservableObject {
 
     private func subscribe(using client: ConvexClientWithAuth<ConvexAuthSession>) {
         subscriptionTask?.cancel()
+        usageSubscriptionTask?.cancel()
         presentationTask?.cancel()
         presentationTask = nil
         presentationTaskID = nil
@@ -348,6 +353,18 @@ final class ChatViewModel: ObservableObject {
                 for try await mobileChat in updates {
                     guard !Task.isCancelled else { return }
                     self?.enqueue(mobileChat)
+                }
+            } catch {
+                guard !Task.isCancelled else { return }
+                self?.attachmentError = Self.userFacingMessage(for: error)
+            }
+        }
+        usageSubscriptionTask = Task { [weak self] in
+            let updates = client.subscribe(to: "users:usageSummary", yielding: MobileUsageSummary.self).values
+            do {
+                for try await summary in updates {
+                    guard !Task.isCancelled else { return }
+                    self?.usageSummary = summary
                 }
             } catch {
                 guard !Task.isCancelled else { return }

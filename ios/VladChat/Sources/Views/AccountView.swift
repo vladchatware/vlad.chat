@@ -6,40 +6,48 @@ struct AccountView: View {
     let onDismiss: () -> Void
 
     var body: some View {
-        VStack(spacing: 16) {
-            AccountDetailsCard(account: viewModel.account, onDismiss: onDismiss)
+        ScrollView {
+            VStack(spacing: 16) {
+                AccountDetailsCard(
+                    account: viewModel.account,
+                    usageSummary: viewModel.usageSummary,
+                    onDismiss: onDismiss
+                )
 
-            if viewModel.account?.isAnonymous ?? true {
-                AccountLinkingButtons(viewModel: viewModel)
-            } else {
-                Button(action: viewModel.logOut) {
-                    HStack(spacing: 8) {
-                        if viewModel.isLoggingOut {
-                            ProgressView()
-                                .controlSize(.small)
-                        } else {
-                            Image(systemName: "rectangle.portrait.and.arrow.right")
-                                .accessibilityHidden(true)
+                if viewModel.account?.isAnonymous ?? true {
+                    AccountLinkingButtons(viewModel: viewModel)
+                } else {
+                    Button(action: viewModel.logOut) {
+                        HStack(spacing: 8) {
+                            if viewModel.isLoggingOut {
+                                ProgressView()
+                                    .controlSize(.small)
+                            } else {
+                                Image(systemName: "rectangle.portrait.and.arrow.right")
+                                    .accessibilityHidden(true)
+                            }
+                            Text(viewModel.isLoggingOut ? "Signing Out" : "Sign Out")
                         }
-                        Text(viewModel.isLoggingOut ? "Signing Out" : "Sign Out")
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(.red)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .contentShape(Rectangle())
                     }
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(.red)
-                    .frame(maxWidth: .infinity, minHeight: 44)
-                    .contentShape(Rectangle())
+                    .buttonStyle(.plain)
+                    .disabled(viewModel.isLoggingOut)
                 }
-                .buttonStyle(.plain)
-                .disabled(viewModel.isLoggingOut)
             }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
+        .scrollIndicators(.hidden)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
 private struct AccountDetailsCard: View {
     let account: MobileAccount?
+    let usageSummary: MobileUsageSummary?
     let onDismiss: () -> Void
 
     private var isAnonymous: Bool { account?.isAnonymous ?? true }
@@ -82,6 +90,8 @@ private struct AccountDetailsCard: View {
                 creditValue(title: "Trial", value: account?.trialTokens.formatted() ?? "—")
                 creditValue(title: "Purchased", value: account?.tokens.formatted() ?? "—")
             }
+
+            AccountUsageSection(summary: usageSummary)
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -107,6 +117,60 @@ private struct AccountDetailsCard: View {
                 .monospacedDigit()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct AccountUsageSection: View {
+    let summary: MobileUsageSummary?
+
+    private var usage: Double {
+        min(max(summary?.usageTrackedPercent ?? 0, 0), 100)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(usageLabel)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                Spacer()
+
+                if let summary {
+                    Text(summary.usageTrackedPercent / 100, format: .percent.precision(.fractionLength(0)))
+                        .font(.subheadline.weight(.medium))
+                        .monospacedDigit()
+                } else {
+                    Text("—")
+                        .font(.subheadline.weight(.medium))
+                }
+            }
+
+            ProgressView(value: usage, total: 100)
+                .tint(.primary)
+
+            if let summary {
+                HStack {
+                    Text("\(summary.totalTokensTracked.formatted()) tokens used")
+                        .foregroundStyle(.secondary)
+
+                    Spacer(minLength: 8)
+
+                    if summary.isAnonymous {
+                        Text("\(summary.freeMessagesLeft.formatted()) messages left")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .font(.caption)
+            }
+        }
+    }
+
+    private var usageLabel: LocalizedStringResource {
+        guard let summary else { return "Usage" }
+        return summary.isAnonymous
+            ? "Free Message Usage"
+            : "Trial Usage"
     }
 }
 
