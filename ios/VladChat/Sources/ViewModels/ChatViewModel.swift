@@ -49,6 +49,7 @@ final class ChatViewModel: ObservableObject {
     private var localGenerationMessageID: String?
     private var hasStarted = false
     private var selectedThreadId: String?
+    private var supportsMobileThreads = false
     private var messageOrders: [String: Double] = [:]
     private var streamingChunkers: [String: StreamingMarkdownChunker] = [:]
     private var streamingContent: [String: String] = [:]
@@ -132,7 +133,7 @@ final class ChatViewModel: ObservableObject {
         activeGenerationID = generationID
         let modelID = currentModel.id
         let searchEnabled = isWebSearchEnabled
-        let threadId = selectedThreadId
+        let threadId = supportsMobileThreads ? selectedThreadId : nil
         generationTask?.cancel()
         generationTask = Task { [weak self] in
             guard let self else { return }
@@ -401,32 +402,56 @@ final class ChatViewModel: ObservableObject {
         streamingChunkers = [:]
         streamingContent = [:]
         subscriptionTask = Task { [weak self] in
-            let arguments: [String: ConvexEncodable?]? = threadId.map { ["threadId": $0] }
-            let updates = client.subscribe(
-                to: "threads:getMobileChat",
-                with: arguments,
-                yielding: MobileChat.self
-            ).values
-            do {
-                for try await mobileChat in updates {
+            let requestedThreadId = self?.supportsMobileThreads == true ? threadId : nil
+            let arguments: [String: ConvexEncodable?]? = requestedThreadId.map { ["threadId": $0] }
+            var retryDelay: UInt64 = 1_000_000_000
+            while !Task.isCancelled {
+                do {
+                    let updates = client.subscribe(
+                        to: "threads:getMobileChat",
+                        with: arguments,
+                        yielding: MobileChat.self
+                    ).values
+                    for try await mobileChat in updates {
+                        guard !Task.isCancelled else { return }
+                        self?.enqueue(mobileChat)
+                        retryDelay = 1_000_000_000
+                        if self?.attachmentError?.hasPrefix("Chat sync failed:") == true {
+                            self?.attachmentError = nil
+                        }
+                    }
+                } catch {
                     guard !Task.isCancelled else { return }
-                    self?.enqueue(mobileChat)
+                    self?.attachmentError = "Chat sync failed: \(Self.userFacingMessage(for: error))"
                 }
-            } catch {
                 guard !Task.isCancelled else { return }
-                self?.attachmentError = "Chat sync failed: \(Self.userFacingMessage(for: error))"
+                try? await Task.sleep(nanoseconds: retryDelay)
+                retryDelay = min(retryDelay * 2, 30_000_000_000)
             }
         }
         usageSubscriptionTask = Task { [weak self] in
-            let updates = client.subscribe(to: "users:usageSummary", yielding: MobileUsageSummary?.self).values
-            do {
-                for try await summary in updates {
+            var retryDelay: UInt64 = 1_000_000_000
+            while !Task.isCancelled {
+                do {
+                    let updates = client.subscribe(
+                        to: "users:usageSummary",
+                        yielding: MobileUsageSummary?.self
+                    ).values
+                    for try await summary in updates {
+                        guard !Task.isCancelled else { return }
+                        self?.usageSummary = summary
+                        retryDelay = 1_000_000_000
+                        if self?.attachmentError?.hasPrefix("Usage sync failed:") == true {
+                            self?.attachmentError = nil
+                        }
+                    }
+                } catch {
                     guard !Task.isCancelled else { return }
-                    self?.usageSummary = summary
+                    self?.attachmentError = "Usage sync failed: \(Self.userFacingMessage(for: error))"
                 }
-            } catch {
                 guard !Task.isCancelled else { return }
-                self?.attachmentError = "Usage sync failed: \(Self.userFacingMessage(for: error))"
+                try? await Task.sleep(nanoseconds: retryDelay)
+                retryDelay = min(retryDelay * 2, 30_000_000_000)
             }
         }
     }
@@ -564,15 +589,30 @@ final class ChatViewModel: ObservableObject {
         streamingChunkers = streamingChunkers.filter { activeMessageIds.contains($0.key) }
         streamingContent = streamingContent.filter { activeMessageIds.contains($0.key) }
         let selectedId = mobileChat.threadId
+        let selectedTitle = mobileChat.title ?? "Vlad"
+        supportsMobileThreads = mobileChat.threads != nil
+        let threads: [MobileThread]
+        if let availableThreads = mobileChat.threads, !availableThreads.isEmpty {
+            threads = availableThreads
+        } else if let selectedId {
+            let timestamp = mapped.first?.timestamp.timeIntervalSince1970 ?? Date().timeIntervalSince1970
+            threads = [MobileThread(
+                id: selectedId,
+                title: selectedTitle,
+                createdAt: timestamp * 1_000
+            )]
+        } else {
+            threads = []
+        }
         if selectedThreadId == nil { selectedThreadId = selectedId }
-        chats = mobileChat.threads.map { thread in
+        chats = threads.map { thread in
             let existing = chats.first(where: { $0.id == thread.id })
             let threadMessages = thread.id == selectedId ? mapped : (existing?.messages ?? [])
+            let title = thread.id == selectedId ? selectedTitle : thread.title
             return Chat(
                 id: thread.id,
-                title: thread.id == selectedId ? mobileChat.title : thread.title,
-                titleState: (thread.id == selectedId ? mobileChat.title : thread.title) == "Untitled"
-                    ? .placeholder : .manual,
+                title: title,
+                titleState: title == "Untitled" ? .placeholder : .manual,
                 messages: threadMessages,
                 createdAt: Date(timeIntervalSince1970: thread.createdAt / 1_000),
                 modelType: existing?.modelType ?? currentModel

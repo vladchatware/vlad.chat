@@ -148,8 +148,8 @@ struct ChatMessage: Decodable, Identifiable, Equatable, Sendable {
 
 struct MobileChat: Decodable, Equatable, Sendable {
     let threadId: String?
-    let title: String
-    let threads: [MobileThread]
+    let title: String?
+    let threads: [MobileThread]?
     let messages: [ChatMessage]
     let account: MobileAccount?
     let remainingMessages: Double?
