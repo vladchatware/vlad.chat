@@ -18,13 +18,17 @@ struct ChatContainer: View {
     @EnvironmentObject private var viewModel: ChatViewModel
 
     @State private var messageText = ""
+    @State private var isAccountPromptPresented = false
+    @State private var isAccountSheetPresented = false
+
     var body: some View {
         NavigationStack {
             ChatListView(
                 isDarkMode: colorScheme == .dark,
                 isLoading: viewModel.isLoading,
                 viewModel: viewModel,
-                messageText: $messageText
+                messageText: $messageText,
+                isAccountPromptPresented: $isAccountPromptPresented
             )
                 .background(Color.chatBackground(isDarkMode: colorScheme == .dark))
                 .ignoresSafeArea(edges: .top)
@@ -33,9 +37,25 @@ struct ChatContainer: View {
                 .applySystemGlassToolbarIfAvailable()
                 .toolbar {
                     ToolbarItem(placement: .principal) {
-                        VladIdentityHeader()
+                        Button {
+                            isAccountSheetPresented = true
+                        } label: {
+                            VladIdentityHeader()
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(Text("Vlad account", comment: "Opens account settings when the user taps Vlad's name or picture in the chat header."))
+                        .accessibilityHint("Opens account settings")
+                        .accessibilityIdentifier("openAccount")
                     }
                 }
+        }
+        .sheet(isPresented: $isAccountSheetPresented) {
+            AccountView(viewModel: viewModel) {
+                isAccountSheetPresented = false
+            }
+            .presentationDetents([.medium])
+            .presentationCornerRadius(44)
+            .presentationDragIndicator(.visible)
         }
         .environmentObject(viewModel)
         .onAppear {

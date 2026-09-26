@@ -27,11 +27,17 @@ final class ChatViewModel: ObservableObject {
     @Published var isProcessingAttachment = false
     @Published var attachmentError: String?
     @Published var pendingImageThumbnails: [String: String] = [:]
+    @Published var account: MobileAccount?
+    @Published var usageSummary: MobileUsageSummary?
+    @Published var isLinkingAccount = false
+    @Published var isLoggingOut = false
 
     var messages: [Message] { currentChat?.messages ?? [] }
 
     private var client: ConvexClientWithAuth<ConvexAuthSession>?
+    private var authProvider: ConvexAnonymousAuthProvider?
     private var subscriptionTask: Task<Void, Never>?
+    private var usageSubscriptionTask: Task<Void, Never>?
     private var presentationTask: Task<Void, Never>?
     private var presentationTaskID: UUID?
     private var pendingMobileChat: MobileChat?
@@ -65,6 +71,7 @@ final class ChatViewModel: ObservableObject {
         }
 
         let provider = ConvexAnonymousAuthProvider(deploymentURL: deploymentURL)
+        authProvider = provider
         let client = ConvexClientWithAuth(
             deploymentUrl: deploymentURL.absoluteString,
             authProvider: provider
@@ -280,8 +287,62 @@ final class ChatViewModel: ObservableObject {
         pendingImageThumbnails[id] = nil
     }
 
+    func linkGoogleAccount() {
+        linkOAuthAccount(provider: "google")
+    }
+
+    func linkAppleAccount() {
+        linkOAuthAccount(provider: "apple")
+    }
+
+    func logOut() {
+        guard let client, account?.isAnonymous == false, !isLoggingOut else { return }
+        isLoggingOut = true
+        Task { [weak self] in
+            guard let self else { return }
+            defer { isLoggingOut = false }
+            subscriptionTask?.cancel()
+            usageSubscriptionTask?.cancel()
+            await client.logout()
+            do {
+                if case .failure(let error) = await client.login() {
+                    throw error
+                }
+                subscribe(using: client)
+            } catch {
+                attachmentError = Self.userFacingMessage(for: error)
+            }
+        }
+    }
+
+    private func linkOAuthAccount(provider: String) {
+        guard let client, let authProvider, account?.isAnonymous != false else { return }
+        isLinkingAccount = true
+        Task { [weak self] in
+            guard let self else { return }
+            defer { isLinkingAccount = false }
+            do {
+                let params: [String: ConvexEncodable?] = [
+                    "redirectTo": "vladchat://auth"
+                ]
+                let start: ConvexOAuthStartResponse = try await client.action(
+                    "auth:signIn",
+                    with: ["provider": provider, "params": params]
+                )
+                try await authProvider.completeOAuthSignIn(start)
+                if case .failure(let error) = await client.login() {
+                    throw error
+                }
+                subscribe(using: client)
+            } catch {
+                attachmentError = Self.userFacingMessage(for: error)
+            }
+        }
+    }
+
     private func subscribe(using client: ConvexClientWithAuth<ConvexAuthSession>) {
         subscriptionTask?.cancel()
+        usageSubscriptionTask?.cancel()
         presentationTask?.cancel()
         presentationTask = nil
         presentationTaskID = nil
@@ -294,6 +355,19 @@ final class ChatViewModel: ObservableObject {
                     self?.enqueue(mobileChat)
                 }
             } catch {
+                guard !Task.isCancelled else { return }
+                self?.attachmentError = Self.userFacingMessage(for: error)
+            }
+        }
+        usageSubscriptionTask = Task { [weak self] in
+            let updates = client.subscribe(to: "users:usageSummary", yielding: MobileUsageSummary.self).values
+            do {
+                for try await summary in updates {
+                    guard !Task.isCancelled else { return }
+                    self?.usageSummary = summary
+                }
+            } catch {
+                guard !Task.isCancelled else { return }
                 self?.attachmentError = Self.userFacingMessage(for: error)
             }
         }
@@ -340,6 +414,7 @@ final class ChatViewModel: ObservableObject {
     }
 
     private func apply(_ mobileChat: MobileChat) {
+        account = mobileChat.account
         if let expectedOrder = localGenerationExpectedOrder,
            hasObservedLocalGeneration(in: mobileChat, order: expectedOrder) {
             localGenerationActive = false
