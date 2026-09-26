@@ -197,18 +197,13 @@ async function getMcpTools(
     return {};
   }
 
-  let tools: ToolSet = {};
-  try {
-    const notion = await createMCPClient({
-      transport: {
-        type: "http",
-        url: `${siteUrl}/api/mcp`,
-      },
-    });
-    tools = await notion.tools();
-  } catch (error) {
-    console.error("Failed to connect to Vlad's MCP:", error);
-  }
+  const notion = await createMCPClient({
+    transport: {
+      type: "http",
+      url: `${siteUrl}/api/mcp`,
+    },
+  });
+  let tools: ToolSet = await notion.tools();
 
   if (userNotionToken) {
     try {
