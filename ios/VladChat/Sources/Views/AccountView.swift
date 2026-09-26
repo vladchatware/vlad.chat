@@ -87,8 +87,8 @@ private struct AccountDetailsCard: View {
             }
 
             HStack(spacing: 16) {
-                creditValue(title: "Trial", value: account?.trialTokens.formatted() ?? "—")
-                creditValue(title: "Purchased", value: account?.tokens.formatted() ?? "—")
+                tokenValue(title: "Trial tokens left", value: account?.trialTokens.formatted() ?? "—")
+                tokenValue(title: "Total tokens used", value: usageSummary?.totalTokensTracked.formatted() ?? "—")
             }
 
             AccountUsageSection(summary: usageSummary)
@@ -107,7 +107,7 @@ private struct AccountDetailsCard: View {
         }
     }
 
-    private func creditValue(title: String, value: String) -> some View {
+    private func tokenValue(title: LocalizedStringResource, value: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
                 .font(.subheadline)
@@ -162,19 +162,10 @@ private struct AccountUsageSection: View {
                 )
             }
 
-            if let summary {
-                HStack {
-                    Text("\(summary.totalTokensTracked.formatted()) tokens used")
-                        .foregroundStyle(.secondary)
-
-                    Spacer(minLength: 8)
-
-                    if summary.isAnonymous {
-                        Text("\(summary.freeMessagesLeft.formatted()) messages left")
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .font(.caption)
+            if let summary, summary.isAnonymous {
+                Text("\(summary.freeMessagesLeft.formatted()) messages left")
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
             }
         }
     }
