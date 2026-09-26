@@ -1,3 +1,4 @@
+import ConvexMobile
 import Foundation
 
 struct ResponseTool: Codable, Equatable, Hashable, Identifiable, Sendable {
@@ -142,8 +143,31 @@ struct ChatMessage: Decodable, Identifiable, Equatable, Sendable {
     let createdAt: Double
     let response: ResponseActivity?
     let errorText: String?
+    let attachments: [MobileAttachment]?
 
     var isUser: Bool { role == "user" }
+}
+
+struct MobileAttachment: Decodable, Identifiable, Equatable, Sendable {
+    let id: String
+    let type: String
+    let fileName: String
+    let mimeType: String
+    let url: String
+}
+
+struct AttachmentUploadResponse: Decodable {
+    let storageId: String
+}
+
+struct UploadedAttachment: Sendable {
+    let storageId: String
+    let fileName: String
+    let mimeType: String
+
+    var convexValue: [String: ConvexEncodable?] {
+        ["storageId": storageId, "fileName": fileName, "mimeType": mimeType]
+    }
 }
 
 struct MobileChat: Decodable, Equatable, Sendable {

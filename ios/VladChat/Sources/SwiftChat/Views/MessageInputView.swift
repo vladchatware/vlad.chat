@@ -30,16 +30,10 @@ struct MessageInputView: View {
     private var isDarkMode: Bool { colorScheme == .dark }
 
     // Attachment picker state
-    @State private var showAddSheet = false
     @State private var showDocumentPicker = false
     @State private var showPhotoPicker = false
     @State private var showCamera = false
     @State private var selectedPhotoItems: [PhotosPickerItem] = []
-    @State private var pendingPickerAction: PickerAction?
-
-    private enum PickerAction {
-        case camera, photos, files
-    }
 
     private var showAttachmentError: Binding<Bool> {
         Binding(
@@ -85,34 +79,6 @@ struct MessageInputView: View {
                 }
                 .ignoresSafeArea()
             }
-            .sheet(isPresented: $showAddSheet, onDismiss: {
-                guard let action = pendingPickerAction else { return }
-                pendingPickerAction = nil
-                switch action {
-                case .camera: showCamera = true
-                case .photos: showPhotoPicker = true
-                case .files: showDocumentPicker = true
-                }
-            }) {
-                AddToSheetView(
-                    viewModel: viewModel,
-                    isDarkMode: isDarkMode,
-                    onCamera: {
-                        pendingPickerAction = .camera
-                        showAddSheet = false
-                    },
-                    onPhotos: {
-                        pendingPickerAction = .photos
-                        showAddSheet = false
-                    },
-                    onFiles: {
-                        pendingPickerAction = .files
-                        showAddSheet = false
-                    }
-                )
-                .presentationDetents([.height(340)])
-                .presentationBackground(isDarkMode ? Color(hex: "161616") : Color(UIColor.systemGroupedBackground))
-            }
     }
 
     @ViewBuilder
@@ -141,11 +107,14 @@ struct MessageInputView: View {
                         .padding(.horizontal)
                         .accessibilityIdentifier("messageInput")
 
-                    HStack {
-                        attachButton
-                        webSearchButton
-                        Spacer()
-
+                    HStack(spacing: 0) {
+                        HStack(spacing: 8) {
+                            attachButton
+                            modelPickerButton
+                            webSearchButton
+                        }
+                        .padding(.leading, 8)
+                        Spacer(minLength: 8)
                         sendButton
                     }
                     .padding(.vertical, 8)
@@ -177,11 +146,14 @@ struct MessageInputView: View {
                         .frame(height: textHeight)
                         .padding(.horizontal)
 
-                    HStack {
-                        attachButton
-                        webSearchButton
-                        Spacer()
-
+                    HStack(spacing: 0) {
+                        HStack(spacing: 8) {
+                            attachButton
+                            modelPickerButton
+                            webSearchButton
+                        }
+                        .padding(.leading, 8)
+                        Spacer(minLength: 8)
                         sendButton
                     }
                     .padding(.vertical, 8)
@@ -200,7 +172,11 @@ struct MessageInputView: View {
         Button(action: sendOrCancelMessage) {
             Image(systemName: viewModel.isLoading ? "stop.fill" : "arrow.up")
         }
-        .buttonStyle(ComposerIconButtonStyle(isProminent: true, isDarkMode: isDarkMode))
+        .buttonStyle(ComposerIconButtonStyle(
+            isProminent: true,
+            isDarkMode: isDarkMode,
+            surfaceAlignment: .bottomTrailing
+        ))
         .padding(.trailing, 8)
         .accessibilityLabel(viewModel.isLoading ? "Stop generation" : "Send message")
         .accessibilityValue(messageText.isEmpty ? "Empty" : "Ready")
@@ -209,16 +185,76 @@ struct MessageInputView: View {
 
     @ViewBuilder
     private var attachButton: some View {
-        Button {
-            showAddSheet = true
+        Menu {
+            Button {
+                showPhotoPicker = true
+            } label: {
+                Label("Attach Image", systemImage: "photo")
+            }
+
+            if UIImagePickerController.isSourceTypeAvailable(.camera) {
+                Button {
+                    showCamera = true
+                } label: {
+                    Label("Take Photo", systemImage: "camera")
+                }
+            }
+
+            Button {
+                showDocumentPicker = true
+            } label: {
+                Label("Choose File", systemImage: "folder")
+            }
+
         } label: {
             Image(systemName: "plus")
                 .font(.system(size: 20))
                 .foregroundColor(.secondary)
                 .frame(width: 24, height: 24)
         }
+        .accessibilityLabel("Add attachment")
+        .buttonStyle(ComposerIconButtonStyle(
+            isProminent: false,
+            isDarkMode: isDarkMode,
+            surfaceAlignment: .bottomLeading
+        ))
         .disabled(viewModel.isLoading || viewModel.isProcessingAttachment)
-        .padding(.leading, 8)
+    }
+
+    private var modelPickerButton: some View {
+        Menu {
+            ForEach(AppConfig.shared.filteredModelTypes()) { model in
+                Button {
+                    viewModel.changeModel(to: model)
+                } label: {
+                    if viewModel.currentModel.id == model.id {
+                        Label(model.displayName, systemImage: "checkmark")
+                    } else {
+                        Text(model.displayName)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Text(viewModel.currentModel.displayName)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+            }
+            .font(.footnote.weight(.medium))
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 10)
+            .frame(height: 36)
+            .background(
+                Capsule()
+                    .fill(Color.actionButtonBackground(isDarkMode: isDarkMode))
+            )
+            .frame(height: Theme.Dimensions.controlHitTarget, alignment: .bottom)
+        }
+        .accessibilityLabel("Choose model")
+        .accessibilityValue(viewModel.currentModel.displayName)
+        .disabled(viewModel.isLoading)
     }
 
     @ViewBuilder
@@ -233,7 +269,6 @@ struct MessageInputView: View {
                 }
             }
         )
-        .padding(.leading, 8)
     }
 
     @State private var isPulsing = false
@@ -350,11 +385,12 @@ struct MessageInputView: View {
 private struct ComposerIconButtonStyle: ButtonStyle {
     let isProminent: Bool
     let isDarkMode: Bool
+    var surfaceAlignment: Alignment = .center
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 16, weight: .semibold))
-            .frame(width: Theme.Dimensions.controlHitTarget, height: Theme.Dimensions.controlHitTarget)
+            .frame(width: 36, height: 36)
             .background(
                 Circle()
                     .fill(
@@ -363,12 +399,17 @@ private struct ComposerIconButtonStyle: ButtonStyle {
                             : Color.actionButtonBackground(isDarkMode: isDarkMode)
                     )
             )
+            .frame(
+                width: Theme.Dimensions.controlHitTarget,
+                height: Theme.Dimensions.controlHitTarget,
+                alignment: surfaceAlignment
+            )
             .foregroundStyle(
                 isProminent
                     ? (isDarkMode ? Color.sendButtonForegroundDark : Color.sendButtonForegroundLight)
                     : (isDarkMode ? Color.white.opacity(0.72) : Color.black.opacity(0.62))
             )
-            .contentShape(Circle())
+            .contentShape(Rectangle())
             .opacity(configuration.isPressed ? 0.8 : 1)
     }
 }
@@ -396,7 +437,11 @@ struct WebSearchToggleButton: View {
         Button(action: onToggle) {
             Image(systemName: "globe")
         }
-        .buttonStyle(ComposerIconButtonStyle(isProminent: isEnabled, isDarkMode: isDarkMode))
+        .buttonStyle(ComposerIconButtonStyle(
+            isProminent: isEnabled,
+            isDarkMode: isDarkMode,
+            surfaceAlignment: .bottom
+        ))
         .accessibilityLabel("Web search")
         .accessibilityIdentifier(accessibilityIdentifier)
         .accessibilityValue(isEnabled ? "On" : "Off")
@@ -404,159 +449,6 @@ struct WebSearchToggleButton: View {
     }
 }
 
-/// Bottom sheet presented from the "+" button with attachment options and model selector
-struct AddToSheetView: View {
-    @ObservedObject var viewModel: ChatViewModel
-    let isDarkMode: Bool
-    let onCamera: () -> Void
-    let onPhotos: () -> Void
-    let onFiles: () -> Void
-    @Environment(\.dismiss) private var dismiss
-    private var availableModels: [ModelType] {
-        AppConfig.shared.filteredModelTypes()
-    }
-
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: 20) {
-                // Attachment buttons
-                HStack(spacing: 12) {
-                    if viewModel.currentModel.isMultimodal {
-                        if UIImagePickerController.isSourceTypeAvailable(.camera) {
-                            attachmentButton(icon: "camera", label: "Camera") { onCamera() }
-                        }
-                        attachmentButton(icon: "photo.on.rectangle", label: "Photos") { onPhotos() }
-                    }
-                    attachmentButton(icon: "doc.badge.arrow.up", label: "Files") { onFiles() }
-                }
-                .padding(.horizontal, 20)
-
-                Divider()
-                    .padding(.horizontal, 20)
-
-                // Model selector
-                Text("Select a Model")
-                    .font(.system(size: 17, weight: .semibold))
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, -12)
-
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 16) {
-                        ForEach(availableModels) { model in
-                            ModelCard(
-                                model: model,
-                                isSelected: viewModel.currentModel.id == model.id,
-                                isDarkMode: isDarkMode
-                            ) {
-                                viewModel.changeModel(to: model)
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 20)
-                }
-            }
-            .padding(.top, 8)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .background((isDarkMode ? Color(hex: "161616") : Color(UIColor.systemGroupedBackground)).ignoresSafeArea())
-            .navigationTitle("Add to Chat")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button { dismiss() } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 18, weight: .medium))
-                    }
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func attachmentButton(icon: String, label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 8) {
-                Image(systemName: icon)
-                    .font(.system(size: 22))
-                Text(label)
-                    .font(.system(size: 12, weight: .medium))
-            }
-            .foregroundColor(.primary)
-            .frame(maxWidth: .infinity)
-            .frame(height: 72)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color(.secondarySystemGroupedBackground))
-            )
-        }
-    }
-}
-
-/// Simple model card for the model selector
-struct ModelCard: View {
-    let model: ModelType
-    let isSelected: Bool
-    let isDarkMode: Bool
-    let onTap: () -> Void
-
-    var body: some View {
-        Button(action: onTap) {
-            VStack(spacing: 8) {
-                Image(model.iconName)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 36, height: 36)
-
-                Text(model.displayName)
-                    .font(.system(size: 13, weight: .medium))
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .foregroundColor(isSelected ? .primary : .secondary)
-            .frame(width: 120, height: 110)
-            .background(
-                ZStack {
-                    if #available(iOS 26, *) {
-                        RoundedRectangle(cornerRadius: 16)
-                            .fill(.thickMaterial)
-                    } else {
-                        RoundedRectangle(cornerRadius: 16)
-                            .fill(Color.chatSurface(isDarkMode: isDarkMode))
-                    }
-                    if isSelected {
-                        RoundedRectangle(cornerRadius: 16)
-                            .fill((isDarkMode ? Color.white : Color.black).opacity(0.12))
-                    }
-                    if !isSelected {
-                        RoundedRectangle(cornerRadius: 16)
-                            .strokeBorder(Color.gray.opacity(0.2), lineWidth: 1)
-                    }
-                    if isSelected {
-                        VStack {
-                            HStack {
-                                Spacer()
-                                Circle()
-                                    .fill(isDarkMode ? Color.white : Color.black)
-                                    .frame(width: 16, height: 16)
-                                    .overlay(
-                                        Image(systemName: "checkmark")
-                                            .font(.system(size: 9, weight: .bold))
-                                            .foregroundColor(isDarkMode ? Color.black : Color.white)
-                                    )
-                            }
-                            Spacer()
-                        }
-                        .padding(8)
-                    }
-                }
-            )
-        }
-        .buttonStyle(PlainButtonStyle())
-        .scaleEffect(isSelected ? 1.02 : 1.0)
-        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
-    }
-}
 
 /// Custom UIViewRepresentable for a properly managed text editor
 struct CustomTextEditor: UIViewRepresentable {
