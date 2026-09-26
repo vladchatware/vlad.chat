@@ -11,6 +11,12 @@ const PRODUCTS = {
 } as const;
 
 type ProductId = keyof typeof PRODUCTS;
+type AppleEnvironment = "Production" | "Sandbox";
+
+const APPLE_ENDPOINTS: Record<AppleEnvironment, string> = {
+  Production: "https://api.storekit.apple.com",
+  Sandbox: "https://api.storekit-sandbox.apple.com",
+};
 
 type VerifiedTransaction = {
   transactionId: string;
@@ -18,7 +24,7 @@ type VerifiedTransaction = {
   productId: ProductId;
   bundleId: string;
   purchaseDate: number;
-  environment: string;
+  environment: AppleEnvironment;
   revocationDate?: number;
 };
 
@@ -37,12 +43,15 @@ const creditVerifiedPurchaseRef = makeFunctionReference<
 >("storekit:creditVerifiedPurchase");
 
 export const redeemTransaction = action({
-  args: { transactionId: v.string() },
+  args: {
+    transactionId: v.string(),
+    environment: v.optional(v.union(v.literal("Production"), v.literal("Sandbox"))),
+  },
   returns: v.object({
     tokensGranted: v.number(),
     alreadyRedeemed: v.boolean(),
   }),
-  handler: async (ctx, { transactionId }) => {
+  handler: async (ctx, { transactionId, environment }) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new ConvexError("Please sign in to redeem a purchase.");
     const user = await ctx.runQuery(
@@ -55,7 +64,7 @@ export const redeemTransaction = action({
       throw new ConvexError("Link your Google account before purchasing credits.");
     }
 
-    const transaction = await fetchVerifiedTransaction(transactionId);
+    const transaction = await fetchVerifiedTransaction(transactionId, environment);
     const expectedBundleId = requiredEnv("APPLE_BUNDLE_ID");
     if (transaction.transactionId !== transactionId) {
       throw new ConvexError("Apple returned a different transaction.");
@@ -63,22 +72,66 @@ export const redeemTransaction = action({
     if (transaction.bundleId !== expectedBundleId) {
       throw new ConvexError("Purchase belongs to a different app.");
     }
-    if (!(transaction.productId in PRODUCTS)) {
+    const productId = asProductId(transaction.productId);
+    if (!productId) {
       throw new ConvexError("Unknown StoreKit product.");
     }
     if (transaction.revocationDate !== undefined) {
       throw new ConvexError("This purchase was revoked.");
     }
-    const tokens = PRODUCTS[transaction.productId];
+    const tokens = PRODUCTS[productId];
 
     return ctx.runMutation(creditVerifiedPurchaseRef, {
       userId,
       transactionId: transaction.transactionId,
       originalTransactionId: transaction.originalTransactionId,
-      productId: transaction.productId,
+      productId,
       tokens,
       purchasedAt: transaction.purchaseDate,
       environment: transaction.environment,
+    });
+  },
+});
+
+export const redeemXcodeTransaction = action({
+  args: {
+    transactionId: v.string(),
+    originalTransactionId: v.string(),
+    productId: v.string(),
+    purchasedAt: v.number(),
+  },
+  returns: v.object({
+    tokensGranted: v.number(),
+    alreadyRedeemed: v.boolean(),
+  }),
+  handler: async (ctx, args) => {
+    if (process.env.ALLOW_XCODE_STOREKIT_REDEMPTION !== "true") {
+      throw new ConvexError("Xcode StoreKit crediting is disabled on this deployment.");
+    }
+
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new ConvexError("Please sign in to redeem a purchase.");
+    const user = await ctx.runQuery(
+      makeFunctionReference<"query", Record<string, never>, {
+        isAnonymous?: boolean;
+      } | null>("users:viewer"),
+      {},
+    );
+    if (!user || user.isAnonymous) {
+      throw new ConvexError("Link your Google account before purchasing credits.");
+    }
+
+    const productId = asProductId(args.productId);
+    if (!productId) throw new ConvexError("Unknown StoreKit product.");
+
+    return ctx.runMutation(creditVerifiedPurchaseRef, {
+      userId,
+      transactionId: args.transactionId,
+      originalTransactionId: args.originalTransactionId,
+      productId,
+      tokens: PRODUCTS[productId],
+      purchasedAt: args.purchasedAt,
+      environment: "Xcode",
     });
   },
 });
@@ -119,20 +172,22 @@ export const creditVerifiedPurchase = internalMutation({
   },
 });
 
-async function fetchVerifiedTransaction(transactionId: string) {
+async function fetchVerifiedTransaction(transactionId: string, environment?: AppleEnvironment) {
   const token = await appStoreServerToken();
-  const paths = [
-    "https://api.storekit.itunes.apple.com",
-    "https://api.storekit-sandbox.itunes.apple.com",
-  ];
-  for (const baseURL of paths) {
+  const environments: AppleEnvironment[] = environment
+    ? [environment]
+    : ["Production", "Sandbox"];
+  for (const candidate of environments) {
     const response = await fetch(
-      `${baseURL}/inApps/v1/transactions/${encodeURIComponent(transactionId)}`,
+      `${APPLE_ENDPOINTS[candidate]}/inApps/v1/transactions/${encodeURIComponent(transactionId)}`,
       { headers: { Authorization: `Bearer ${token}` } },
     );
     if (response.status === 404) continue;
+    // Older clients omit the environment. Apple can deny production requests
+    // while accepting the same JWT in sandbox, so try sandbox in that case.
+    if (!environment && candidate === "Production" && response.status === 401) continue;
     if (!response.ok) {
-      throw new ConvexError(`Apple purchase verification failed (${response.status}).`);
+      throw new ConvexError(`Apple denied ${candidate} purchase verification (HTTP ${response.status}).`);
     }
     const json = await response.json() as { signedTransactionInfo?: string };
     if (!json.signedTransactionInfo) {
@@ -143,10 +198,10 @@ async function fetchVerifiedTransaction(transactionId: string) {
       typeof payload.transactionId !== "string" ||
       typeof payload.originalTransactionId !== "string" ||
       typeof payload.productId !== "string" ||
-      !(payload.productId in PRODUCTS) ||
+      !asProductId(payload.productId) ||
       typeof payload.bundleId !== "string" ||
       typeof payload.purchaseDate !== "number" ||
-      typeof payload.environment !== "string"
+      payload.environment !== candidate
     ) {
       throw new ConvexError("Apple returned malformed transaction data.");
     }
@@ -171,4 +226,10 @@ function requiredEnv(name: string) {
   const value = process.env[name];
   if (!value) throw new ConvexError(`${name} is not configured.`);
   return value;
+}
+
+function asProductId(productId: string): ProductId | null {
+  return Object.prototype.hasOwnProperty.call(PRODUCTS, productId)
+    ? productId as ProductId
+    : null;
 }

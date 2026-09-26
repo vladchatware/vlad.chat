@@ -106,6 +106,14 @@ private struct StorePurchaseSection: View {
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
+        .alert("Purchase complete", isPresented: Binding(
+            get: { store.successMessage != nil },
+            set: { if !$0 { store.successMessage = nil } }
+        )) {
+            Button("OK") { store.successMessage = nil }
+        } message: {
+            Text(store.successMessage ?? "Credits were added to your account.")
+        }
     }
 }
 
@@ -150,6 +158,10 @@ private struct AccountDetailsCard: View {
                     tokenValue(title: "Trial tokens left", value: account?.trialTokens.formatted() ?? "—")
                 }
                 tokenValue(title: "Total tokens used", value: usageSummary?.totalTokensTracked.formatted() ?? "—")
+            }
+
+            if !isAnonymous {
+                tokenValue(title: "Purchased credits left", value: account?.tokens.formatted() ?? "—")
             }
 
             AccountUsageSection(summary: usageSummary, isAnonymous: isAnonymous)

@@ -33,9 +33,9 @@
 		88B6E062DF6855D14D5C088C /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E1AF3C3E6958622F27A8087 /* AppConfig.swift */; };
 		8C8644934B7800B1A5BE7DB0 /* ChatModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A55061FA5619976004A5D058 /* ChatModels.swift */; };
 		8CF8B8FA8A8DF28A2967F0EF /* ConvexModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 608E17D6E91F466C95ED8B9F /* ConvexModels.swift */; };
-		9933692D39557A3BBC092003 /* VladChatApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8FC30CEB41B68299B76A47B /* VladChatApp.swift */; };
 		8E989642A9371E8C5C36CAB8 /* AttachmentUploadService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A509CDAC4C85623707707EF9 /* AttachmentUploadService.swift */; };
 		9012AB34CD56EF789012AB34 /* NativeDictationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9012AB34CD56EF789012AB35 /* NativeDictationService.swift */; };
+		9933692D39557A3BBC092003 /* VladChatApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8FC30CEB41B68299B76A47B /* VladChatApp.swift */; };
 		A1B2C3D4E5F60718293A4B5C /* InferenceStateGallery.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B5D /* InferenceStateGallery.swift */; };
 		A4CDE519CF14447809110045 /* ChatListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D47BDA3E80D5E451FF8E14C4 /* ChatListView.swift */; };
 		ADBE7C19239C867EFF1724C8 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BD9E62D28947946EFF6C9065 /* Assets.xcassets */; };
@@ -71,6 +71,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		043D17D230681E6400251287 /* Configuration.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; path = Configuration.storekit; sourceTree = "<group>"; };
 		0461A1733063B2E3003A1192 /* TestPlan.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; path = TestPlan.xctestplan; sourceTree = "<group>"; };
 		06811A58C68CB06B34D3A165 /* VladChat.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VladChat.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		0DB20BBFDEF8331C24836A3E /* WebSearchBox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSearchBox.swift; sourceTree = "<group>"; };
@@ -92,15 +93,15 @@
 		608E17D6E91F466C95ED8B9F /* ConvexModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConvexModels.swift; sourceTree = "<group>"; };
 		61C9C44E8F6C418EA197D704 /* SettingsManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsManager.swift; sourceTree = "<group>"; };
 		78176BBA98F98657AA17C093 /* Color.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Color.swift; sourceTree = "<group>"; };
+		8DE12232A4CC8E259072C1A6 /* StorePurchaseService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorePurchaseService.swift; sourceTree = "<group>"; };
+		9012AB34CD56EF789012AB35 /* NativeDictationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeDictationService.swift; sourceTree = "<group>"; };
 		93A28EFB29901B2DA5AAA406 /* StreamingMarkdownChunker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingMarkdownChunker.swift; sourceTree = "<group>"; };
 		987A5A35D14425EA045ACBF1 /* ChatSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatSidebar.swift; sourceTree = "<group>"; };
 		9A63E1CD2294F5D63A5EE291 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		9012AB34CD56EF789012AB35 /* NativeDictationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeDictationService.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B5D /* InferenceStateGallery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InferenceStateGallery.swift; sourceTree = "<group>"; };
 		A22C39F702AD1937842D4BD6 /* CameraPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPickerView.swift; sourceTree = "<group>"; };
 		A3025EBF89C03C17CFD4FB9C /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
 		A509CDAC4C85623707707EF9 /* AttachmentUploadService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentUploadService.swift; sourceTree = "<group>"; };
-		8DE12232A4CC8E259072C1A6 /* StorePurchaseService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorePurchaseService.swift; sourceTree = "<group>"; };
 		A55061FA5619976004A5D058 /* ChatModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatModels.swift; sourceTree = "<group>"; };
 		AE2F2F42D1A563F9C5AEC08F /* NetworkMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkMonitor.swift; sourceTree = "<group>"; };
 		AF0406B54D2766858ED20F26 /* MessageTableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageTableView.swift; sourceTree = "<group>"; };
@@ -223,15 +224,6 @@
 			path = Sources;
 			sourceTree = "<group>";
 		};
-		E9A761B49C0F417A81D425EA /* Services */ = {
-			isa = PBXGroup;
-			children = (
-				A509CDAC4C85623707707EF9 /* AttachmentUploadService.swift */,
-				8DE12232A4CC8E259072C1A6 /* StorePurchaseService.swift */,
-			);
-			path = Services;
-			sourceTree = "<group>";
-		};
 		57AA725C10C74BA67551F554 /* Utilities */ = {
 			isa = PBXGroup;
 			children = (
@@ -312,6 +304,7 @@
 		B4F2B86B94DD9A92168046D5 = {
 			isa = PBXGroup;
 			children = (
+				043D17D230681E6400251287 /* Configuration.storekit */,
 				0461A1733063B2E3003A1192 /* TestPlan.xctestplan */,
 				7D68E4ECEBBECB2BB3452799 /* Config */,
 				09F966065B193C8FDFA75722 /* Resources */,
@@ -347,6 +340,15 @@
 				1A12E43535CC3FD4E269DF80 /* ConvexConcurrency.swift */,
 			);
 			path = Convex;
+			sourceTree = "<group>";
+		};
+		E9A761B49C0F417A81D425EA /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				A509CDAC4C85623707707EF9 /* AttachmentUploadService.swift */,
+				8DE12232A4CC8E259072C1A6 /* StorePurchaseService.swift */,
+			);
+			path = Services;
 			sourceTree = "<group>";
 		};
 		F35D340C8E731DF8F9F67A0C /* Config */ = {
@@ -654,8 +656,8 @@
 			baseConfigurationReference = 57F4A83A18960EAB21DB81E4 /* Base.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_ENTITLEMENTS = VladChat.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 8;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Resources/Info.plist;
@@ -772,8 +774,8 @@
 			baseConfigurationReference = D4FABECF89A5967AC65716A9 /* Release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_ENTITLEMENTS = VladChat.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 8;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Resources/Info.plist;

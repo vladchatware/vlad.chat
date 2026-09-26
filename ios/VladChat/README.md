@@ -38,7 +38,11 @@ does not create or publish the App Store product.
 The shared `VladChat` Xcode scheme uses `Configuration.storekit` for local Run
 actions. It supplies a $4.99 simulator product so the purchase UI and flow can
 be exercised before App Store Connect setup. The local purchase is simulated;
-it does not charge a customer or verify through Apple's production API.
+it does not charge a customer or verify through Apple's production API. The app
+can credit local transactions on a Convex dev deployment when
+`ALLOW_XCODE_STOREKIT_REDEMPTION=true` is set there. Keep this flag unset in
+production. Use an App Store sandbox purchase to test Apple's verification and
+credit delivery end to end.
 
 For backend redemption, create an In-App Purchase key in App Store Connect and
 set these environment variables in **both** Convex dev and production
