@@ -426,6 +426,12 @@ const mobileMessageValidator = v.object({
   errorText: v.optional(v.string()),
 });
 
+const mobileThreadValidator = v.object({
+  id: v.string(),
+  title: v.string(),
+  createdAt: v.number(),
+});
+
 const mobileAccountValidator = v.object({
   isAnonymous: v.boolean(),
   name: v.optional(v.string()),
@@ -442,36 +448,58 @@ const mobileAccountValidator = v.object({
  * Swift should not need to mirror the AI SDK's dynamic tool/content union.
  */
 export const getMobileChat = query({
-  args: {},
+  args: { threadId: v.optional(v.string()) },
   returns: v.object({
     threadId: v.union(v.string(), v.null()),
+    title: v.string(),
+    threads: v.array(mobileThreadValidator),
     messages: v.array(mobileMessageValidator),
     account: v.union(mobileAccountValidator, v.null()),
     remainingMessages: v.union(v.number(), v.null()),
   }),
-  handler: async (ctx) => {
+  handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) {
-      return { threadId: null, messages: [], account: null, remainingMessages: null };
+      return {
+        threadId: null,
+        title: "Vlad",
+        threads: [],
+        messages: [],
+        account: null,
+        remainingMessages: null,
+      };
     }
 
-    const [threadId, user] = await Promise.all([
-      getDefaultThreadForUser(ctx, userId),
+    const [threadResult, user] = await Promise.all([
+      ctx.runQuery(components.agent.threads.listThreadsByUserId, {
+        userId,
+        paginationOpts: { cursor: null, numItems: 100 },
+      }),
       ctx.db.get(userId),
     ]);
+    const threads = threadResult.page.map((thread) => ({
+      id: thread._id,
+      title: thread.title ?? "Untitled",
+      createdAt: thread._creationTime,
+    }));
+    const threadId = args.threadId ?? threads[0]?.id ?? null;
     if (!threadId) {
       return {
         threadId: null,
+        title: "Vlad",
+        threads,
         messages: [],
         account: user ? mobileAccount(user) : null,
         remainingMessages: user?.isAnonymous ? (user.trialMessages ?? 0) : null,
       };
     }
+    await authorizeThreadAccess(ctx, threadId, true);
 
     const paginationOpts = { cursor: null, numItems: 100 };
-    const [result, canonicalResult] = await Promise.all([
+    const [result, canonicalResult, metadata] = await Promise.all([
       listUIMessages(ctx, components.agent, { threadId, paginationOpts }),
       listMessages(ctx, components.agent, { threadId, paginationOpts }),
+      getThreadMetadata(ctx, components.agent, { threadId }),
     ]);
     const errorsByMessageID = new Map<string, string>();
     for (const message of canonicalResult.page) {
@@ -518,6 +546,8 @@ export const getMobileChat = query({
 
     return {
       threadId,
+      title: metadata.title ?? "Untitled",
+      threads,
       messages: mergeMobileStreamText(
         messages,
         streamMessages,
@@ -547,6 +577,39 @@ function mobileAccount(user: {
   };
 }
 
+export const createMobileThread = mutation({
+  args: {},
+  returns: v.string(),
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new ConvexError("Please sign in to continue.");
+    const { threadId } = await agent.createThread(ctx, { userId, title: "Untitled" });
+    return threadId;
+  },
+});
+
+export const renameMobileThread = mutation({
+  args: { threadId: v.string(), title: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { threadId, title }) => {
+    await authorizeThreadAccess(ctx, threadId, true);
+    const normalizedTitle = title.trim();
+    if (!normalizedTitle) throw new ConvexError("Chat title cannot be empty.");
+    await agent.updateThreadMetadata(ctx, { threadId, patch: { title: normalizedTitle } });
+    return null;
+  },
+});
+
+export const deleteMobileThread = mutation({
+  args: { threadId: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { threadId }) => {
+    await authorizeThreadAccess(ctx, threadId, true);
+    await agent.deleteThreadAsync(ctx, { threadId });
+    return null;
+  },
+});
+
 export const getUIMessages = query({
   args: {
     threadId: v.string(),
@@ -572,8 +635,12 @@ export const generateReply = action({
     prompt: v.string(),
     model: v.string(),
     searchEnabled: v.optional(v.boolean()),
+    threadId: v.optional(v.string()),
   },
-  handler: async (ctx, { prompt, model, searchEnabled = false }) => {
+  handler: async (
+    ctx,
+    { prompt, model, searchEnabled = false, threadId: requestedThreadId },
+  ) => {
     try {
     const userId = await getAuthUserId(ctx);
     if (!userId) {
@@ -616,7 +683,9 @@ export const generateReply = action({
       ? userNotionInstruction(notionConn.workspaceName)
       : "";
 
-    const threadId = await getOrCreateDefaultThread(ctx, userId);
+    if (requestedThreadId) await authorizeThreadAccess(ctx, requestedThreadId, true);
+    const threadId =
+      requestedThreadId ?? (await getOrCreateDefaultThread(ctx, userId));
     const { thread } = await agent.continueThread(ctx, { threadId, userId });
 
     const result = await thread.streamText(

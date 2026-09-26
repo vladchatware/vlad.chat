@@ -48,6 +48,7 @@ final class ChatViewModel: ObservableObject {
     private var localGenerationPreviousMaxOrder: Double?
     private var localGenerationMessageID: String?
     private var hasStarted = false
+    private var selectedThreadId: String?
     private var messageOrders: [String: Double] = [:]
     private var streamingChunkers: [String: StreamingMarkdownChunker] = [:]
     private var streamingContent: [String: String] = [:]
@@ -131,17 +132,20 @@ final class ChatViewModel: ObservableObject {
         activeGenerationID = generationID
         let modelID = currentModel.id
         let searchEnabled = isWebSearchEnabled
+        let threadId = selectedThreadId
         generationTask?.cancel()
         generationTask = Task { [weak self] in
             guard let self else { return }
             do {
+                var arguments: [String: ConvexEncodable?] = [
+                    "prompt": text,
+                    "model": modelID,
+                    "searchEnabled": searchEnabled,
+                ]
+                if let threadId { arguments["threadId"] = threadId }
                 let result: GenerationResult = try await client.action(
                     "threads:generateReply",
-                    with: [
-                        "prompt": text,
-                        "model": modelID,
-                        "searchEnabled": searchEnabled,
-                    ]
+                    with: arguments
                 )
                 guard activeGenerationID == generationID else { return }
                 localGenerationExpectedOrder = result.order
@@ -207,17 +211,49 @@ final class ChatViewModel: ObservableObject {
     }
 
     func createNewChat(language: String? = nil, modelType: ModelType? = nil, focusInput: Bool = true) {
-        guard messages.isEmpty else {
-            attachmentError = "Multiple Convex threads are next; this build uses your current Vlad thread."
+        guard let client else {
+            attachmentError = "Vlad is still connecting."
             return
         }
         shouldFocusInput = focusInput
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let threadId: String = try await client.mutation("threads:createMobileThread")
+                selectedThreadId = threadId
+                let chat = Chat.create(id: threadId, modelType: modelType ?? currentModel, language: language)
+                replaceChat(chat)
+                currentChat = chat
+                subscribe(using: client, threadId: threadId)
+            } catch {
+                attachmentError = Self.userFacingMessage(for: error)
+            }
+        }
     }
 
-    func selectChat(_ chat: Chat) { currentChat = chat }
+    func selectChat(_ chat: Chat) {
+        guard selectedThreadId != chat.id, let client else { return }
+        selectedThreadId = chat.id
+        currentChat = chat
+        subscribe(using: client, threadId: chat.id)
+    }
 
     func deleteChat(_ id: String) {
-        attachmentError = "Deleting Convex threads is not wired yet."
+        guard let client else { return }
+        let nextThreadId = chats.first(where: { $0.id != id })?.id
+        chats.removeAll { $0.id == id }
+        if selectedThreadId == id {
+            selectedThreadId = nextThreadId
+            currentChat = chats.first(where: { $0.id == nextThreadId })
+            subscribe(using: client, threadId: nextThreadId)
+        }
+        Task { [weak self] in
+            do {
+                try await client.mutation("threads:deleteMobileThread", with: ["threadId": id])
+            } catch {
+                self?.attachmentError = Self.userFacingMessage(for: error)
+            }
+        }
     }
 
     func updateChatTitle(_ id: String, newTitle: String) {
@@ -226,6 +262,17 @@ final class ChatViewModel: ObservableObject {
         chat.titleState = .manual
         replaceChat(chat)
         if currentChat?.id == id { currentChat = chat }
+        guard let client else { return }
+        Task { [weak self] in
+            do {
+                try await client.mutation(
+                    "threads:renameMobileThread",
+                    with: ["threadId": id, "title": chat.title]
+                )
+            } catch {
+                self?.attachmentError = Self.userFacingMessage(for: error)
+            }
+        }
     }
 
     func editMessage(at index: Int, newContent: String) {
@@ -340,15 +387,26 @@ final class ChatViewModel: ObservableObject {
         }
     }
 
-    private func subscribe(using client: ConvexClientWithAuth<ConvexAuthSession>) {
+    private func subscribe(
+        using client: ConvexClientWithAuth<ConvexAuthSession>,
+        threadId: String? = nil
+    ) {
         subscriptionTask?.cancel()
         usageSubscriptionTask?.cancel()
         presentationTask?.cancel()
         presentationTask = nil
         presentationTaskID = nil
         pendingMobileChat = nil
+        messageOrders = [:]
+        streamingChunkers = [:]
+        streamingContent = [:]
         subscriptionTask = Task { [weak self] in
-            let updates = client.subscribe(to: "threads:getMobileChat", yielding: MobileChat.self).values
+            let arguments: [String: ConvexEncodable?]? = threadId.map { ["threadId": $0] }
+            let updates = client.subscribe(
+                to: "threads:getMobileChat",
+                with: arguments,
+                yielding: MobileChat.self
+            ).values
             do {
                 for try await mobileChat in updates {
                     guard !Task.isCancelled else { return }
@@ -505,19 +563,23 @@ final class ChatViewModel: ObservableObject {
         }
         streamingChunkers = streamingChunkers.filter { activeMessageIds.contains($0.key) }
         streamingContent = streamingContent.filter { activeMessageIds.contains($0.key) }
-        let title = mapped.first(where: { $0.role == .user })?.content
-            .split(separator: " ")
-            .prefix(5)
-            .joined(separator: " ") ?? "Vlad"
-        let chat = Chat(
-            id: mobileChat.threadId ?? "current",
-            title: title,
-            messages: mapped,
-            createdAt: mapped.first?.timestamp ?? Date(),
-            modelType: currentModel
-        )
-        currentChat = chat
-        chats = [chat]
+        let selectedId = mobileChat.threadId
+        if selectedThreadId == nil { selectedThreadId = selectedId }
+        chats = mobileChat.threads.map { thread in
+            let existing = chats.first(where: { $0.id == thread.id })
+            let threadMessages = thread.id == selectedId ? mapped : (existing?.messages ?? [])
+            return Chat(
+                id: thread.id,
+                title: thread.id == selectedId ? mobileChat.title : thread.title,
+                titleState: (thread.id == selectedId ? mobileChat.title : thread.title) == "Untitled"
+                    ? .placeholder : .manual,
+                messages: threadMessages,
+                createdAt: Date(timeIntervalSince1970: thread.createdAt / 1_000),
+                modelType: existing?.modelType ?? currentModel
+            )
+        }
+        currentChat = chats.first(where: { $0.id == selectedId })
+        scrollToBottomTrigger = UUID()
     }
 
     private func hasActiveServerResponse(in mobileChat: MobileChat) -> Bool {
