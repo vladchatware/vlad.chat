@@ -1,10 +1,15 @@
-import { streamText, UIMessage, convertToModelMessages, isStepCount, smoothStream, gateway } from 'ai';
+import { streamText, UIMessage, convertToModelMessages, isStepCount, smoothStream, gateway, type ToolSet } from 'ai';
 import { createMCPClient } from '@ai-sdk/mcp';
 import { system } from '@/lib/ai'
 import { api } from '@/convex/_generated/api';
 import { convexAuthNextjsToken } from '@convex-dev/auth/nextjs/server';
 import { fetchMutation, fetchQuery } from "convex/nextjs"
 import { NextResponse } from 'next/server';
+import {
+  computerUseToolsAvailable,
+  createComputerUseTools,
+  computerUseInstruction,
+} from '@/lib/computer-use'
 
 export async function POST(req: Request) {
   const {
@@ -45,7 +50,7 @@ export async function POST(req: Request) {
   const notionTools = await notion.tools()
 
   // Conditionally add Tavily search tools
-  let tools = notionTools
+  let tools: ToolSet = notionTools
   if (searchEnabled && process.env.TVLY) {
     try {
       const tavily = await createMCPClient({
@@ -62,12 +67,25 @@ export async function POST(req: Request) {
     }
   }
 
+  // Computer use (V-83): legacy/styleguide path. Product lounge uses Convex
+  // generateReply → getMcpTools → /api/mcp (computer_* registered there).
+  // Clients only render tool JSON (screenshotUrl / handoff); no UI-only orchestration.
+  let instructions = system
+  if (computerUseToolsAvailable()) {
+    const computerTools = createComputerUseTools({
+      userId: String(user._id),
+    })
+    tools = { ...tools, ...computerTools }
+    // skills/computer-use/SKILL.md
+    instructions = `${system}${computerUseInstruction()}`
+  }
+
   const result = streamText({
     model: gateway.languageModel(model),
     messages: await convertToModelMessages(messages),
     tools: tools as Parameters<typeof streamText>[0]['tools'],
     stopWhen: isStepCount(5),
-    instructions: system,
+    instructions,
     experimental_transform: smoothStream(),
     telemetry: { functionId: 'chat' },
     onEnd: async ({ usage, finalStep }) => {

@@ -25,6 +25,10 @@ import { getAuthUserId } from "@convex-dev/auth/server"
 import { agent } from "./agents/simple";
 import { chatSystemInstructions } from "./agents/prompts";
 import { userNotionInstruction } from "@/lib/ai";
+import {
+  computerUseInstruction,
+  hasComputerUseTools,
+} from "@/lib/computer-use/skill";
 import { isModelEnabled, isPremiumModel } from "@/lib/provider";
 import { z } from "zod/v3";
 import {
@@ -195,19 +199,34 @@ async function failPendingMessages(
 async function getMcpTools(
   searchEnabled: boolean,
   userNotionToken?: string,
+  /** Stable sandbox session for computer_* MCP tools (userId). */
+  computerSessionKey?: string,
 ): Promise<ToolSet> {
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
   if (!siteUrl) {
     return {};
   }
 
-  const notion = await createMCPClient({
-    transport: {
-      type: "http",
-      url: `${siteUrl}/api/mcp`,
-    },
-  });
-  let tools: ToolSet = await notion.tools();
+  let tools: ToolSet = {};
+  try {
+    const notion = await createMCPClient({
+      transport: {
+        type: "http",
+        url: `${siteUrl}/api/mcp`,
+        ...(computerSessionKey
+          ? {
+              headers: {
+                "x-computer-session": computerSessionKey,
+              },
+            }
+          : {}),
+      },
+    });
+    // Site MCP includes Notion tools and, when enabled, computer_* (V-83).
+    tools = await notion.tools();
+  } catch (error) {
+    console.error("Failed to connect to site Notion MCP:", error);
+  }
 
   if (userNotionToken) {
     try {
@@ -726,11 +745,22 @@ export const generateReply = action({
     });
     const userNotionToken = await getValidNotionToken(ctx, notionConn);
 
-    const tools = await getMcpTools(searchEnabled, userNotionToken ?? undefined);
+    // computer_* arrives via site MCP when COMPUTER_USE_ENABLED + sandbox creds;
+    // pass userId as x-computer-session for sandbox isolation.
+    const tools = await getMcpTools(
+      searchEnabled,
+      userNotionToken ?? undefined,
+      String(userId),
+    );
 
     const notionInstruction = notionConn
       ? userNotionInstruction(notionConn.workspaceName)
       : "";
+    // skills/computer-use/SKILL.md — inject when computer_* tools are on the MCP surface
+    const computerInstruction = hasComputerUseTools(tools)
+      ? computerUseInstruction()
+      : "";
+    const extraInstructions = `${notionInstruction}${computerInstruction}`;
 
     if (requestedThreadId) await authorizeThreadAccess(ctx, requestedThreadId, true);
     const threadId =
@@ -752,8 +782,8 @@ export const generateReply = action({
     const result = await thread.streamText(
       {
         model: gateway.languageModel(model),
-        instructions: notionInstruction
-          ? `${chatSystemInstructions}${notionInstruction}`
+        instructions: extraInstructions
+          ? `${chatSystemInstructions}${extraInstructions}`
           : undefined,
         prompt: modelPrompt.prompt,
         promptMessageId,

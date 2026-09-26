@@ -4,6 +4,10 @@ import { api } from '@/convex/_generated/api';
 import { convexAuthNextjsToken } from '@convex-dev/auth/nextjs/server';
 import { fetchMutation, fetchQuery } from "convex/nextjs"
 import { loungeSystem } from '@/lib/ai';
+import {
+  computerUseInstruction,
+  hasComputerUseTools,
+} from '@/lib/computer-use/skill';
 
 export async function POST() {
   try {
@@ -47,12 +51,16 @@ export async function POST() {
       }
     });
     const tools = await notion.tools();
+    // skills/computer-use/SKILL.md when computer_* present on site MCP
+    const instructions = hasComputerUseTools(tools)
+      ? `${loungeSystem}${computerUseInstruction()}`
+      : loungeSystem;
 
     const model = 'openai/gpt-5.3-chat';
     // Stream the response
     const result = streamText({
       model: gateway.languageModel(model),
-      instructions: loungeSystem,
+      instructions,
       prompt: `Here's the recent conversation in The Lounge:\n\n${conversationContext}\n\nRespond to the latest message naturally.`,
       tools: tools as Parameters<typeof streamText>[0]['tools'],
       stopWhen: isStepCount(5),

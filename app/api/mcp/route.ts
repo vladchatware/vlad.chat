@@ -5,6 +5,11 @@ import { getRelativeTime } from "@/lib/utils"
 import { after } from "next/server"
 import { PostHog, instrument } from "@posthog/mcp"
 import { createMcpHandler } from "mcp-handler"
+import {
+  computerSessionAls,
+  computerSessionFromRequest,
+  registerComputerUseMcpTools,
+} from "@/lib/computer-use"
 import type {
   PageObjectResponse,
   DatabaseObjectResponse,
@@ -14,6 +19,11 @@ import type {
   PartialDataSourceObjectResponse,
   QueryDataSourceParameters
 } from "@notionhq/client";
+
+/** Computer-use desk boot (apt + Chromium) needs a long window. */
+export const maxDuration = 300;
+export const runtime = "nodejs";
+
 
 const NOTION_FETCH_LIMITS = {
   maxChars: 90000,
@@ -56,9 +66,13 @@ const posthog = new PostHog(process.env.NEXT_PUBLIC_POSTHOG_KEY!, {
 
 const handler = createMcpHandler(
   (server) => {
-    instrument(server, posthog)
+    // mcp-handler 1.1 + SDK 1.26 + large Zod tool schemas hit TS "excessively deep" on
+    // notion-search; keep runtime typing via MCP SDK, skip recursive inference here.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentional escape hatch for TS2589
+    const s = server as { registerTool: (...args: any[]) => any }
+    instrument(s as typeof server, posthog)
     after(posthog.flush())
-    server.registerTool(
+    s.registerTool(
       'notion-get-database',
       {
         description: 'Retrieves the schema of a Notion database, including all properties and their types. Use this to discover available properties before constructing filters for database queries.',
@@ -143,7 +157,7 @@ const handler = createMcpHandler(
         }
       }
     )
-    server.registerTool(
+    s.registerTool(
       'notion-search',
       {
         description: `Searches all parent or child pages and databases that have been shared with an integration, OR queries a specific database with filters.
@@ -396,7 +410,7 @@ For database queries, first use notion-get-database to discover available proper
         }
       }
     )
-    server.registerTool(
+    s.registerTool(
       'notion-fetch',
       {
         description: 'Retrieves a Notion page and converts it to markdown format. This tool recursively fetches all blocks and their children to create a complete markdown representation of the page.',
@@ -439,7 +453,7 @@ For database queries, first use notion-get-database to discover available proper
         }
       }
     )
-    server.registerTool(
+    s.registerTool(
       'notion-fetch-database-entry',
       {
         description: 'Retrieves a Notion database entry (page) and formats it with all database properties displayed clearly, followed by the page content. Use this when you have a database entry ID from notion-search results and want to see the full entry details.',
@@ -606,9 +620,29 @@ For database queries, first use notion-get-database to discover available proper
         }
       }
     )
+
+    // V-83 computer use: same tools as lib/computer-use. Product lounge loads
+    // them via Convex getMcpTools → this MCP endpoint (no threads.ts wiring).
+    registerComputerUseMcpTools(server)
   },
   {},
   { basePath: '/api' },
 );
 
-export { handler as GET, handler as POST, handler as DELETE };
+/**
+ * Bind x-computer-session for sandbox isolation when Convex (or other clients)
+ * pass the header. Tool arg sessionId still wins when provided.
+ */
+async function withComputerSession(req: Request): Promise<Response> {
+  const session = computerSessionFromRequest(req)
+  if (session) {
+    return await computerSessionAls.run(session, () => handler(req))
+  }
+  return handler(req)
+}
+
+export {
+  withComputerSession as GET,
+  withComputerSession as POST,
+  withComputerSession as DELETE,
+};

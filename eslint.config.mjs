@@ -10,6 +10,10 @@ const compat = new FlatCompat({
 });
 
 const eslintConfig = [
+  {
+    // Sandbox VM payloads (CommonJS) — executed inside Vercel Sandbox, not Next.
+    ignores: ["lib/computer-use/sandbox-scripts/**"],
+  },
   ...compat.extends("next/core-web-vitals", "next/typescript"),
 ];
 
