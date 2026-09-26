@@ -219,3 +219,8 @@ struct AbortReplyResult: Decodable, Sendable {
 struct DeleteMobileMessagesResult: Decodable, Sendable {
     let deleted: Bool
 }
+
+struct StoreRedemptionResult: Decodable, Sendable {
+    let tokensGranted: Double
+    let alreadyRedeemed: Bool
+}

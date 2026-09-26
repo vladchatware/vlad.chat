@@ -3,6 +3,7 @@ import AuthenticationServices
 
 struct AccountView: View {
     @ObservedObject var viewModel: ChatViewModel
+    @StateObject private var store = StorePurchaseService()
 
     var body: some View {
         ScrollView {
@@ -11,6 +12,10 @@ struct AccountView: View {
                     account: viewModel.account,
                     usageSummary: viewModel.usageSummary
                 )
+
+                if viewModel.account?.isAnonymous == false {
+                    StorePurchaseSection(viewModel: viewModel, store: store)
+                }
 
                 if viewModel.account?.isAnonymous ?? true {
                     AccountLinkingButtons(viewModel: viewModel, stacked: true)
@@ -41,6 +46,66 @@ struct AccountView: View {
         }
         .scrollIndicators(.hidden)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .task(id: viewModel.account?.isAnonymous) {
+            guard viewModel.account?.isAnonymous == false else { return }
+            store.observeTransactions(redeem: viewModel.redeemStoreTransaction)
+            await store.finishUnredeemedTransactions(redeem: viewModel.redeemStoreTransaction)
+            await store.loadProducts()
+        }
+    }
+}
+
+private struct StorePurchaseSection: View {
+    @ObservedObject var viewModel: ChatViewModel
+    @ObservedObject var store: StorePurchaseService
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Buy credits")
+                .font(.headline)
+
+            if let product = store.product {
+                Button {
+                    Task { await store.purchase(redeem: viewModel.redeemStoreTransaction) }
+                } label: {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(product.displayName)
+                            Text("16.6M inference tokens")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if store.isPurchasing {
+                            ProgressView()
+                        } else {
+                            Text(product.displayPrice)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(store.isPurchasing)
+            } else if store.isLoading {
+                HStack {
+                    ProgressView()
+                    Text("Loading credit pack…")
+                }
+            } else {
+                Button("Retry loading purchases") {
+                    Task { await store.loadProducts() }
+                }
+            }
+
+            if let errorMessage = store.errorMessage {
+                Text(errorMessage)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
     }
 }
 
