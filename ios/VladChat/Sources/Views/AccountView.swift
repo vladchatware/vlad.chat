@@ -48,8 +48,9 @@ struct AccountView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .task(id: viewModel.account?.isAnonymous) {
             guard viewModel.account?.isAnonymous == false else { return }
-            await store.loadProducts()
+            store.observeTransactions(redeem: viewModel.redeemStoreTransaction)
             await store.finishUnredeemedTransactions(redeem: viewModel.redeemStoreTransaction)
+            await store.loadProducts()
         }
     }
 }

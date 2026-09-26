@@ -8,7 +8,8 @@ enum StorePurchaseError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .productUnavailable: "Credit pack is unavailable."
+        case .productUnavailable:
+            "Credit pack isn't available yet. Check App Store Connect product setup and storefront availability."
         case .failedVerification: "StoreKit could not verify the purchase."
         case .pending: "Purchase is awaiting approval."
         }
@@ -24,15 +25,34 @@ final class StorePurchaseService: ObservableObject {
     @Published private(set) var isPurchasing = false
     @Published var errorMessage: String?
 
+    private var updatesTask: Task<Void, Never>?
+
     func loadProducts() async {
         guard product == nil, !isLoading else { return }
         isLoading = true
+        errorMessage = nil
         defer { isLoading = false }
         do {
             product = try await Product.products(for: [Self.tokenPackProductId]).first
             if product == nil { throw StorePurchaseError.productUnavailable }
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    func observeTransactions(
+        redeem: @escaping (UInt64) async throws -> Void
+    ) {
+        guard updatesTask == nil else { return }
+        updatesTask = Task { [weak self] in
+            for await verification in Transaction.updates {
+                guard !Task.isCancelled else { return }
+                do {
+                    try await self?.redeem(verification, using: redeem)
+                } catch {
+                    self?.errorMessage = error.localizedDescription
+                }
+            }
         }
     }
 
@@ -46,9 +66,7 @@ final class StorePurchaseService: ObservableObject {
         do {
             switch try await product.purchase() {
             case .success(let verification):
-                let transaction = try verified(verification)
-                try await redeem(transaction.id)
-                await transaction.finish()
+                try await self.redeem(verification, using: redeem)
             case .pending:
                 throw StorePurchaseError.pending
             case .userCancelled:
@@ -66,14 +84,22 @@ final class StorePurchaseService: ObservableObject {
     ) async {
         for await verification in Transaction.unfinished {
             do {
-                let transaction = try verified(verification)
-                guard transaction.productID == Self.tokenPackProductId else { continue }
-                try await redeem(transaction.id)
-                await transaction.finish()
+                try await self.redeem(verification, using: redeem)
             } catch {
                 errorMessage = error.localizedDescription
             }
         }
+    }
+
+    private func redeem(
+        _ verification: VerificationResult<Transaction>,
+        using redeemTransaction: (UInt64) async throws -> Void
+    ) async throws {
+        let transaction = try verified(verification)
+        guard transaction.productID == Self.tokenPackProductId else { return }
+        try await redeemTransaction(transaction.id)
+        await transaction.finish()
+        errorMessage = nil
     }
 
     private func verified<T>(_ result: VerificationResult<T>) throws -> T {
