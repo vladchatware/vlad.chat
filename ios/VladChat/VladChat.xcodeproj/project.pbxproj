@@ -34,13 +34,13 @@
 		8CF8B8FA8A8DF28A2967F0EF /* ConvexModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 608E17D6E91F466C95ED8B9F /* ConvexModels.swift */; };
 		9933692D39557A3BBC092003 /* VladChatApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8FC30CEB41B68299B76A47B /* VladChatApp.swift */; };
 		8E989642A9371E8C5C36CAB8 /* AttachmentUploadService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A509CDAC4C85623707707EF9 /* AttachmentUploadService.swift */; };
+		9012AB34CD56EF789012AB34 /* NativeDictationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9012AB34CD56EF789012AB35 /* NativeDictationService.swift */; };
 		A1B2C3D4E5F60718293A4B5C /* InferenceStateGallery.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B5D /* InferenceStateGallery.swift */; };
 		A4CDE519CF14447809110045 /* ChatListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D47BDA3E80D5E451FF8E14C4 /* ChatListView.swift */; };
 		ADBE7C19239C867EFF1724C8 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BD9E62D28947946EFF6C9065 /* Assets.xcassets */; };
 		B04A5C9623439CABC5B72A64 /* Color.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78176BBA98F98657AA17C093 /* Color.swift */; };
 		B0D1CCC056F0FAB73FE2E6DF /* SwiftMath in Frameworks */ = {isa = PBXBuildFile; productRef = 984D5BF62A263D86E42A5B16 /* SwiftMath */; };
 		BCED25AB65E09107868208BA /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C303574FDDFEFCABDDCF900 /* Constants.swift */; };
-		BE0EAA6095538618D20ED7E2 /* AudioRecordingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5682F8B6C4D107A834B7336 /* AudioRecordingService.swift */; };
 		C082285A111B08E623D065EA /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 9A63E1CD2294F5D63A5EE291 /* Assets.xcassets */; };
 		C1BF75E1416CA53AA3B02E05 /* NetworkMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE2F2F42D1A563F9C5AEC08F /* NetworkMonitor.swift */; };
 		C382D7548367E52154539082 /* MessageTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0406B54D2766858ED20F26 /* MessageTableView.swift */; };
@@ -94,6 +94,7 @@
 		93A28EFB29901B2DA5AAA406 /* StreamingMarkdownChunker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingMarkdownChunker.swift; sourceTree = "<group>"; };
 		987A5A35D14425EA045ACBF1 /* ChatSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatSidebar.swift; sourceTree = "<group>"; };
 		9A63E1CD2294F5D63A5EE291 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		9012AB34CD56EF789012AB35 /* NativeDictationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeDictationService.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B5D /* InferenceStateGallery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InferenceStateGallery.swift; sourceTree = "<group>"; };
 		A22C39F702AD1937842D4BD6 /* CameraPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPickerView.swift; sourceTree = "<group>"; };
 		A3025EBF89C03C17CFD4FB9C /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
@@ -113,7 +114,6 @@
 		D4FABECF89A5967AC65716A9 /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
 		DC53ED69F2C352CC8F38D72E /* VladChatUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = VladChatUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		E310EDB0B0AB488B9B4A8020 /* AppConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfiguration.swift; sourceTree = "<group>"; };
-		E5682F8B6C4D107A834B7336 /* AudioRecordingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioRecordingService.swift; sourceTree = "<group>"; };
 		EFEC2B9736171C6FD41475F1 /* DocumentPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentPickerView.swift; sourceTree = "<group>"; };
 		F14ED7C520AE25802C5EE7AF /* VladChatTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = VladChatTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		FB017A045EB0E831D8337685 /* MessageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageView.swift; sourceTree = "<group>"; };
@@ -289,7 +289,7 @@
 		A50B76C585FC6B11379372CE /* Services */ = {
 			isa = PBXGroup;
 			children = (
-				E5682F8B6C4D107A834B7336 /* AudioRecordingService.swift */,
+				9012AB34CD56EF789012AB35 /* NativeDictationService.swift */,
 				93A28EFB29901B2DA5AAA406 /* StreamingMarkdownChunker.swift */,
 				2A38D1E3BB8B85596E30B9DC /* ThinkingSummaryService.swift */,
 				C06AD2E66310DC33E15AE479 /* ThinkingTextChunker.swift */,
@@ -500,7 +500,6 @@
 				E6AECD2B654580310C2CD6BC /* AppConfiguration.swift in Sources */,
 				F826F7F015AA0765066BAF34 /* AttachmentModels.swift in Sources */,
 				FC1140931C7CDE4F9D830826 /* AttachmentPreviewBar.swift in Sources */,
-				BE0EAA6095538618D20ED7E2 /* AudioRecordingService.swift in Sources */,
 				05452BC6090868E2DA679982 /* CameraPickerView.swift in Sources */,
 				A4CDE519CF14447809110045 /* ChatListView.swift in Sources */,
 				8C8644934B7800B1A5BE7DB0 /* ChatModels.swift in Sources */,
@@ -520,6 +519,7 @@
 				2B9E925ED3F6BCCEE366C8A1 /* LaTeXMarkdownView.swift in Sources */,
 				3EB1BD302332E8F90F83B787 /* MessageAttachmentIndicator.swift in Sources */,
 				01373EED703076144AE16821 /* MessageInputView.swift in Sources */,
+				9012AB34CD56EF789012AB34 /* NativeDictationService.swift in Sources */,
 				C382D7548367E52154539082 /* MessageTableView.swift in Sources */,
 				87BBCAA4C7CC728974EC6C60 /* MessageView.swift in Sources */,
 				C1BF75E1416CA53AA3B02E05 /* NetworkMonitor.swift in Sources */,

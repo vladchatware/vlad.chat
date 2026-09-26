@@ -59,10 +59,4 @@ enum Constants {
         static let supportedImageExtensions: Set<String> = ["jpg", "jpeg", "png", "gif", "webp", "heic"]
         static let defaultImageMimeType = "image/jpeg"
     }
-
-    enum Audio {
-        static let sampleRate: Double = 44100
-        static let numberOfChannels: Int = 1
-        static let recordingTimeoutSeconds: TimeInterval = 120
-    }
 }
