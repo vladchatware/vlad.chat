@@ -1,4 +1,4 @@
-import { z } from "zod/v4"
+import { z } from "zod"
 import notion from "@/lib/notion"
 import { convertBlocksToMarkdownWithMeta } from "@/lib/notion-markdown"
 import { getRelativeTime } from "@/lib/utils"
