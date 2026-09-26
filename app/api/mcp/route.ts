@@ -1,4 +1,4 @@
-import { z } from "zod"
+import { z } from "zod/v4"
 import notion from "@/lib/notion"
 import { convertBlocksToMarkdownWithMeta } from "@/lib/notion-markdown"
 import { getRelativeTime } from "@/lib/utils"
@@ -160,7 +160,7 @@ For database queries, first use notion-get-database to discover available proper
         sort: z.object({
           timestamp: z.enum(['last_edited_time']).default('last_edited_time').describe('The name of the timestamp to sort against. Only used when database_id is not provided.'),
           direction: z.enum(["ascending", "descending"]).default('descending').describe('The direction to sort. Only used when database_id is not provided.')
-        }).default({}).describe('A set of criteria, direction and timestamp keys, that orders the results. Only used when database_id is not provided.'),
+        }).default({ timestamp: 'last_edited_time', direction: 'descending' }).describe('A set of criteria, direction and timestamp keys, that orders the results. Only used when database_id is not provided.'),
         start_cursor: z.string().optional().describe('A cursor value returned in a previous response. If supplied, limits the response to results starting after the cursor.'),
         page_size: z.number().optional().describe('The number of items from the full list to include in the response. Maximum: 100. Defaults to 20 when a query is provided (to better find subpages), 1 otherwise.'),
         filter: z.object({
