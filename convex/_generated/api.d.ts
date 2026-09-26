@@ -8,7 +8,6 @@
  * @module
  */
 
-import type * as admin from "../admin.js";
 import type * as agents_prompts from "../agents/prompts.js";
 import type * as agents_simple from "../agents/simple.js";
 import type * as apiKeys from "../apiKeys.js";
@@ -20,6 +19,7 @@ import type * as lounge from "../lounge.js";
 import type * as meter from "../meter.js";
 import type * as notion from "../notion.js";
 import type * as posthog from "../posthog.js";
+import type * as storekit from "../storekit.js";
 import type * as threads from "../threads.js";
 import type * as users from "../users.js";
 import type * as validators from "../validators.js";
@@ -31,7 +31,6 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
-  admin: typeof admin;
   "agents/prompts": typeof agents_prompts;
   "agents/simple": typeof agents_simple;
   apiKeys: typeof apiKeys;
@@ -43,6 +42,7 @@ declare const fullApi: ApiFromModules<{
   meter: typeof meter;
   notion: typeof notion;
   posthog: typeof posthog;
+  storekit: typeof storekit;
   threads: typeof threads;
   users: typeof users;
   validators: typeof validators;

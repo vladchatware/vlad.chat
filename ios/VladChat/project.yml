@@ -21,9 +21,6 @@ packages:
   ConvexMobile:
     url: https://github.com/get-convex/convex-swift
     exactVersion: 0.8.1
-  OpenAI:
-    url: https://github.com/tinfoilsh/openai-swift-fork.git
-    exactVersion: 0.0.4
   Textual:
     url: https://github.com/tinfoilsh/textual
     branch: main
@@ -34,6 +31,15 @@ targets:
   VladChat:
     type: application
     platform: iOS
+    attributes:
+      SystemCapabilities:
+        com.apple.SignInWithApple:
+          enabled: 1
+    entitlements:
+      path: VladChat.entitlements
+      properties:
+        com.apple.developer.applesignin:
+          - Default
     sources:
       - path: Sources
       - path: Resources
@@ -50,8 +56,6 @@ targets:
     dependencies:
       - package: ConvexMobile
         product: ConvexMobile
-      - package: OpenAI
-        product: OpenAI
       - package: Textual
         product: Textual
       - package: SwiftMath
@@ -59,6 +63,7 @@ targets:
     scheme:
       testTargets:
         - VladChatTests
+      storeKitConfiguration: Configuration.storekit
   VladChatTests:
     type: bundle.unit-test
     platform: iOS

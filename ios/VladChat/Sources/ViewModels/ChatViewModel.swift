@@ -1,6 +1,7 @@
 import Combine
 import ConvexMobile
 import Foundation
+import StoreKit
 import UIKit
 
 @MainActor
@@ -27,11 +28,17 @@ final class ChatViewModel: ObservableObject {
     @Published var isProcessingAttachment = false
     @Published var attachmentError: String?
     @Published var pendingImageThumbnails: [String: String] = [:]
+    @Published var account: MobileAccount?
+    @Published var usageSummary: MobileUsageSummary?
+    @Published var isLinkingAccount = false
+    @Published var isLoggingOut = false
 
     var messages: [Message] { currentChat?.messages ?? [] }
 
     private var client: ConvexClientWithAuth<ConvexAuthSession>?
+    private var authProvider: ConvexAnonymousAuthProvider?
     private var subscriptionTask: Task<Void, Never>?
+    private var usageSubscriptionTask: Task<Void, Never>?
     private var presentationTask: Task<Void, Never>?
     private var presentationTaskID: UUID?
     private var pendingMobileChat: MobileChat?
@@ -42,6 +49,8 @@ final class ChatViewModel: ObservableObject {
     private var localGenerationPreviousMaxOrder: Double?
     private var localGenerationMessageID: String?
     private var hasStarted = false
+    private var selectedThreadId: String?
+    private var supportsMobileThreads = false
     private var messageOrders: [String: Double] = [:]
     private var streamingChunkers: [String: StreamingMarkdownChunker] = [:]
     private var streamingContent: [String: String] = [:]
@@ -65,6 +74,7 @@ final class ChatViewModel: ObservableObject {
         }
 
         let provider = ConvexAnonymousAuthProvider(deploymentURL: deploymentURL)
+        authProvider = provider
         let client = ConvexClientWithAuth(
             deploymentUrl: deploymentURL.absoluteString,
             authProvider: provider
@@ -79,17 +89,15 @@ final class ChatViewModel: ObservableObject {
         subscribe(using: client)
     }
 
-    func sendMessage(text rawText: String) {
+    @discardableResult
+    func sendMessage(text rawText: String) -> Bool {
         let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !isLoading, (!text.isEmpty || !pendingAttachments.isEmpty) else { return }
-        guard pendingAttachments.isEmpty else {
-            attachmentError = "Attachments need the Convex upload bridge before they can be sent."
-            return
-        }
+        guard !isLoading, (!text.isEmpty || !pendingAttachments.isEmpty) else { return false }
         guard let client else {
             attachmentError = "Vlad is still connecting."
-            return
+            return false
         }
+        let outgoingAttachments = pendingAttachments
 
         let generationID = UUID()
         let localAssistantID = "local-response-\(generationID.uuidString)"
@@ -97,7 +105,8 @@ final class ChatViewModel: ObservableObject {
             id: "optimistic-\(UUID().uuidString)",
             role: .user,
             content: text,
-            timestamp: Date()
+            timestamp: Date(),
+            attachments: outgoingAttachments
         )
         if var chat = currentChat {
             chat.messages.append(optimistic)
@@ -124,17 +133,33 @@ final class ChatViewModel: ObservableObject {
         activeGenerationID = generationID
         let modelID = currentModel.id
         let searchEnabled = isWebSearchEnabled
+        let threadId = supportsMobileThreads ? selectedThreadId : nil
+        isProcessingAttachment = !outgoingAttachments.isEmpty
+        pendingAttachments = []
+        pendingImageThumbnails = [:]
         generationTask?.cancel()
         generationTask = Task { [weak self] in
             guard let self else { return }
+            defer { isProcessingAttachment = false }
             do {
+                var uploadedAttachments: [UploadedAttachment] = []
+                for attachment in outgoingAttachments {
+                    uploadedAttachments.append(
+                        try await AttachmentUploadService.upload(attachment, using: client)
+                    )
+                }
+                var arguments: [String: ConvexEncodable?] = [
+                    "prompt": text,
+                    "model": modelID,
+                    "searchEnabled": searchEnabled,
+                ]
+                if let threadId { arguments["threadId"] = threadId }
+                if !uploadedAttachments.isEmpty {
+                    arguments["attachments"] = uploadedAttachments.map(\.convexValue)
+                }
                 let result: GenerationResult = try await client.action(
                     "threads:generateReply",
-                    with: [
-                        "prompt": text,
-                        "model": modelID,
-                        "searchEnabled": searchEnabled,
-                    ]
+                    with: arguments
                 )
                 guard activeGenerationID == generationID else { return }
                 localGenerationExpectedOrder = result.order
@@ -155,11 +180,19 @@ final class ChatViewModel: ObservableObject {
                 activeGenerationID = nil
                 removeMessage(id: optimistic.id)
                 removeMessage(id: localAssistantID)
+                pendingAttachments = outgoingAttachments
+                pendingImageThumbnails = Dictionary(
+                    uniqueKeysWithValues: outgoingAttachments.compactMap { attachment in
+                        guard let thumbnail = attachment.thumbnailBase64 else { return nil }
+                        return (attachment.id, thumbnail)
+                    }
+                )
                 attachmentError = Self.userFacingMessage(for: error)
             }
             guard activeGenerationID == generationID else { return }
             activeGenerationID = nil
         }
+        return true
     }
 
     func cancelGeneration() {
@@ -200,17 +233,49 @@ final class ChatViewModel: ObservableObject {
     }
 
     func createNewChat(language: String? = nil, modelType: ModelType? = nil, focusInput: Bool = true) {
-        guard messages.isEmpty else {
-            attachmentError = "Multiple Convex threads are next; this build uses your current Vlad thread."
+        guard let client else {
+            attachmentError = "Vlad is still connecting."
             return
         }
         shouldFocusInput = focusInput
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let threadId: String = try await client.mutation("threads:createMobileThread")
+                selectedThreadId = threadId
+                let chat = Chat.create(id: threadId, modelType: modelType ?? currentModel, language: language)
+                replaceChat(chat)
+                currentChat = chat
+                subscribe(using: client, threadId: threadId)
+            } catch {
+                attachmentError = Self.userFacingMessage(for: error)
+            }
+        }
     }
 
-    func selectChat(_ chat: Chat) { currentChat = chat }
+    func selectChat(_ chat: Chat) {
+        guard selectedThreadId != chat.id, let client else { return }
+        selectedThreadId = chat.id
+        currentChat = chat
+        subscribe(using: client, threadId: chat.id)
+    }
 
     func deleteChat(_ id: String) {
-        attachmentError = "Deleting Convex threads is not wired yet."
+        guard let client else { return }
+        let nextThreadId = chats.first(where: { $0.id != id })?.id
+        chats.removeAll { $0.id == id }
+        if selectedThreadId == id {
+            selectedThreadId = nextThreadId
+            currentChat = chats.first(where: { $0.id == nextThreadId })
+            subscribe(using: client, threadId: nextThreadId)
+        }
+        Task { [weak self] in
+            do {
+                try await client.mutation("threads:deleteMobileThread", with: ["threadId": id])
+            } catch {
+                self?.attachmentError = Self.userFacingMessage(for: error)
+            }
+        }
     }
 
     func updateChatTitle(_ id: String, newTitle: String) {
@@ -219,6 +284,17 @@ final class ChatViewModel: ObservableObject {
         chat.titleState = .manual
         replaceChat(chat)
         if currentChat?.id == id { currentChat = chat }
+        guard let client else { return }
+        Task { [weak self] in
+            do {
+                try await client.mutation(
+                    "threads:renameMobileThread",
+                    with: ["threadId": id, "title": chat.title]
+                )
+            } catch {
+                self?.attachmentError = Self.userFacingMessage(for: error)
+            }
+        }
     }
 
     func editMessage(at index: Int, newContent: String) {
@@ -266,6 +342,8 @@ final class ChatViewModel: ObservableObject {
             pendingAttachments.append(Attachment(
                 type: .document,
                 fileName: fileName,
+                mimeType: Self.mimeType(for: url.pathExtension),
+                base64: data.base64EncodedString(),
                 textContent: String(data: data, encoding: .utf8),
                 fileSize: Int64(data.count),
                 processingState: .completed
@@ -280,21 +358,152 @@ final class ChatViewModel: ObservableObject {
         pendingImageThumbnails[id] = nil
     }
 
-    private func subscribe(using client: ConvexClientWithAuth<ConvexAuthSession>) {
+    func linkGoogleAccount() {
+        linkOAuthAccount(provider: "google")
+    }
+
+    func linkAppleAccount() {
+        linkOAuthAccount(provider: "apple")
+    }
+
+    func logOut() {
+        guard let client, account?.isAnonymous == false, !isLoggingOut else { return }
+        isLoggingOut = true
+        Task { [weak self] in
+            guard let self else { return }
+            defer { isLoggingOut = false }
+            subscriptionTask?.cancel()
+            usageSubscriptionTask?.cancel()
+            await client.logout()
+            do {
+                if case .failure(let error) = await client.login() {
+                    throw error
+                }
+                subscribe(using: client)
+            } catch {
+                attachmentError = Self.userFacingMessage(for: error)
+            }
+        }
+    }
+
+    private func linkOAuthAccount(provider: String) {
+        guard let client, let authProvider, account?.isAnonymous != false else { return }
+        isLinkingAccount = true
+        Task { [weak self] in
+            guard let self else { return }
+            defer { isLinkingAccount = false }
+            do {
+                let params: [String: ConvexEncodable?] = [
+                    "redirectTo": "vladchat://auth"
+                ]
+                let start: ConvexOAuthStartResponse = try await client.action(
+                    "auth:signIn",
+                    with: ["provider": provider, "params": params]
+                )
+                try await authProvider.completeOAuthSignIn(start)
+                if case .failure(let error) = await client.login() {
+                    throw error
+                }
+                subscribe(using: client)
+            } catch {
+                attachmentError = Self.userFacingMessage(for: error)
+            }
+        }
+    }
+
+    func redeemStoreTransaction(_ transaction: Transaction) async throws -> StoreRedemptionResult {
+        guard let client else {
+            throw StorePurchaseError.productUnavailable
+        }
+        if transaction.environment == .xcode {
+            let result: StoreRedemptionResult = try await client.action(
+                "storekit:redeemXcodeTransaction",
+                with: [
+                    "transactionId": String(transaction.id),
+                    "originalTransactionId": String(transaction.originalID),
+                    "productId": transaction.productID,
+                    "purchasedAt": transaction.purchaseDate.timeIntervalSince1970 * 1_000,
+                ]
+            )
+            return result
+        }
+        guard transaction.environment == .sandbox || transaction.environment == .production else {
+            throw StorePurchaseError.failedVerification
+        }
+        let result: StoreRedemptionResult = try await client.action(
+            "storekit:redeemTransaction",
+            with: [
+                "transactionId": String(transaction.id),
+                "environment": transaction.environment == .sandbox ? "Sandbox" : "Production",
+            ]
+        )
+        return result
+    }
+
+    private func subscribe(
+        using client: ConvexClientWithAuth<ConvexAuthSession>,
+        threadId: String? = nil
+    ) {
         subscriptionTask?.cancel()
+        usageSubscriptionTask?.cancel()
         presentationTask?.cancel()
         presentationTask = nil
         presentationTaskID = nil
         pendingMobileChat = nil
+        messageOrders = [:]
+        streamingChunkers = [:]
+        streamingContent = [:]
         subscriptionTask = Task { [weak self] in
-            let updates = client.subscribe(to: "threads:getMobileChat", yielding: MobileChat.self).values
-            do {
-                for try await mobileChat in updates {
+            let requestedThreadId = self?.supportsMobileThreads == true ? threadId : nil
+            let arguments: [String: ConvexEncodable?]? = requestedThreadId.map { ["threadId": $0] }
+            var retryDelay: UInt64 = 1_000_000_000
+            while !Task.isCancelled {
+                do {
+                    let updates = client.subscribe(
+                        to: "threads:getMobileChat",
+                        with: arguments,
+                        yielding: MobileChat.self
+                    ).values
+                    for try await mobileChat in updates {
+                        guard !Task.isCancelled else { return }
+                        self?.enqueue(mobileChat)
+                        retryDelay = 1_000_000_000
+                        if self?.attachmentError?.hasPrefix("Chat sync failed:") == true {
+                            self?.attachmentError = nil
+                        }
+                    }
+                } catch {
                     guard !Task.isCancelled else { return }
-                    self?.enqueue(mobileChat)
+                    self?.attachmentError = "Chat sync failed: \(Self.userFacingMessage(for: error))"
                 }
-            } catch {
-                self?.attachmentError = Self.userFacingMessage(for: error)
+                guard !Task.isCancelled else { return }
+                try? await Task.sleep(nanoseconds: retryDelay)
+                retryDelay = min(retryDelay * 2, 30_000_000_000)
+            }
+        }
+        usageSubscriptionTask = Task { [weak self] in
+            var retryDelay: UInt64 = 1_000_000_000
+            while !Task.isCancelled {
+                do {
+                    let updates = client.subscribe(
+                        to: "users:usageSummary",
+                        yielding: MobileUsageSummary?.self
+                    ).values
+                    for try await summary in updates {
+                        guard !Task.isCancelled else { return }
+                        self?.usageSummary = summary
+                        retryDelay = 1_000_000_000
+                        if self?.attachmentError?.hasPrefix("Usage sync failed:") == true {
+                            self?.attachmentError = nil
+                        }
+                    }
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    self?.attachmentError = "Usage sync failed: \(Self.userFacingMessage(for: error))"
+                }
+                guard !Task.isCancelled else { return }
+                try? await Task.sleep(nanoseconds: retryDelay)
+                retryDelay = min(retryDelay * 2, 30_000_000_000)
             }
         }
     }
@@ -340,6 +549,7 @@ final class ChatViewModel: ObservableObject {
     }
 
     private func apply(_ mobileChat: MobileChat) {
+        account = mobileChat.account
         if let expectedOrder = localGenerationExpectedOrder,
            hasObservedLocalGeneration(in: mobileChat, order: expectedOrder) {
             localGenerationActive = false
@@ -373,7 +583,20 @@ final class ChatViewModel: ObservableObject {
                 id: item.id,
                 role: item.isUser ? .user : .assistant,
                 content: item.text,
-                timestamp: Date(timeIntervalSince1970: item.createdAt / 1_000)
+                timestamp: Date(timeIntervalSince1970: item.createdAt / 1_000),
+                attachments: (item.attachments ?? []).map { attachment in
+                    let inlineBase64 = Self.inlineBase64(from: attachment.url)
+                    return Attachment(
+                        id: attachment.id,
+                        type: attachment.type == "image" ? .image : .document,
+                        fileName: attachment.fileName,
+                        mimeType: attachment.mimeType,
+                        base64: inlineBase64,
+                        thumbnailBase64: inlineBase64,
+                        url: inlineBase64 == nil ? attachment.url : nil,
+                        processingState: .completed
+                    )
+                }
             )
             message.isStreaming = responseIsStreaming
             let response = item.response?.retainingReasoning(
@@ -430,19 +653,38 @@ final class ChatViewModel: ObservableObject {
         }
         streamingChunkers = streamingChunkers.filter { activeMessageIds.contains($0.key) }
         streamingContent = streamingContent.filter { activeMessageIds.contains($0.key) }
-        let title = mapped.first(where: { $0.role == .user })?.content
-            .split(separator: " ")
-            .prefix(5)
-            .joined(separator: " ") ?? "Vlad"
-        let chat = Chat(
-            id: mobileChat.threadId ?? "current",
-            title: title,
-            messages: mapped,
-            createdAt: mapped.first?.timestamp ?? Date(),
-            modelType: currentModel
-        )
-        currentChat = chat
-        chats = [chat]
+        let selectedId = mobileChat.threadId
+        let selectedTitle = mobileChat.title ?? "Vlad"
+        supportsMobileThreads = mobileChat.threads != nil
+        let threads: [MobileThread]
+        if let availableThreads = mobileChat.threads, !availableThreads.isEmpty {
+            threads = availableThreads
+        } else if let selectedId {
+            let timestamp = mapped.first?.timestamp.timeIntervalSince1970 ?? Date().timeIntervalSince1970
+            threads = [MobileThread(
+                id: selectedId,
+                title: selectedTitle,
+                createdAt: timestamp * 1_000
+            )]
+        } else {
+            threads = []
+        }
+        if selectedThreadId == nil { selectedThreadId = selectedId }
+        chats = threads.map { thread in
+            let existing = chats.first(where: { $0.id == thread.id })
+            let threadMessages = thread.id == selectedId ? mapped : (existing?.messages ?? [])
+            let title = thread.id == selectedId ? selectedTitle : thread.title
+            return Chat(
+                id: thread.id,
+                title: title,
+                titleState: title == "Untitled" ? .placeholder : .manual,
+                messages: threadMessages,
+                createdAt: Date(timeIntervalSince1970: thread.createdAt / 1_000),
+                modelType: existing?.modelType ?? currentModel
+            )
+        }
+        currentChat = chats.first(where: { $0.id == selectedId })
+        scrollToBottomTrigger = UUID()
     }
 
     private func hasActiveServerResponse(in mobileChat: MobileChat) -> Bool {
@@ -599,5 +841,23 @@ final class ChatViewModel: ObservableObject {
             return String(text[range.upperBound...]).components(separatedBy: " at ").first ?? text
         }
         return text
+    }
+
+    private static func mimeType(for fileExtension: String) -> String {
+        switch fileExtension.lowercased() {
+        case "pdf": "application/pdf"
+        case "txt": "text/plain"
+        case "md": "text/markdown"
+        case "csv": "text/csv"
+        case "html", "htm": "text/html"
+        default: "application/octet-stream"
+        }
+    }
+
+    private static func inlineBase64(from url: String) -> String? {
+        guard url.hasPrefix("data:"),
+              let comma = url.firstIndex(of: ","),
+              url[..<comma].hasSuffix(";base64") else { return nil }
+        return String(url[url.index(after: comma)...])
     }
 }

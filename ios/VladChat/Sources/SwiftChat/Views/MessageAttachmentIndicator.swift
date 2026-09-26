@@ -34,28 +34,40 @@ struct MessageAttachmentIndicator: View {
         .padding(.bottom, 4)
     }
 
-    @ViewBuilder
     private var imageGrid: some View {
         let size = Constants.Attachments.messageThumbnailSize
         let columns = Constants.Attachments.messageThumbnailColumns
         let rows = imageAttachments.chunked(into: columns)
-        VStack(alignment: .trailing, spacing: 4) {
-            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                HStack(spacing: 4) {
-                    ForEach(row) { attachment in
-                        ImageThumbnail(attachment: attachment, size: size)
-                            .onTapGesture {
-                                let allImages = (viewModel.currentChat?.messages ?? [])
-                                    .flatMap { $0.attachments }
-                                    .filter { $0.type == .image && $0.base64 != nil }
-                                if let index = allImages.firstIndex(where: { $0.id == attachment.id }) {
-                                    viewModel.imageViewerImages = allImages
-                                    viewModel.imageViewerIndex = index
-                                    viewModel.showImageViewer = true
-                                }
-                            }
-                    }
+        return VStack(alignment: .trailing, spacing: 4) {
+            ForEach(rows.indices, id: \.self) { index in
+                ImageAttachmentRow(attachments: rows[index], size: size) { attachment in
+                    openImageViewer(for: attachment)
                 }
+            }
+        }
+    }
+
+    private func openImageViewer(for attachment: Attachment) {
+        let allImages = (viewModel.currentChat?.messages ?? [])
+            .flatMap(\.attachments)
+            .filter { $0.type == .image && ($0.base64 != nil || $0.url != nil) }
+        guard let index = allImages.firstIndex(where: { $0.id == attachment.id }) else { return }
+        viewModel.imageViewerImages = allImages
+        viewModel.imageViewerIndex = index
+        viewModel.showImageViewer = true
+    }
+}
+
+private struct ImageAttachmentRow: View {
+    let attachments: [Attachment]
+    let size: CGFloat
+    let onSelect: (Attachment) -> Void
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(attachments) { attachment in
+                ImageThumbnail(attachment: attachment, size: size)
+                    .onTapGesture { onSelect(attachment) }
             }
         }
     }
@@ -109,6 +121,16 @@ private struct ImageThumbnail: View {
                 .aspectRatio(contentMode: .fill)
                 .frame(width: size, height: size)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
+        } else if let urlString = attachment.url, let url = URL(string: urlString) {
+            AsyncImage(url: url) { image in
+                image
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            } placeholder: {
+                ProgressView()
+            }
+            .frame(width: size, height: size)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
         } else {
             RoundedRectangle(cornerRadius: 8)
                 .fill(Color.gray.opacity(0.3))
@@ -287,7 +309,17 @@ struct ZoomableImagePage: View {
         }
         .onAppear {
             let base64 = attachment.base64 ?? attachment.thumbnailBase64
-            guard let base64, let data = Data(base64Encoded: base64) else { return }
+            if let base64, let data = Data(base64Encoded: base64) {
+                decodedImage = UIImage(data: data)
+            }
+        }
+        .task(id: attachment.url) {
+            guard decodedImage == nil,
+                  let urlString = attachment.url,
+                  let url = URL(string: urlString),
+                  let (data, response) = try? await URLSession.shared.data(from: url),
+                  let httpResponse = response as? HTTPURLResponse,
+                  (200..<300).contains(httpResponse.statusCode) else { return }
             decodedImage = UIImage(data: data)
         }
     }

@@ -14,6 +14,7 @@ struct ChatListView: View {
     @ObservedObject var viewModel: ChatViewModel
     @ObservedObject private var settings = SettingsManager.shared
     @Binding var messageText: String
+    @Binding var isAccountPromptPresented: Bool
 
     @State private var isAtBottom = true
     @State private var userHasScrolled = false
@@ -23,9 +24,19 @@ struct ChatListView: View {
     @State private var scrollToUserTrigger = UUID()
     @State private var tableOpacity = 1.0
     @State private var keyboardObserverTokens: [NSObjectProtocol] = []
+    @State private var didDismissNearLimitPrompt = false
 
     private var messages: [Message] {
         viewModel.messages
+    }
+
+    private var isNearMessageLimit: Bool {
+        guard let account = viewModel.account, account.isAnonymous else { return false }
+        return account.trialMessages <= 2
+    }
+
+    private var shouldShowAccountPrompt: Bool {
+        isAccountPromptPresented || (isNearMessageLimit && !didDismissNearLimitPrompt)
     }
 
     private var archivedMessagesStartIndex: Int {
@@ -74,19 +85,30 @@ struct ChatListView: View {
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            MessageInputView(
-                messageText: $messageText,
-                viewModel: viewModel,
-                isKeyboardVisible: isKeyboardVisible
-            )
-            .environmentObject(viewModel)
-            .if(UIDevice.current.userInterfaceIdiom == .pad) { view in
-                HStack {
-                    Spacer()
-                    view.frame(maxWidth: 600)
-                    Spacer()
+            VStack(spacing: shouldShowAccountPrompt ? 12 : 0) {
+                if shouldShowAccountPrompt {
+                    AccountPromptView(viewModel: viewModel, onDismiss: dismissAccountPrompt)
+                        .frame(maxWidth: 600)
+                        .padding(.horizontal, 16)
+                        .frame(maxWidth: .infinity)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+
+                MessageInputView(
+                    messageText: $messageText,
+                    viewModel: viewModel,
+                    isKeyboardVisible: isKeyboardVisible
+                )
+                .environmentObject(viewModel)
+                .if(UIDevice.current.userInterfaceIdiom == .pad) { view in
+                    HStack {
+                        Spacer()
+                        view.frame(maxWidth: 600)
+                        Spacer()
+                    }
                 }
             }
+            .animation(.easeInOut(duration: 0.22), value: shouldShowAccountPrompt)
         }
         .onAppear {
             setupKeyboardObservers()
@@ -166,6 +188,13 @@ struct ChatListView: View {
         userHasScrolled = false
         viewModel.isScrollInteractionActive = false
         scrollTrigger = UUID()
+    }
+
+    private func dismissAccountPrompt() {
+        if isNearMessageLimit {
+            didDismissNearLimitPrompt = true
+        }
+        isAccountPromptPresented = false
     }
 
 }

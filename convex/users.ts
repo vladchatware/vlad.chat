@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery, mutation, MutationCtx, query } from "./_generated/server";
+import type { QueryCtx } from "./_generated/server";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { vProviderMetadata } from "@convex-dev/agent";
 import { ConvexError } from "convex/values";
@@ -39,7 +40,7 @@ function rowCredits(row: { credits?: number; model: string; usage: { totalTokens
 }
 
 async function usageWindows(
-  ctx: MutationCtx,
+  ctx: Pick<QueryCtx, "db">,
   userId: string,
   now: number,
   subscriber: boolean,
@@ -282,6 +283,18 @@ export const releaseCheckout = mutation({
 
 export const usageSummary = query({
   args: {},
+  returns: v.union(v.null(), v.object({
+    isAnonymous: v.boolean(),
+    totalTokensTracked: v.number(),
+    freeMessagesLeft: v.number(),
+    usageTrackedPercent: v.number(),
+    freeMessagesLeftPercent: v.number(),
+    estimatedSpendUsd: v.number(),
+    fiveHourCreditsUsed: v.number(),
+    fiveHourCreditsLimit: v.number(),
+    weeklyCreditsUsed: v.number(),
+    weeklyCreditsLimit: v.number(),
+  })),
   handler: async (ctx) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) {
@@ -316,6 +329,10 @@ export const usageSummary = query({
     const estimatedSpendUsd =
       (totalTokensTracked / 1_000_000) * PRICE_PER_MILLION_TOKENS_USD;
 
+    const windows = user.isAnonymous
+      ? null
+      : await usageWindows(ctx, userId, Date.now(), isActiveSubscription(user));
+
     return {
       isAnonymous: Boolean(user.isAnonymous),
       totalTokensTracked,
@@ -323,6 +340,10 @@ export const usageSummary = query({
       usageTrackedPercent: Math.min(100, Math.max(0, usageTrackedPercent)),
       freeMessagesLeftPercent: Math.min(100, Math.max(0, freeMessagesLeftPercent)),
       estimatedSpendUsd,
+      fiveHourCreditsUsed: windows?.fiveCredits ?? 0,
+      fiveHourCreditsLimit: windows?.fiveLimit ?? FIVE_HOUR_WINDOW_CREDITS,
+      weeklyCreditsUsed: windows?.weekCredits ?? 0,
+      weeklyCreditsLimit: windows?.weekLimit ?? WEEKLY_WINDOW_CREDITS,
     };
   },
 });

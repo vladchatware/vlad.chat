@@ -17,6 +17,7 @@ import {
   listUIMessages,
   isStepCount,
   syncStreams,
+  storeFile,
   vMessage,
   vStreamArgs,
 } from "@convex-dev/agent";
@@ -32,13 +33,16 @@ import { isModelEnabled, isPremiumModel } from "@/lib/provider";
 import { z } from "zod/v3";
 import {
   gateway,
+  type ModelMessage,
   type ToolSet,
+  type UserContent,
 } from "ai";
 import { createMCPClient } from "@ai-sdk/mcp";
 import {
   mergeMobileStreamText,
   projectStoredResponse,
 } from "@/lib/mobile-stream";
+import type { Id } from "./_generated/dataModel";
 
 export const listThreads = query({
   args: {
@@ -443,6 +447,34 @@ const mobileMessageValidator = v.object({
   createdAt: v.number(),
   response: v.optional(mobileResponseValidator),
   errorText: v.optional(v.string()),
+  attachments: v.optional(v.array(v.object({
+    id: v.string(),
+    type: v.union(v.literal("image"), v.literal("document")),
+    fileName: v.string(),
+    mimeType: v.string(),
+    url: v.string(),
+  }))),
+});
+
+const mobileAttachmentInputValidator = v.object({
+  storageId: v.id("_storage"),
+  fileName: v.string(),
+  mimeType: v.string(),
+});
+
+const mobileThreadValidator = v.object({
+  id: v.string(),
+  title: v.string(),
+  createdAt: v.number(),
+});
+
+const mobileAccountValidator = v.object({
+  isAnonymous: v.boolean(),
+  name: v.optional(v.string()),
+  email: v.optional(v.string()),
+  trialMessages: v.number(),
+  trialTokens: v.number(),
+  tokens: v.number(),
 });
 
 /**
@@ -452,34 +484,58 @@ const mobileMessageValidator = v.object({
  * Swift should not need to mirror the AI SDK's dynamic tool/content union.
  */
 export const getMobileChat = query({
-  args: {},
+  args: { threadId: v.optional(v.string()) },
   returns: v.object({
     threadId: v.union(v.string(), v.null()),
+    title: v.string(),
+    threads: v.array(mobileThreadValidator),
     messages: v.array(mobileMessageValidator),
+    account: v.union(mobileAccountValidator, v.null()),
     remainingMessages: v.union(v.number(), v.null()),
   }),
-  handler: async (ctx) => {
+  handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) {
-      return { threadId: null, messages: [], remainingMessages: null };
-    }
-
-    const [threadId, user] = await Promise.all([
-      getDefaultThreadForUser(ctx, userId),
-      ctx.db.get(userId),
-    ]);
-    if (!threadId) {
       return {
         threadId: null,
+        title: "Vlad",
+        threads: [],
         messages: [],
-        remainingMessages: user?.isAnonymous ? (user.trialMessages ?? 0) : null,
+        account: null,
+        remainingMessages: null,
       };
     }
 
+    const [threadResult, user] = await Promise.all([
+      ctx.runQuery(components.agent.threads.listThreadsByUserId, {
+        userId,
+        paginationOpts: { cursor: null, numItems: 100 },
+      }),
+      ctx.db.get(userId),
+    ]);
+    const threads = threadResult.page.map((thread) => ({
+      id: thread._id,
+      title: thread.title ?? "Untitled",
+      createdAt: thread._creationTime,
+    }));
+    const threadId = args.threadId ?? threads[0]?.id ?? null;
+    if (!threadId) {
+      return {
+        threadId: null,
+        title: "Vlad",
+        threads,
+        messages: [],
+        account: user ? mobileAccount(user) : null,
+        remainingMessages: user?.isAnonymous ? (user.trialMessages ?? 0) : null,
+      };
+    }
+    await authorizeThreadAccess(ctx, threadId, true);
+
     const paginationOpts = { cursor: null, numItems: 100 };
-    const [result, canonicalResult] = await Promise.all([
+    const [result, canonicalResult, metadata] = await Promise.all([
       listUIMessages(ctx, components.agent, { threadId, paginationOpts }),
       listMessages(ctx, components.agent, { threadId, paginationOpts }),
+      getThreadMetadata(ctx, components.agent, { threadId }),
     ]);
     const errorsByMessageID = new Map<string, string>();
     for (const message of canonicalResult.page) {
@@ -502,6 +558,17 @@ export const getMobileChat = query({
         createdAt: message._creationTime,
         ...(response ? { response } : {}),
         ...(errorText ? { errorText } : {}),
+        attachments: message.parts.flatMap((part, index) =>
+          part.type === "file" && part.url
+            ? [{
+                id: `${message.key}:attachment:${index}`,
+                type: part.mediaType.startsWith("image/") ? "image" as const : "document" as const,
+                fileName: part.filename ?? `Attachment ${index + 1}`,
+                mimeType: part.mediaType,
+                url: part.url,
+              }]
+            : []
+        ),
       };
     });
     const activeStreams = await syncStreams(ctx, components.agent, {
@@ -526,13 +593,87 @@ export const getMobileChat = query({
 
     return {
       threadId,
+      title: metadata.title ?? "Untitled",
+      threads,
       messages: mergeMobileStreamText(
         messages,
         streamMessages,
         activeDeltas?.kind === "deltas" ? activeDeltas.deltas : [],
+        (stream, text) => ({
+          id: `stream:${stream.streamId}`,
+          role: "assistant",
+          text,
+          status: "streaming",
+          order: stream.order,
+          createdAt: messages.find((message) => message.order === stream.order)
+            ?.createdAt ?? 0,
+          attachments: [],
+        }),
       ),
+      account: user ? mobileAccount(user) : null,
       remainingMessages: user?.isAnonymous ? (user.trialMessages ?? 0) : null,
     };
+  },
+});
+
+function mobileAccount(user: {
+  isAnonymous?: boolean;
+  name?: string;
+  email?: string;
+  trialMessages?: number;
+  trialTokens?: number;
+  tokens?: number;
+}) {
+  return {
+    isAnonymous: Boolean(user.isAnonymous),
+    ...(user.name === undefined ? {} : { name: user.name }),
+    ...(user.email === undefined ? {} : { email: user.email }),
+    trialMessages: user.trialMessages ?? 0,
+    trialTokens: user.trialTokens ?? 0,
+    tokens: user.tokens ?? 0,
+  };
+}
+
+export const createMobileThread = mutation({
+  args: {},
+  returns: v.string(),
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new ConvexError("Please sign in to continue.");
+    const { threadId } = await agent.createThread(ctx, { userId, title: "Untitled" });
+    return threadId;
+  },
+});
+
+export const generateMobileAttachmentUploadUrl = mutation({
+  args: {},
+  returns: v.string(),
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new ConvexError("Please sign in to continue.");
+    return ctx.storage.generateUploadUrl();
+  },
+});
+
+export const renameMobileThread = mutation({
+  args: { threadId: v.string(), title: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { threadId, title }) => {
+    await authorizeThreadAccess(ctx, threadId, true);
+    const normalizedTitle = title.trim();
+    if (!normalizedTitle) throw new ConvexError("Chat title cannot be empty.");
+    await agent.updateThreadMetadata(ctx, { threadId, patch: { title: normalizedTitle } });
+    return null;
+  },
+});
+
+export const deleteMobileThread = mutation({
+  args: { threadId: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { threadId }) => {
+    await authorizeThreadAccess(ctx, threadId, true);
+    await agent.deleteThreadAsync(ctx, { threadId });
+    return null;
   },
 });
 
@@ -561,8 +702,13 @@ export const generateReply = action({
     prompt: v.string(),
     model: v.string(),
     searchEnabled: v.optional(v.boolean()),
+    threadId: v.optional(v.string()),
+    attachments: v.optional(v.array(mobileAttachmentInputValidator)),
   },
-  handler: async (ctx, { prompt, model, searchEnabled = false }) => {
+  handler: async (
+    ctx,
+    { prompt, model, searchEnabled = false, threadId: requestedThreadId, attachments = [] },
+  ) => {
     try {
     const userId = await getAuthUserId(ctx);
     if (!userId) {
@@ -581,7 +727,7 @@ export const generateReply = action({
     await ctx.runMutation(api.users.usageGate, { model });
 
     const text = prompt.trim();
-    if (!text) {
+    if (!text && attachments.length === 0) {
       throw new ConvexError("Your message is empty. Please type something first.");
     }
 
@@ -616,8 +762,22 @@ export const generateReply = action({
       : "";
     const extraInstructions = `${notionInstruction}${computerInstruction}`;
 
-    const threadId = await getOrCreateDefaultThread(ctx, userId);
+    if (requestedThreadId) await authorizeThreadAccess(ctx, requestedThreadId, true);
+    const threadId =
+      requestedThreadId ?? (await getOrCreateDefaultThread(ctx, userId));
     const { thread } = await agent.continueThread(ctx, { threadId, userId });
+    const modelPrompt = await mobileModelPrompt(ctx, text, attachments);
+    const promptMessageId = modelPrompt.kind === "attachments"
+      ? (
+          await agent.saveMessage(ctx, {
+            threadId,
+            userId,
+            message: modelPrompt.prompt[0],
+            metadata: { fileIds: modelPrompt.fileIds },
+            skipEmbeddings: true,
+          })
+        ).messageId
+      : undefined;
 
     const result = await thread.streamText(
       {
@@ -625,7 +785,8 @@ export const generateReply = action({
         instructions: extraInstructions
           ? `${chatSystemInstructions}${extraInstructions}`
           : undefined,
-        prompt: text,
+        prompt: modelPrompt.prompt,
+        promptMessageId,
         tools,
         stopWhen: isStepCount(8),
         onError: async () => {
@@ -741,16 +902,55 @@ export const generateReply = action({
       }
     }
 
+    await Promise.allSettled(
+      attachments.map(({ storageId }) => ctx.storage.delete(storageId)),
+    );
+
     return {
       threadId,
       order: result.order,
       promptMessageId: result.promptMessageId,
     };
     } catch (error) {
+      await Promise.allSettled(
+        attachments.map(({ storageId }) => ctx.storage.delete(storageId)),
+      );
       throw userFacingGenerationError(error);
     }
   },
 });
+
+async function mobileModelPrompt(
+  ctx: ActionCtx,
+  text: string,
+  attachments: Array<{ storageId: Id<"_storage">; fileName: string; mimeType: string }>,
+): Promise<
+  | { kind: "text"; prompt: string }
+  | { kind: "attachments"; prompt: ModelMessage[]; fileIds: string[] }
+> {
+  if (!attachments.length) return { kind: "text", prompt: text };
+
+  const content: Exclude<UserContent, string> = text ? [{ type: "text", text }] : [];
+  const fileIds: string[] = [];
+  for (const attachment of attachments) {
+    const blob = await ctx.storage.get(attachment.storageId);
+    if (!blob) {
+      throw new ConvexError(`Attachment '${attachment.fileName}' was not uploaded.`);
+    }
+    if (blob.size > 20 * 1024 * 1024) {
+      throw new ConvexError(`Attachment '${attachment.fileName}' exceeds 20 MB.`);
+    }
+    const { file, filePart, imagePart } = await storeFile(
+      ctx,
+      components.agent,
+      blob,
+      { filename: attachment.fileName },
+    );
+    content.push(imagePart ?? filePart);
+    fileIds.push(file.fileId);
+  }
+  return { kind: "attachments", prompt: [{ role: "user", content }], fileIds };
+}
 
 export const abortReply = mutation({
   args: {
