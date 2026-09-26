@@ -283,6 +283,18 @@ export const releaseCheckout = mutation({
 
 export const usageSummary = query({
   args: {},
+  returns: v.union(v.null(), v.object({
+    isAnonymous: v.boolean(),
+    totalTokensTracked: v.number(),
+    freeMessagesLeft: v.number(),
+    usageTrackedPercent: v.number(),
+    freeMessagesLeftPercent: v.number(),
+    estimatedSpendUsd: v.number(),
+    fiveHourCreditsUsed: v.number(),
+    fiveHourCreditsLimit: v.number(),
+    weeklyCreditsUsed: v.number(),
+    weeklyCreditsLimit: v.number(),
+  })),
   handler: async (ctx) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) {

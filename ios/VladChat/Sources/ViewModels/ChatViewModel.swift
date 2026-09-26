@@ -356,11 +356,11 @@ final class ChatViewModel: ObservableObject {
                 }
             } catch {
                 guard !Task.isCancelled else { return }
-                self?.attachmentError = Self.userFacingMessage(for: error)
+                self?.attachmentError = "Chat sync failed: \(Self.userFacingMessage(for: error))"
             }
         }
         usageSubscriptionTask = Task { [weak self] in
-            let updates = client.subscribe(to: "users:usageSummary", yielding: MobileUsageSummary.self).values
+            let updates = client.subscribe(to: "users:usageSummary", yielding: MobileUsageSummary?.self).values
             do {
                 for try await summary in updates {
                     guard !Task.isCancelled else { return }
@@ -368,7 +368,7 @@ final class ChatViewModel: ObservableObject {
                 }
             } catch {
                 guard !Task.isCancelled else { return }
-                self?.attachmentError = Self.userFacingMessage(for: error)
+                self?.attachmentError = "Usage sync failed: \(Self.userFacingMessage(for: error))"
             }
         }
     }

@@ -21,6 +21,56 @@ const freeModel = 'zai/glm-5.3-flash';
 const premiumModel = 'anthropic/claude-opus-5.5';
 const usage = (totalTokens: number) => ({ totalTokens });
 
+describe('usageSummary native client contract', () => {
+  it('returns null without an authenticated user', async () => {
+    const t = convexTest(schema, modules);
+    await expect(t.query(api.users.usageSummary)).resolves.toBeNull();
+  });
+
+  it('returns numeric zero usage and both limits for an unused signed-in account', async () => {
+    const { auth } = await account();
+    await expect(auth.query(api.users.usageSummary)).resolves.toMatchObject({
+      isAnonymous: false,
+      totalTokensTracked: 0,
+      fiveHourCreditsUsed: 0,
+      fiveHourCreditsLimit: 500_000,
+      weeklyCreditsUsed: 0,
+      weeklyCreditsLimit: 2_000_000,
+    });
+  });
+
+  it('returns subscriber limits even before the first usage row', async () => {
+    const { auth } = await account({ subscriptionStatus: 'active' });
+    await expect(auth.query(api.users.usageSummary)).resolves.toMatchObject({
+      fiveHourCreditsUsed: 0,
+      fiveHourCreditsLimit: 2_000_000,
+      weeklyCreditsUsed: 0,
+      weeklyCreditsLimit: 8_000_000,
+    });
+  });
+
+  it('counts each rolling window independently and excludes expired usage', async () => {
+    const { t, id, auth } = await account();
+    await t.run(async ctx => {
+      for (const [hoursAgo, credits] of [[1, 250], [6, 100], [192, 500]]) {
+        await ctx.db.insert('usage', {
+          userId: id,
+          model: freeModel,
+          provider: 'test',
+          usage: usage(credits),
+          credits,
+          usageTime: Date.now() - hoursAgo * 60 * 60 * 1000,
+        });
+      }
+    });
+    await expect(auth.query(api.users.usageSummary)).resolves.toMatchObject({
+      totalTokensTracked: 850,
+      fiveHourCreditsUsed: 250,
+      weeklyCreditsUsed: 350,
+    });
+  });
+});
+
 describe('usageGate admission (real handler)', () => {
   it('rejects anonymous premium access before anonymous trial admission', async () => {
     const { auth } = await account({ isAnonymous: true, trialMessages: 10 });
