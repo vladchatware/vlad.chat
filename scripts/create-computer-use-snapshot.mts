@@ -1,7 +1,8 @@
 /**
  * Build and verify the reusable Vercel Sandbox base image.
- * Run with Node 24: node --experimental-strip-types scripts/create-computer-use-snapshot.mts
- * Set VERCEL_AUTH_TOKEN; optional COMPUTER_USE_SNAPSHOT_BASE_ID repacks a verified base.
+ * Run with Node 24 after `vercel env pull` has supplied VERCEL_OIDC_TOKEN:
+ * node --env-file=/tmp/vladchat-oidc.env --experimental-strip-types scripts/create-computer-use-snapshot.mts
+ * Optional COMPUTER_USE_SNAPSHOT_BASE_ID repacks a verified base.
  */
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -29,12 +30,13 @@ function readProjectConfig(): { orgId?: string; projectName?: string } {
 }
 
 const projectConfig = readProjectConfig();
-const authToken = process.env.VERCEL_AUTH_TOKEN || process.env.VERCEL_TOKEN;
+const oidcToken = process.env.VERCEL_OIDC_TOKEN;
+const accessToken = process.env.VERCEL_AUTH_TOKEN || process.env.VERCEL_TOKEN;
 const project = process.env.VERCEL_PROJECT_NAME || projectConfig.projectName;
 const scope = process.env.VERCEL_SCOPE || process.env.VERCEL_TEAM_ID || projectConfig.orgId;
-if (!authToken || !project || !scope) {
+if ((!oidcToken && !accessToken) || !project || !scope) {
   throw new Error(
-    "Set VERCEL_AUTH_TOKEN (or VERCEL_TOKEN) and link this checkout to its Vercel project.",
+    "Link this checkout to its Vercel project and provide VERCEL_OIDC_TOKEN (preferred) or a Vercel access token.",
   );
 }
 
@@ -42,7 +44,15 @@ const cliBaseArgs = [
   "--yes",
   CLI_PACKAGE,
 ];
-const cliEnvironment = { ...process.env, VERCEL_AUTH_TOKEN: authToken };
+const cliEnvironment = { ...process.env };
+if (oidcToken) {
+  // Ensure the Sandbox CLI uses the short-lived OIDC credential if a local
+  // shell also happens to contain an older long-lived token.
+  delete cliEnvironment.VERCEL_AUTH_TOKEN;
+  delete cliEnvironment.VERCEL_TOKEN;
+} else if (accessToken) {
+  cliEnvironment.VERCEL_AUTH_TOKEN = accessToken;
+}
 
 function sandboxCli(args: string[]): string {
   const result = spawnSync("npx", [...cliBaseArgs, ...args], {
@@ -70,11 +80,14 @@ function runSetup(
   script: string,
   timeout: string,
   sudo = false,
+  workdir = "/tmp",
 ) {
   sandboxCli(
     scoped([
       "exec",
       ...(sudo ? ["--sudo"] : []),
+      "--workdir",
+      workdir,
       "--timeout",
       timeout,
       sandboxName,
@@ -137,7 +150,7 @@ async function main() {
       }
       runSetup(
         sandboxName,
-        `mkdir -p "$HOME/.local/share/vladchat" && printf '%s' '${COMPUTER_USE_SNAPSHOT_VERSION}' > "$HOME/${COMPUTER_USE_SNAPSHOT_MARKER}"`,
+        `mkdir -p /vercel/sandbox "$HOME/.local/share/vladchat" && printf '%s' '${COMPUTER_USE_SNAPSHOT_VERSION}' > "$HOME/${COMPUTER_USE_SNAPSHOT_MARKER}"`,
         "30s",
       );
 
@@ -167,7 +180,7 @@ async function main() {
     );
     let restoreVerified = false;
     try {
-      runSetup(restoredName, checkCommand, "2m");
+      runSetup(restoredName, checkCommand, "2m", false, "/vercel/sandbox");
       restoreVerified = true;
     } finally {
       if (restoreVerified) sandboxCli(scoped(["rm", restoredName]));
