@@ -24,8 +24,10 @@ final class StorePurchaseService: ObservableObject {
     @Published private(set) var isLoading = false
     @Published private(set) var isPurchasing = false
     @Published var errorMessage: String?
+    @Published var successMessage: String?
 
     private var updatesTask: Task<Void, Never>?
+    private var redeemingTransactionIDs = Set<UInt64>()
 
     func loadProducts() async {
         guard product == nil, !isLoading else { return }
@@ -41,7 +43,7 @@ final class StorePurchaseService: ObservableObject {
     }
 
     func observeTransactions(
-        redeem: @escaping (UInt64) async throws -> Void
+        redeem: @escaping (Transaction) async throws -> StoreRedemptionResult
     ) {
         guard updatesTask == nil else { return }
         updatesTask = Task { [weak self] in
@@ -56,11 +58,13 @@ final class StorePurchaseService: ObservableObject {
         }
     }
 
-    func purchase(redeem: @escaping (UInt64) async throws -> Void) async {
+    func purchase(redeem: @escaping (Transaction) async throws -> StoreRedemptionResult) async {
         guard let product else {
             errorMessage = StorePurchaseError.productUnavailable.localizedDescription
             return
         }
+        errorMessage = nil
+        successMessage = nil
         isPurchasing = true
         defer { isPurchasing = false }
         do {
@@ -80,7 +84,7 @@ final class StorePurchaseService: ObservableObject {
     }
 
     func finishUnredeemedTransactions(
-        redeem: @escaping (UInt64) async throws -> Void
+        redeem: @escaping (Transaction) async throws -> StoreRedemptionResult
     ) async {
         for await verification in Transaction.unfinished {
             do {
@@ -93,13 +97,20 @@ final class StorePurchaseService: ObservableObject {
 
     private func redeem(
         _ verification: VerificationResult<Transaction>,
-        using redeemTransaction: (UInt64) async throws -> Void
+        using redeemTransaction: (Transaction) async throws -> StoreRedemptionResult
     ) async throws {
         let transaction = try verified(verification)
         guard transaction.productID == Self.tokenPackProductId else { return }
-        try await redeemTransaction(transaction.id)
+        guard redeemingTransactionIDs.insert(transaction.id).inserted else { return }
+        defer { redeemingTransactionIDs.remove(transaction.id) }
+        let result = try await redeemTransaction(transaction)
         await transaction.finish()
         errorMessage = nil
+        if result.tokensGranted > 0 {
+            successMessage = "\(result.tokensGranted.formatted()) tokens added to your credit balance."
+        } else if result.alreadyRedeemed {
+            successMessage = "This purchase was already credited to your account."
+        }
     }
 
     private func verified<T>(_ result: VerificationResult<T>) throws -> T {

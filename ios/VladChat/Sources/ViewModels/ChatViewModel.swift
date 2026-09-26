@@ -1,6 +1,7 @@
 import Combine
 import ConvexMobile
 import Foundation
+import StoreKit
 import UIKit
 
 @MainActor
@@ -408,14 +409,33 @@ final class ChatViewModel: ObservableObject {
         }
     }
 
-    func redeemStoreTransaction(_ transactionId: UInt64) async throws {
+    func redeemStoreTransaction(_ transaction: Transaction) async throws -> StoreRedemptionResult {
         guard let client else {
             throw StorePurchaseError.productUnavailable
         }
-        let _: StoreRedemptionResult = try await client.action(
+        if transaction.environment == .xcode {
+            let result: StoreRedemptionResult = try await client.action(
+                "storekit:redeemXcodeTransaction",
+                with: [
+                    "transactionId": String(transaction.id),
+                    "originalTransactionId": String(transaction.originalID),
+                    "productId": transaction.productID,
+                    "purchasedAt": transaction.purchaseDate.timeIntervalSince1970 * 1_000,
+                ]
+            )
+            return result
+        }
+        guard transaction.environment == .sandbox || transaction.environment == .production else {
+            throw StorePurchaseError.failedVerification
+        }
+        let result: StoreRedemptionResult = try await client.action(
             "storekit:redeemTransaction",
-            with: ["transactionId": String(transactionId)]
+            with: [
+                "transactionId": String(transaction.id),
+                "environment": transaction.environment == .sandbox ? "Sandbox" : "Production",
+            ]
         )
+        return result
     }
 
     private func subscribe(
