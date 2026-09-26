@@ -83,6 +83,17 @@ export default defineSchema({
     eventId: v.string(),
     processedAt: v.number(),
   }).index("byEventId", ["eventId"]),
+  storeTransactions: defineTable({
+    transactionId: v.string(),
+    originalTransactionId: v.string(),
+    userId: v.id("users"),
+    productId: v.string(),
+    tokens: v.number(),
+    purchasedAt: v.number(),
+    environment: v.string(),
+  })
+    .index("transactionId", ["transactionId"])
+    .index("userId", ["userId"]),
   notionConnections: defineTable({
     userId: v.id("users"),
     accessToken: v.string(),
@@ -97,6 +108,17 @@ export default defineSchema({
     scope: v.optional(v.string()),
   })
     .index("userId", ["userId"]),
+  computerUseScreenshots: defineTable({
+    artifactId: v.string(),
+    storageId: v.id("_storage"),
+    sessionKey: v.string(),
+    contentType: v.union(v.literal("image/jpeg"), v.literal("image/png")),
+    size: v.number(),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+  })
+    .index("byArtifactId", ["artifactId"])
+    .index("byExpiresAt", ["expiresAt"]),
   // Daily ephemeral group chat - cleared every day
   loungeMessages: defineTable({
     userId: v.optional(v.id("users")), // Optional for bot messages

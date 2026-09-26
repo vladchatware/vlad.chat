@@ -5,6 +5,11 @@ import { getRelativeTime } from "@/lib/utils"
 import { after } from "next/server"
 import { PostHog, instrument } from "@posthog/mcp"
 import { createMcpHandler } from "mcp-handler"
+import {
+  computerSessionAls,
+  computerSessionFromRequest,
+  registerComputerUseMcpTools,
+} from "@/lib/computer-use"
 import type {
   PageObjectResponse,
   DatabaseObjectResponse,
@@ -14,6 +19,11 @@ import type {
   PartialDataSourceObjectResponse,
   QueryDataSourceParameters
 } from "@notionhq/client";
+
+/** Computer-use desk boot (apt + Chromium) needs a long window. */
+export const maxDuration = 300;
+export const runtime = "nodejs";
+
 
 const NOTION_FETCH_LIMITS = {
   maxChars: 90000,
@@ -56,13 +66,19 @@ const posthog = new PostHog(process.env.NEXT_PUBLIC_POSTHOG_KEY!, {
 
 const handler = createMcpHandler(
   (server) => {
-    instrument(server, posthog)
+    // mcp-handler 1.1 + SDK 1.26 + large Zod tool schemas hit TS "excessively deep" on
+    // notion-search; keep runtime typing via MCP SDK, skip recursive inference here.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentional escape hatch for TS2589
+    const s = server as { registerTool: (...args: any[]) => any }
+    instrument(s as typeof server, posthog)
     after(posthog.flush())
-    server.tool(
+    s.registerTool(
       'notion-get-database',
-      'Retrieves the schema of a Notion database, including all properties and their types. Use this to discover available properties before constructing filters for database queries.',
       {
-        database_id: z.string().describe('The identifier for the Notion database.')
+        description: 'Retrieves the schema of a Notion database, including all properties and their types. Use this to discover available properties before constructing filters for database queries.',
+        inputSchema: {
+          database_id: z.string().describe('The identifier for the Notion database.')
+        },
       },
       async ({ database_id }) => {
         try {
@@ -141,14 +157,15 @@ const handler = createMcpHandler(
         }
       }
     )
-    server.tool(
+    s.registerTool(
       'notion-search',
-      `Searches all parent or child pages and databases that have been shared with an integration, OR queries a specific database with filters.
+      {
+        description: `Searches all parent or child pages and databases that have been shared with an integration, OR queries a specific database with filters.
 
 If database_id is provided, queries that database with arbitrary filters. Otherwise, performs a semantic search over the workspace.
 
 For database queries, first use notion-get-database to discover available properties, then construct filters matching the Notion API filter structure.`,
-      {
+        inputSchema: {
         database_id: z.string().optional().describe('Optional database ID. If provided, queries this database instead of searching the workspace.'),
         query: z.string().optional().describe('Search query to match against page titles. Note: Notion search only matches page titles, not page content. Only used when database_id is not provided.'),
         filters: z.unknown().optional().describe('Arbitrary filter object matching Notion API filter structure. Only used when database_id is provided. Supports property filters, timestamp filters, and compound filters (and/or). Example: { property: "Status", select: { equals: "Done" } } or { timestamp: "created_time", created_time: { past_week: {} } }'),
@@ -157,13 +174,14 @@ For database queries, first use notion-get-database to discover available proper
         sort: z.object({
           timestamp: z.enum(['last_edited_time']).default('last_edited_time').describe('The name of the timestamp to sort against. Only used when database_id is not provided.'),
           direction: z.enum(["ascending", "descending"]).default('descending').describe('The direction to sort. Only used when database_id is not provided.')
-        }).default({}).describe('A set of criteria, direction and timestamp keys, that orders the results. Only used when database_id is not provided.'),
+        }).default({ timestamp: 'last_edited_time', direction: 'descending' }).describe('A set of criteria, direction and timestamp keys, that orders the results. Only used when database_id is not provided.'),
         start_cursor: z.string().optional().describe('A cursor value returned in a previous response. If supplied, limits the response to results starting after the cursor.'),
         page_size: z.number().optional().describe('The number of items from the full list to include in the response. Maximum: 100. Defaults to 20 when a query is provided (to better find subpages), 1 otherwise.'),
         filter: z.object({
           property: z.enum(['object']).default('object').describe('The name of the property to filter by. Only used when database_id is not provided.'),
           value: z.enum(['page', 'database']).default('page').describe('The value of the property to filter the results by. Only used when database_id is not provided.')
         }).default({ property: 'object', value: 'page' })
+        },
       },
       async ({ database_id, query, filters, sorts, filter_properties, sort, filter, page_size, start_cursor }) => {
         // If database_id is provided, query the database
@@ -392,11 +410,13 @@ For database queries, first use notion-get-database to discover available proper
         }
       }
     )
-    server.tool(
+    s.registerTool(
       'notion-fetch',
-      'Retrieves a Notion page and converts it to markdown format. This tool recursively fetches all blocks and their children to create a complete markdown representation of the page.',
       {
-        page_id: z.string().describe('Identifier for a Notion page to retrieve.')
+        description: 'Retrieves a Notion page and converts it to markdown format. This tool recursively fetches all blocks and their children to create a complete markdown representation of the page.',
+        inputSchema: {
+          page_id: z.string().describe('Identifier for a Notion page to retrieve.')
+        },
       },
       async ({ page_id }) => {
         try {
@@ -433,11 +453,13 @@ For database queries, first use notion-get-database to discover available proper
         }
       }
     )
-    server.tool(
+    s.registerTool(
       'notion-fetch-database-entry',
-      'Retrieves a Notion database entry (page) and formats it with all database properties displayed clearly, followed by the page content. Use this when you have a database entry ID from notion-search results and want to see the full entry details.',
       {
-        page_id: z.string().describe('Identifier for a Notion database entry (page ID) to retrieve. This should be a page ID that represents a database entry.')
+        description: 'Retrieves a Notion database entry (page) and formats it with all database properties displayed clearly, followed by the page content. Use this when you have a database entry ID from notion-search results and want to see the full entry details.',
+        inputSchema: {
+          page_id: z.string().describe('Identifier for a Notion database entry (page ID) to retrieve. This should be a page ID that represents a database entry.')
+        },
       },
       async ({ page_id }) => {
         try {
@@ -598,9 +620,29 @@ For database queries, first use notion-get-database to discover available proper
         }
       }
     )
+
+    // V-83 computer use: same tools as lib/computer-use. Convex generateReply
+    // loads them via getMcpTools → this endpoint (no threads.ts tool wiring).
+    registerComputerUseMcpTools(server)
   },
   {},
   { basePath: '/api' },
 );
 
-export { handler as GET, handler as POST, handler as DELETE };
+/**
+ * Bind x-computer-session for sandbox isolation when Convex (or other clients)
+ * pass the header. Tool arg sessionId still wins when provided.
+ */
+async function withComputerSession(req: Request): Promise<Response> {
+  const session = computerSessionFromRequest(req)
+  if (session) {
+    return await computerSessionAls.run(session, () => handler(req))
+  }
+  return handler(req)
+}
+
+export {
+  withComputerSession as GET,
+  withComputerSession as POST,
+  withComputerSession as DELETE,
+};

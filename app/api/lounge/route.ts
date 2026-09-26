@@ -46,7 +46,10 @@ export async function POST() {
         url: `${process.env.NEXT_PUBLIC_SITE_URL}/api/mcp`
       }
     });
-    const tools = await notion.tools();
+    const siteTools = await notion.tools();
+    const tools = Object.fromEntries(
+      Object.entries(siteTools).filter(([name]) => !name.startsWith('computer_'))
+    ) as typeof siteTools;
 
     const model = 'openai/gpt-5.3-chat';
     // Stream the response

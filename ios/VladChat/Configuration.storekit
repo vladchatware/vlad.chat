@@ -1,0 +1,30 @@
+{
+  "identifier" : "B8E9507A",
+  "nonRenewingSubscriptions" : [
+  ],
+  "products" : [
+    {
+      "displayPrice" : "4.99",
+      "familyShareable" : false,
+      "internalID" : "A86D5D33",
+      "localizations" : [
+        {
+          "description" : "16.6 million inference tokens",
+          "displayName" : "Credit Pack",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "chat.vlad.tokens.5",
+      "referenceName" : "Credit Pack",
+      "type" : "Consumable"
+    }
+  ],
+  "settings" : {
+  },
+  "subscriptionGroups" : [
+  ],
+  "version" : {
+    "major" : 1,
+    "minor" : 1
+  }
+}

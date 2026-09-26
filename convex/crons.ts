@@ -34,4 +34,11 @@ crons.interval(
   {}
 )
 
+crons.interval(
+  "Expire computer-use screenshots",
+  { minutes: 15 },
+  internal.computerUseScreenshots.cleanupExpired,
+  {},
+)
+
 export default crons;

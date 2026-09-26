@@ -8,7 +8,6 @@
 
 import Foundation
 import Combine
-import OpenAI
 
 /// A model available for chat
 struct ModelType: Identifiable, Codable, Hashable, Equatable {
@@ -28,23 +27,6 @@ struct ModelType: Identifiable, Codable, Hashable, Equatable {
 @MainActor
 class AppConfig: ObservableObject {
     static let shared = AppConfig()
-
-    // MARK: - Configuration
-
-    /// Set your API key here or via environment
-    var apiKey: String = ""
-
-    /// OpenAI-compatible API host (no scheme, no path)
-    var apiHost: String = "api.openai.com"
-
-    /// Base path for the API
-    var apiBasePath: String = "/v1"
-
-    /// System prompt sent with every conversation
-    var systemPrompt: String = "You are a helpful AI assistant."
-
-    /// Additional rules appended to the system prompt
-    var rules: String = ""
 
     // MARK: - State
 
@@ -95,16 +77,5 @@ class AppConfig: ObservableObject {
     /// The model used for generating chat titles (nil = skip title generation)
     var titleModel: ModelType? {
         availableModels.first(where: { $0.id == "gpt-4.1-mini" }) ?? availableModels.first
-    }
-
-    // MARK: - OpenAI Client
-
-    func makeClient() -> OpenAI {
-        let config = OpenAI.Configuration(
-            token: apiKey,
-            host: apiHost,
-            basePath: apiBasePath
-        )
-        return OpenAI(configuration: config)
     }
 }
