@@ -23,11 +23,15 @@ struct MessageInputView: View {
     @ObservedObject var viewModel: ChatViewModel
     @Environment(\.colorScheme) var colorScheme
     @State private var textHeight: CGFloat = Layout.defaultHeight
+    @StateObject private var dictationService = NativeDictationService()
     @ObservedObject private var settings = SettingsManager.shared
-    @StateObject private var audioService = AudioRecordingService.shared
     var isKeyboardVisible: Bool = false
 
     private var isDarkMode: Bool { colorScheme == .dark }
+    private var hasDraftContent: Bool {
+        !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !viewModel.pendingAttachments.isEmpty
+    }
 
     // Attachment picker state
     @State private var showDocumentPicker = false
@@ -49,6 +53,17 @@ struct MessageInputView: View {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text(viewModel.attachmentError ?? "An error occurred")
+            }
+            .onChange(of: dictationService.draftText) { _, text in
+                messageText = text
+            }
+            .onChange(of: dictationService.errorMessage) { _, message in
+                guard let message else { return }
+                viewModel.attachmentError = message
+                dictationService.clearError()
+            }
+            .onDisappear {
+                dictationService.cancel()
             }
             .sheet(isPresented: $showDocumentPicker) {
                 DocumentPickerView { url, fileName in
@@ -106,6 +121,7 @@ struct MessageInputView: View {
                         .frame(height: textHeight)
                         .padding(.horizontal)
                         .accessibilityIdentifier("messageInput")
+                        .accessibilityHint("Spoken words appear in this message field.")
 
                     HStack(spacing: 0) {
                         HStack(spacing: 8) {
@@ -115,7 +131,7 @@ struct MessageInputView: View {
                         }
                         .padding(.leading, 8)
                         Spacer(minLength: 8)
-                        sendButton
+                        composerActionButton
                     }
                     .padding(.vertical, 8)
                 }
@@ -145,6 +161,8 @@ struct MessageInputView: View {
                                      onSendMessage: submitMessage)
                         .frame(height: textHeight)
                         .padding(.horizontal)
+                        .accessibilityIdentifier("messageInput")
+                        .accessibilityHint("Spoken words appear in this message field.")
 
                     HStack(spacing: 0) {
                         HStack(spacing: 8) {
@@ -154,7 +172,7 @@ struct MessageInputView: View {
                         }
                         .padding(.leading, 8)
                         Spacer(minLength: 8)
-                        sendButton
+                        composerActionButton
                     }
                     .padding(.vertical, 8)
                 }
@@ -168,19 +186,57 @@ struct MessageInputView: View {
         }
     }
 
-    private var sendButton: some View {
-        Button(action: sendOrCancelMessage) {
-            Image(systemName: viewModel.isLoading ? "stop.fill" : "arrow.up")
+    private var composerActionButton: some View {
+        Button(action: handleComposerAction) {
+            Image(systemName: composerActionSymbol)
         }
         .buttonStyle(ComposerIconButtonStyle(
-            isProminent: true,
+            isProminent: viewModel.isLoading || hasDraftContent || dictationService.isActive,
             isDarkMode: isDarkMode,
             surfaceAlignment: .bottomTrailing
         ))
         .padding(.trailing, 8)
-        .accessibilityLabel(viewModel.isLoading ? "Stop generation" : "Send message")
-        .accessibilityValue(messageText.isEmpty ? "Empty" : "Ready")
-        .accessibilityIdentifier(viewModel.isLoading ? "stopGenerationButton" : "sendMessageButton")
+        .accessibilityLabel(composerActionLabel)
+        .accessibilityValue(
+            viewModel.isLoading ? "Generating"
+                : dictationService.isFinalizing ? "Finishing dictation"
+                : dictationService.isRecording ? "Dictating"
+                : dictationService.isStarting ? "Starting dictation"
+                : hasDraftContent ? "Ready to send" : "Draft empty"
+        )
+        .accessibilityHint(composerActionHint)
+        .accessibilityIdentifier(composerActionIdentifier)
+    }
+
+    private var composerActionSymbol: String {
+        if viewModel.isLoading { return "stop.fill" }
+        if dictationService.isRecording { return "stop.fill" }
+        if dictationService.isFinalizing || dictationService.isStarting { return "ellipsis" }
+        return hasDraftContent ? "arrow.up" : "mic.fill"
+    }
+
+    private var composerActionLabel: String {
+        if viewModel.isLoading { return "Stop generation" }
+        if dictationService.isRecording { return "Stop dictation" }
+        if dictationService.isFinalizing { return "Finishing dictation" }
+        if dictationService.isStarting { return "Starting dictation" }
+        return hasDraftContent ? "Send message" : "Start dictation"
+    }
+
+    private var composerActionHint: String {
+        if viewModel.isLoading { return "Stops the response" }
+        if dictationService.isRecording { return "Stops dictation and keeps the recognized text" }
+        if dictationService.isFinalizing { return "Wait for the recognized text" }
+        if dictationService.isStarting { return "Wait for dictation to start" }
+        return hasDraftContent ? "Sends your message" : "Starts speaking your message"
+    }
+
+    private var composerActionIdentifier: String {
+        if viewModel.isLoading { return "stopGenerationButton" }
+        if dictationService.isRecording { return "stopDictationButton" }
+        if dictationService.isFinalizing { return "dictationFinalizingButton" }
+        if dictationService.isStarting { return "dictationStartingButton" }
+        return hasDraftContent ? "sendMessageButton" : "dictationButton"
     }
 
     @ViewBuilder
@@ -271,78 +327,27 @@ struct MessageInputView: View {
         )
     }
 
-    @State private var isPulsing = false
-
-    @ViewBuilder
-    private var micButton: some View {
-        Button(action: toggleRecording) {
-            ZStack {
-                if audioService.isRecording {
-                    Circle()
-                        .fill(Color.red.opacity(0.2))
-                        .frame(width: 44, height: 44)
-                        .scaleEffect(isPulsing ? 1.1 : 0.9)
-                        .animation(
-                            .easeInOut(duration: 0.8).repeatForever(autoreverses: true),
-                            value: isPulsing
-                        )
-                }
-
-                Group {
-                    if audioService.isTranscribing {
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .secondary))
-                            .scaleEffect(0.8)
-                    } else {
-                        Image(systemName: audioService.isRecording ? "stop.fill" : "mic.fill")
-                            .font(.system(size: 20))
-                    }
-                }
-                .frame(width: 32, height: 32)
-                .foregroundColor(audioService.isRecording ? .red : .secondary)
-            }
-            .frame(width: 32, height: 32)
-        }
-        .onChange(of: audioService.isRecording) { _, isRecording in
-            isPulsing = isRecording
-        }
-        .disabled(audioService.isTranscribing || viewModel.isLoading)
-        .padding(.trailing, 4)
-    }
-
-    private func toggleRecording() {
-        if audioService.isRecording {
-            guard let fileURL = audioService.stopRecording() else { return }
-            Task {
-                do {
-                    let client = AppConfig.shared.makeClient()
-                    let text = try await audioService.transcribe(fileURL: fileURL, client: client)
-                    messageText += (messageText.isEmpty ? "" : " ") + text
-                } catch {
-                    viewModel.attachmentError = error.localizedDescription
-                }
-            }
-        } else {
-            Task {
-                let granted = await audioService.requestPermission()
-                guard granted else {
-                    viewModel.attachmentError = "Microphone access is required for voice input. Enable it in Settings."
-                    return
-                }
-                do {
-                    try audioService.startRecording()
-                } catch {
-                    viewModel.attachmentError = "Failed to start recording: \(error.localizedDescription)"
-                }
-            }
-        }
-    }
-
-    private func sendOrCancelMessage() {
+    private func handleComposerAction() {
         if viewModel.isLoading {
             viewModel.cancelGeneration()
-        } else if !messageText.isEmpty || !viewModel.pendingAttachments.isEmpty {
+        } else if dictationService.isRecording {
+            dictationService.stop()
+        } else if dictationService.isFinalizing {
+            return
+        } else if dictationService.isStarting {
+            dictationService.cancel()
+        } else if hasDraftContent {
             submitMessage(messageText)
+        } else {
+            Task {
+                do {
+                    try await dictationService.start(with: messageText)
+                } catch {
+                    if !(error is CancellationError) {
+                        viewModel.attachmentError = error.localizedDescription
+                    }
+                }
+            }
         }
     }
 
@@ -469,6 +474,9 @@ struct CustomTextEditor: UIViewRepresentable {
         textView.isScrollEnabled = true
         textView.isEditable = true
         textView.isSelectable = true
+        textView.keyboardType = .default
+        textView.autocorrectionType = .default
+        textView.spellCheckingType = .default
         textView.alwaysBounceVertical = false
         textView.scrollsToTop = false
         textView.textContainerInset = UIEdgeInsets(top: 16, left: 2, bottom: 8, right: 5)

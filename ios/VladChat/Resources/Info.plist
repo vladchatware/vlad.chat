@@ -38,9 +38,11 @@
 	<key>NSCameraUsageDescription</key>
 	<string>Vlad uses the camera when you attach a photo.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Vlad uses the microphone for voice input.</string>
+	<string>Vlad uses your microphone for live dictation into your message.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Vlad uses your photo library when you attach an image.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Vlad uses Apple Speech to turn your voice into a message. Audio may be sent to Apple for recognition when on-device recognition is unavailable.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
