@@ -98,9 +98,8 @@ private struct AccountDetailsCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background {
             if #available(iOS 26, *) {
-                RoundedRectangle(cornerRadius: 28)
-                    .fill(.clear)
-                    .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 28))
+                Color.clear
+                    .glassEffect(.regular, in: .rect(corners: .concentric(minimum: .fixed(16))))
             } else {
                 RoundedRectangle(cornerRadius: 28)
                     .fill(.regularMaterial)

@@ -53,8 +53,7 @@ struct ChatContainer: View {
             AccountView(viewModel: viewModel) {
                 isAccountSheetPresented = false
             }
-            .presentationDetents([.medium])
-            .presentationCornerRadius(44)
+            .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
         .environmentObject(viewModel)
