@@ -374,7 +374,9 @@ else
 fi
 # Software cursor: VNC often hides the real X pointer; draw a magenta follow-mouse overlay.
 if [ -f /tmp/cu/soft-cursor.py ]; then
-  pkill -f '/tmp/cu/soft-cursor.py' >/dev/null 2>&1 || true
+  if [ -f /tmp/cu/soft-cursor.pid ]; then
+    kill "$(cat /tmp/cu/soft-cursor.pid)" >/dev/null 2>&1 || true
+  fi
   python3 /tmp/cu/soft-cursor.py >/tmp/cu/soft-cursor.log 2>&1 &
   echo $! > /tmp/cu/soft-cursor.pid
 fi

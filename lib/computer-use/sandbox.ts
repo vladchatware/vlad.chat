@@ -198,8 +198,9 @@ export async function getOrCreateSessionSandbox(sessionKey: string): Promise<{
       timeoutMs: 3 * 60 * 1000,
     });
     if (deskStart.exitCode !== 0) {
+      const details = (await deskStart.stderr()) || (await deskStart.stdout());
       throw new Error(
-        `Desk start failed: ${(await deskStart.stderr()) || (await deskStart.stdout())}`,
+        `Desk start failed (exit ${String(deskStart.exitCode)}): ${details || "no stderr or stdout"}`,
       );
     }
     try {
