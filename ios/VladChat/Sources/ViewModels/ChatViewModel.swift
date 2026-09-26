@@ -89,12 +89,13 @@ final class ChatViewModel: ObservableObject {
         subscribe(using: client)
     }
 
-    func sendMessage(text rawText: String) {
+    @discardableResult
+    func sendMessage(text rawText: String) -> Bool {
         let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !isLoading, (!text.isEmpty || !pendingAttachments.isEmpty) else { return }
+        guard !isLoading, (!text.isEmpty || !pendingAttachments.isEmpty) else { return false }
         guard let client else {
             attachmentError = "Vlad is still connecting."
-            return
+            return false
         }
         let outgoingAttachments = pendingAttachments
 
@@ -191,6 +192,7 @@ final class ChatViewModel: ObservableObject {
             guard activeGenerationID == generationID else { return }
             activeGenerationID = nil
         }
+        return true
     }
 
     func cancelGeneration() {
