@@ -18,6 +18,8 @@ struct ChatContainer: View {
     @EnvironmentObject private var viewModel: ChatViewModel
 
     @State private var messageText = ""
+    @State private var isAccountPromptPresented = false
+    @State private var isAccountSheetPresented = false
 
     var body: some View {
         NavigationStack {
@@ -25,17 +27,34 @@ struct ChatContainer: View {
                 isDarkMode: colorScheme == .dark,
                 isLoading: viewModel.isLoading,
                 viewModel: viewModel,
-                messageText: $messageText
+                messageText: $messageText,
+                isAccountPromptPresented: $isAccountPromptPresented
             )
                 .background(Color.chatBackground(isDarkMode: colorScheme == .dark))
                 .ignoresSafeArea(edges: .top)
+                .tint(colorScheme == .dark ? .white : .black)
                 .navigationBarTitleDisplayMode(.inline)
-                .applyTransparentToolbarIfAvailable()
+                .applySystemGlassToolbarIfAvailable()
                 .toolbar {
                     ToolbarItem(placement: .principal) {
-                        VladIdentityHeader()
+                        Button {
+                            isAccountSheetPresented = true
+                        } label: {
+                            VladIdentityHeader()
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(Text("Vlad account", comment: "Opens account settings when the user taps Vlad's name or picture in the chat header."))
+                        .accessibilityHint("Opens account settings")
+                        .accessibilityIdentifier("openAccount")
                     }
                 }
+        }
+        .sheet(isPresented: $isAccountSheetPresented) {
+            AccountView(viewModel: viewModel) {
+                isAccountSheetPresented = false
+            }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
         .environmentObject(viewModel)
         .onAppear {
@@ -44,7 +63,7 @@ struct ChatContainer: View {
         .onChange(of: colorScheme) { _, _ in
             setupNavigationBarAppearance()
         }
-        .fullScreenCover(isPresented: $viewModel.showImageViewer) {
+            .fullScreenCover(isPresented: $viewModel.showImageViewer) {
             ImageViewerOverlay(
                 images: viewModel.imageViewerImages,
                 initialIndex: viewModel.imageViewerIndex,
@@ -55,18 +74,13 @@ struct ChatContainer: View {
 
     /// Configure navigation bar appearance
     private func setupNavigationBarAppearance() {
-        if #available(iOS 26, *) {
-            let appearance = UINavigationBarAppearance()
-            appearance.configureWithTransparentBackground()
-            appearance.shadowColor = .clear
-            updateAllNavigationBars(with: appearance)
-        } else {
-            let appearance = UINavigationBarAppearance()
-            appearance.configureWithOpaqueBackground()
-            appearance.backgroundColor = colorScheme == .dark ? UIColor(Color.backgroundPrimary) : .white
-            appearance.shadowColor = .clear
-            updateAllNavigationBars(with: appearance)
-        }
+        guard #unavailable(iOS 26) else { return }
+
+        let appearance = UINavigationBarAppearance()
+        appearance.configureWithOpaqueBackground()
+        appearance.backgroundColor = colorScheme == .dark ? UIColor(Color.backgroundPrimary) : .white
+        appearance.shadowColor = .clear
+        updateAllNavigationBars(with: appearance)
     }
 
     private func updateAllNavigationBars(with appearance: UINavigationBarAppearance) {
@@ -149,7 +163,7 @@ struct WelcomeView: View {
             Text("Hello, I am Vlad a software developer.")
 
             Text(.init("Check out my [shop](https://shop.vlad.chat/) or listen to some [music](https://music.vlad.chat/)."))
-                .tint(.accentColor)
+                .tint(isDarkMode ? .white : .black)
         }
         .font(.body)
         .foregroundStyle(isDarkMode ? Color.white : Color.primary)
@@ -186,9 +200,9 @@ extension View {
     }
 
     @ViewBuilder
-    func applyTransparentToolbarIfAvailable() -> some View {
+    func applySystemGlassToolbarIfAvailable() -> some View {
         if #available(iOS 26, *) {
-            self.toolbarBackground(.hidden, for: .navigationBar)
+            self.toolbarBackground(.visible, for: .navigationBar)
         } else {
             self
         }

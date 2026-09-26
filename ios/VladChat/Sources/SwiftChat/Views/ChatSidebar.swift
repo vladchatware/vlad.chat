@@ -73,21 +73,11 @@ struct ChatSidebar: View {
     private var sidebarContent: some View {
         VStack(spacing: 0) {
             // Chat History Header
-            HStack {
+            VStack(alignment: .leading, spacing: 4) {
                 Text("Chat History")
                     .font(.subheadline)
                     .fontWeight(.medium)
                     .foregroundColor(.secondary)
-
-                Spacer()
-
-                Button {
-                    viewModel.createNewChat()
-                    isOpen = false
-                } label: {
-                    Image(systemName: "square.and.pencil")
-                }
-                .accessibilityLabel("New chat")
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 16)
@@ -200,7 +190,7 @@ struct ChatListItem: View {
 
                             if chat.isBlankChat {
                                 Circle()
-                                    .fill(Color.blue)
+                                    .fill(Color.secondary)
                                     .frame(width: 8, height: 8)
                             }
 

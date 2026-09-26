@@ -32,7 +32,7 @@ import { Fragment, useEffect, useMemo, useRef, useState, useCallback, type Compo
 import { AnimatePresence, motion } from 'motion/react';
 import { useUIMessages } from '@convex-dev/agent/react';
 import { Response } from '@/components/ai-elements/response';
-import { AlertCircleIcon, BarChart3Icon, CopyIcon, MessageCircleIcon, RefreshCcwIcon } from 'lucide-react';
+import { AlertCircleIcon, BarChart3Icon, CopyIcon, KeyRoundIcon, MessageCircleIcon, RefreshCcwIcon } from 'lucide-react';
 import { SiNotion } from '@icons-pack/react-simple-icons';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
@@ -55,30 +55,15 @@ import { GlassButton } from '@/components/ui/glass';
 import { useAuthActions } from '@convex-dev/auth/react'
 import { Authenticated, useAction, useMutation, useQuery } from 'convex/react';
 import { api } from '@/convex/_generated/api';
+import { PROVIDER_MODELS, isModelEnabled } from '@/lib/provider';
+import { SUBSCRIPTION_GRANT_CREDITS } from '@/lib/billing';
+import posthog from 'posthog-js';
 
-const models = [
-  {
-    name: "GLM 5.3 Flash",
-    value: "zai/glm-5.3-flash",
-  },
-  {
-    name: "Fable 5.1",
-    value: "anthropic/claude-fable-5.1",
-  },
-  {
-    name: "GPT 5.6 Luna",
-    value: "openai/gpt-5.6-luna",
-  },
-  {
-    name: "Grok 4.6",
-    value: "xai/grok-4.6",
-  },
-  {
-    name: "DeepSeek 4",
-    value: "deepseek/deepseek-v4-flash",
-  }
-];
+const models = PROVIDER_MODELS.map(({ id, name }) => ({ name, value: id }));
 
+const trackModelGate = (modelId: string) => {
+  posthog.capture('premium_model_clicked', { model: modelId });
+};
 const suggestions = [
   'Projects',
   'Notion Templates',
@@ -347,9 +332,6 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
     try {
       const res = await fetch('/api/checkout_session', {
         method: 'POST',
-        body: JSON.stringify({
-          price: 5
-        })
       })
 
       if (!res.ok) {
@@ -370,9 +352,33 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
     }
   }
 
+  const subscribe = async () => {
+    try {
+      const res = await fetch('/api/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ returnTo: '/' }),
+      })
+      const session = await res.json()
+      if (!res.ok || !session.url) {
+        console.error('Subscribe failed:', session.error ?? res.statusText);
+        return;
+      }
+      window.open(session.url, '_blank')
+    } catch (error) {
+      console.error('Subscribe error:', error);
+    }
+  }
+
   return (
     <>
       <div className="fixed top-4 right-4 z-50 flex flex-col items-end gap-2 md:flex-row md:items-center">
+        <GlassButton asChild className="gap-2 p-2 md:px-4 md:py-2">
+          <Link href="/provider">
+            <KeyRoundIcon className='h-4 w-4' />
+            <span className="hidden md:inline">API</span>
+          </Link>
+        </GlassButton>
         <GlassButton asChild className="gap-2 p-2 md:px-4 md:py-2">
           <Link href="/usage">
             <BarChart3Icon className='h-4 w-4' />
@@ -488,7 +494,7 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                   return (
                     <motion.div
                       key={messageKey}
-                      className={(messages ?? []).length - 1 === messageIndex ? 'pb-46' : ''}
+                      className={(messages ?? []).length - 1 === messageIndex ? 'pb-52' : ''}
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       exit={{ opacity: 0 }}
@@ -596,7 +602,7 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                 })}
               </AnimatePresence>
               {showBottomLoader && (
-                <div className="pb-46 flex justify-center text-muted-foreground">
+                <div className="pb-52 flex justify-center text-muted-foreground">
                   <Shimmer as="span" duration={1.5} spread={1.3} className="text-sm">
                     Loading history...
                   </Shimmer>
@@ -642,9 +648,12 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
             <span className="text-muted-foreground/50">for unlimited</span>
           </div>
         </Authenticated>}
-        {user && user.trialTokens <= 0 && user.tokens <= 0 && <Suggestions>
-          <Suggestion suggestion={'You have run out of credits. Buy more.'} onClick={() => { checkout() }} />
-        </Suggestions>
+        {user && !user.isAnonymous && user.trialTokens <= 0 && user.tokens <= 0 && (user.includedCredits ?? 0) <= 0 && (
+          <Suggestions>
+            <Suggestion suggestion={'You have run out of credits. Buy more.'} onClick={() => { checkout() }} />
+            <Suggestion suggestion={`Subscribe for ${SUBSCRIPTION_GRANT_CREDITS / 1_000_000}M credits monthly + premium models`} onClick={() => { subscribe() }} />
+          </Suggestions>
+        )
         }
         {showSuggestions && <Suggestions>
           {suggestions.map(suggestion =>
@@ -672,6 +681,13 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
             <PromptInputTools>
               <PromptInputModelSelect
                 onValueChange={(value) => {
+                  const subscriber =
+                    user?.subscriptionStatus === 'active' || user?.subscriptionStatus === 'past_due';
+                  if (!subscriber && !isModelEnabled(value)) {
+                    trackModelGate(value);
+                    setModel(models[0].value);
+                    return;
+                  }
                   setModel(value);
                 }}
                 value={model}
@@ -680,11 +696,20 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                   <PromptInputModelSelectValue />
                 </PromptInputModelSelectTrigger>
                 <PromptInputModelSelectContent>
-                  {models.map((model) => (
-                    <PromptInputModelSelectItem key={model.value} value={model.value}>
-                      {model.name}
-                    </PromptInputModelSelectItem>
-                  ))}
+                  {models.map((model) => {
+                    const subscriber =
+                      user?.subscriptionStatus === 'active' || user?.subscriptionStatus === 'past_due';
+                    const locked = !subscriber && !isModelEnabled(model.value);
+                    return (
+                      <PromptInputModelSelectItem
+                        key={model.value}
+                        value={model.value}
+                        className={locked ? 'text-muted-foreground/50' : undefined}
+                      >
+                        {model.name}
+                      </PromptInputModelSelectItem>
+                    );
+                  })}
                 </PromptInputModelSelectContent>
               </PromptInputModelSelect>
               <PromptInputSearchToggle
@@ -749,6 +774,15 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
             </div>
           </PromptInputToolbar>
         </PromptInput>
+        <footer className="mt-1.5 flex items-center justify-center gap-2 text-[11px] text-muted-foreground/60">
+          <Link href="/terms" className="transition-colors hover:text-foreground">
+            Terms
+          </Link>
+          <span aria-hidden="true">•</span>
+          <Link href="/privacy" className="transition-colors hover:text-foreground">
+            Privacy
+          </Link>
+        </footer>
       </div>
     </>
   );

@@ -17,6 +17,7 @@ vlad.chat is an AI-powered conversational interface for interacting with Vlad, h
 
 - [Home](https://vlad.chat/): Primary chat experience
 - [The Lounge](https://vlad.chat/lounge): Group chat space
+- [Provider](https://vlad.chat/provider): API key, credits, and harness setup
 - [Shop](https://shop.vlad.chat): Storefront
 - [Music](https://music.vlad.chat): Music application
 - [Media](https://media.vlad.chat): Media/content engine
@@ -26,6 +27,8 @@ vlad.chat is an AI-powered conversational interface for interacting with Vlad, h
 - [Chat API](https://vlad.chat/api/chat): POST endpoint for sending messages and receiving streaming AI responses
 - [MCP API](https://vlad.chat/api/mcp): Model Context Protocol endpoint for Notion workspace access
 - [Checkout API](https://vlad.chat/api/checkout_session): POST endpoint for Stripe payment processing
+- [Provider Models](https://vlad.chat/v1/models): OpenAI-compatible model discovery
+- [Provider Chat Completions](https://vlad.chat/v1/chat/completions): OpenAI-compatible JSON and SSE completions
 
 ## Shop (shop.vlad.chat)
 

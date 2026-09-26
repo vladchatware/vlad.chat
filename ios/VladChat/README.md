@@ -12,14 +12,26 @@ Native SwiftUI client backed by same Convex deployment as vlad.chat.
 ## Current slice
 
 - Anonymous Convex Auth session stored in Keychain
+- Google account linking for anonymous sessions
+- Sign in with Apple for anonymous sessions
 - Reactive chat history from Convex
 - Server-owned AI generation, credits, tools, and model access
 - SwiftChat message renderer, sidebar, composer, model picker, and web-search UI
 - Markdown, LaTeX, code blocks, citations, and attachment presentation from SwiftChat
 
-Google/account linking, StoreKit purchases, Convex attachment uploads, voice
-transcription remain follow-up
-slices.
+Tap Vlad's picture or name in the chat header to open Account. Anonymous users
+can link Google or Apple there; linked users see their identity and credit
+balances.
+
+StoreKit purchases, Convex attachment uploads, voice transcription and
+multi-thread mutations remain follow-up slices.
+
+To enable Apple sign-in, enable Sign in with Apple on the app ID, create an
+Apple Services ID and key, then set `AUTH_APPLE_ID` and `AUTH_APPLE_SECRET` in
+each Convex deployment. Register the callback URL
+`https://<deployment>.convex.site/api/auth/callback/apple` with Apple. Keep the
+client secret in Convex environment variables, outside the repo; it expires
+every six months and must be renewed.
 
 ## SwiftChat source
 

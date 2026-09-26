@@ -29,6 +29,7 @@ struct MessageView: View {
     @State private var showUserMessageActions = false
     @State private var showThoughtsSheet = false
     @State private var showURLFetchSheet = false
+    @State private var selectedToolID: String?
 
     var body: some View {
         HStack {
@@ -36,7 +37,7 @@ struct MessageView: View {
                 Spacer()
             }
 
-            VStack(alignment: .trailing, spacing: 4) {
+            VStack(alignment: .trailing, spacing: Theme.Dimensions.compactItemSpacing) {
             // Show attachment indicators above the message bubble
             if message.role == .user && !message.attachments.isEmpty {
                 MessageAttachmentIndicator(
@@ -45,15 +46,29 @@ struct MessageView: View {
                 )
             }
 
-            VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 2) {
+            VStack(alignment: message.role == .user ? .trailing : .leading, spacing: Theme.Dimensions.compactItemSpacing) {
                 // Show the loading dots for a fresh streaming assistant response (but not if we have thoughts or are thinking)
-                if message.role == .assistant &&
+                if hasOrderedResponseParts {
+                    OrderedResponsePartsView(
+                        activity: message.responseActivity!,
+                        isDarkMode: isDarkMode,
+                        isStreaming: isLoading && isLastMessage,
+                        fallbackContent: message.content,
+                        contentChunks: message.contentChunks,
+                        onSelectTool: { selectedToolID = $0.id },
+                        onShowThoughts: { showThoughtsSheet = true }
+                    )
+                } else if message.role == .assistant &&
                     message.content.isEmpty &&
                     message.thoughts == nil &&
                     !message.isThinking &&
-                    isLoading &&
-                    isLastMessage {
-                    VStack(alignment: .leading, spacing: 4) {
+                    (isLoading && isLastMessage ||
+                     !(message.responseActivity?.tools.isEmpty ?? true) ||
+                     message.responseActivity?.phase == .failed ||
+                     message.responseActivity?.phase == .stopped) {
+                    VStack(alignment: .leading, spacing: Theme.Dimensions.compactItemSpacing) {
+                        responseActivitySection
+
                         if !message.urlFetches.isEmpty {
                             URLFetchBox(urlFetches: message.urlFetches, isDarkMode: isDarkMode, onTap: { showURLFetchSheet = true })
                         }
@@ -69,10 +84,13 @@ struct MessageView: View {
                             )
                         }
 
-                        // Show loading dots if no web search or search is complete
-                        if message.webSearchState == nil || message.webSearchState?.status != .searching {
-                            LoadingDotsView(isDarkMode: isDarkMode)
-                                .padding(.horizontal)
+                        // Show loading dots only before any tool activity or web search
+                        if message.responseActivity?.isDisplayable != true,
+                           message.webSearchState == nil || message.webSearchState?.status != .searching {
+                            Text("Thinking")
+                                .font(.system(size: 15))
+                                .foregroundColor(isDarkMode ? .white.opacity(0.8) : Color.black.opacity(0.7))
+                                .modifier(TextPulseAnimation())
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -80,7 +98,9 @@ struct MessageView: View {
 
                 // If the message is thinking or has thoughts, display them in a thinking box
                 else if message.isThinking || message.thoughts != nil {
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: Theme.Dimensions.compactItemSpacing) {
+                        responseActivitySection
+
                         if !message.urlFetches.isEmpty {
                             URLFetchBox(urlFetches: message.urlFetches, isDarkMode: isDarkMode, onTap: { showURLFetchSheet = true })
                         }
@@ -124,7 +144,7 @@ struct MessageView: View {
 
                 // Legacy support: if content still has <think> tags, parse and display
                 else if let parsed = getParsedMessageContent() {
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: Theme.Dimensions.compactItemSpacing) {
                         CollapsibleThinkingBox(
                             thinkingText: parsed.thinkingText,
                             isDarkMode: isDarkMode,
@@ -187,7 +207,9 @@ struct MessageView: View {
                             AdaptiveMarkdownText(content: message.content, isDarkMode: isDarkMode)
                         }
                     } else {
-                        VStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: .leading, spacing: Theme.Dimensions.compactItemSpacing) {
+                            responseActivitySection
+
                             if !message.urlFetches.isEmpty {
                                 URLFetchBox(urlFetches: message.urlFetches, isDarkMode: isDarkMode, onTap: { showURLFetchSheet = true })
                             }
@@ -315,6 +337,7 @@ struct MessageView: View {
                 .onChange(of: message.id) { _, _ in
                     isEditMode = false
                     editedContent = ""
+                    selectedToolID = nil
                 }
                 .onChange(of: viewModel.editRequestedForMessageIndex) { _, newValue in
                     if newValue == messageIndex && message.role == .user {
@@ -326,7 +349,6 @@ struct MessageView: View {
 
             }
         }
-        .padding(.horizontal, 4)
         .sheet(isPresented: $showLongMessageSheet) {
             LongMessageDetailView(
                 message: message
@@ -363,6 +385,20 @@ struct MessageView: View {
                 .presentationDetents([.medium, .large])
                 .presentationBackground(isDarkMode ? Color(hex: "161616") : Color(UIColor.systemGroupedBackground))
         }
+        .sheet(
+            isPresented: Binding(
+                get: { selectedTool != nil },
+                set: { isPresented in
+                    if !isPresented { selectedToolID = nil }
+                }
+            )
+        ) {
+            if let tool = selectedTool {
+                ToolOutputSheet(tool: tool, isDarkMode: isDarkMode)
+                    .presentationDetents([.medium, .large])
+                    .presentationBackground(isDarkMode ? Color(hex: "161616") : Color(UIColor.systemGroupedBackground))
+            }
+        }
         .environment(\.openURL, OpenURLAction { url in
             if url.scheme == "cite" {
                 let path = url.absoluteString.dropFirst(5)
@@ -381,6 +417,53 @@ struct MessageView: View {
             }
             return .systemAction
         })
+    }
+
+    @ViewBuilder
+    private var responseActivitySection: some View {
+        if message.role == .assistant,
+           let activity = message.responseActivity,
+           activity.isDisplayable,
+           (!activity.tools.isEmpty ||
+            activity.phase == .failed ||
+            activity.phase == .stopped ||
+            (isLoading && isLastMessage)) {
+            AssistantActivityView(
+                activity: activity,
+                isDarkMode: isDarkMode,
+                isStreaming: isLoading && isLastMessage,
+                showsThinkingPlaceholder: message.content.isEmpty && message.thoughts == nil && !message.isThinking,
+                onSelectTool: { selectedToolID = $0.id }
+            )
+        }
+    }
+
+    private var hasOrderedResponseParts: Bool {
+        guard message.role == .assistant, let parts = message.responseActivity?.parts else {
+            return false
+        }
+        return parts.contains { part in
+            switch part.type {
+            case .text, .reasoning:
+                return part.text != nil
+            case .tool:
+                return part.tool != nil
+            case .source:
+                return part.url != nil
+            case .unknown:
+                return false
+            }
+        }
+    }
+
+    private var selectedTool: ResponseTool? {
+        guard let selectedToolID else { return nil }
+        if let tool = message.responseActivity?.tools.first(where: { $0.id == selectedToolID }) {
+            return tool
+        }
+        return message.responseActivity?.parts
+            .compactMap(\.tool)
+            .first(where: { $0.id == selectedToolID })
     }
 
     private func copyMessagePart(_ text: String) {
@@ -846,6 +929,7 @@ struct CollapsibleThinkingBox: View {
     let isStreaming: Bool
     let generationTimeSeconds: Double?
     let thinkingSummary: String?
+    var showsThinkingSummaryAfterCompletion = false
     let onTap: () -> Void
 
     var body: some View {
@@ -864,16 +948,21 @@ struct CollapsibleThinkingBox: View {
                             .truncationMode(.tail)
                             .modifier(TextPulseAnimation())
                     } else {
-                        HStack(spacing: 4) {
-                            Text("Thinking")
-                                .font(.system(size: 16))
-                                .foregroundColor(isDarkMode ? .white : Color.black.opacity(0.8))
-                            InlineLoadingDotsView(isDarkMode: isDarkMode)
-                        }
-                        .modifier(TextPulseAnimation())
+                        Text("Thinking")
+                            .font(.system(size: 16))
+                            .foregroundColor(isDarkMode ? .white : Color.black.opacity(0.8))
+                            .modifier(TextPulseAnimation())
                     }
+                } else if showsThinkingSummaryAfterCompletion,
+                          let summary = thinkingSummary,
+                          !summary.isEmpty {
+                    Text(summary)
+                        .font(.subheadline)
+                        .foregroundColor(isDarkMode ? .white : Color.black.opacity(0.8))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                 } else {
-                    Text("Thinking")
+                    Text("Thoughts")
                         .font(.system(size: 16))
                         .foregroundColor(isDarkMode ? .white : Color.black.opacity(0.8))
                 }
@@ -954,21 +1043,6 @@ struct ThinkingChunkView: View, Equatable {
     }
 }
 
-struct LoadingDotsView: View {
-    let isDarkMode: Bool
-
-    var body: some View {
-        HStack(spacing: 4) {
-            ForEach(0..<3) { index in
-                Circle()
-                    .frame(width: 6, height: 6)
-                    .modifier(PulsingAnimation(delay: 0.2 * Double(index)))
-            }
-        }
-        .foregroundColor(isDarkMode ? .white : .black)
-    }
-}
-
 struct InlineLoadingDotsView: View {
     let isDarkMode: Bool
 
@@ -981,6 +1055,468 @@ struct InlineLoadingDotsView: View {
             }
         }
         .foregroundColor(isDarkMode ? .white.opacity(0.8) : Color.black.opacity(0.7))
+    }
+}
+
+struct AssistantActivityView: View {
+    let activity: ResponseActivity
+    let isDarkMode: Bool
+    let isStreaming: Bool
+    var showsThinkingPlaceholder = true
+    let onSelectTool: (ResponseTool) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Dimensions.relatedItemSpacing) {
+            if activity.tools.isEmpty {
+                if isStreaming && showsThinkingPlaceholder && (activity.phase == .waiting || activity.phase == .thinking || activity.phase == .tool || activity.phase == .unknown) {
+                    thinkingShimmer
+                } else if activity.phase == .failed || activity.phase == .stopped {
+                    terminalStatus
+                }
+            } else {
+                ForEach(activity.tools) { tool in
+                    Button {
+                        onSelectTool(tool)
+                    } label: {
+                        ToolCallRow(tool: tool, isDarkMode: isDarkMode, isStreaming: isStreaming)
+                    }
+                    .buttonStyle(NoHighlightButtonStyle())
+                }
+                if isStreaming && showsThinkingPlaceholder && (activity.phase == .thinking || activity.phase == .waiting) {
+                    thinkingShimmer
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var thinkingShimmer: some View {
+        Text(phaseLabel)
+            .font(.system(size: 15))
+            .foregroundColor(isDarkMode ? .white.opacity(0.8) : Color.black.opacity(0.7))
+            .modifier(TextPulseAnimation())
+    }
+
+    private var phaseLabel: String {
+        switch activity.phase {
+        case .thinking: return "Thinking"
+        case .tool: return "Using tools"
+        case .responding: return "Responding"
+        default: return "Thinking"
+        }
+    }
+
+    private var terminalStatus: some View {
+        Label(
+            activity.phase == .failed ? "Response failed" : "Generation stopped",
+            systemImage: activity.phase == .failed ? "xmark.circle" : "stop.circle"
+        )
+        .font(.system(size: 13, weight: .medium))
+        .foregroundColor(
+            activity.phase == .failed
+                ? .red.opacity(0.82)
+                : (isDarkMode ? .white.opacity(0.62) : Color.black.opacity(0.56))
+        )
+    }
+}
+
+/// Renders the response in the order supplied by the stream projection.
+/// Text, reasoning, tools, and sources stay in one stable native sequence.
+struct OrderedResponsePartsView: View {
+    let activity: ResponseActivity
+    let isDarkMode: Bool
+    let isStreaming: Bool
+    let fallbackContent: String
+    let contentChunks: [ContentChunk]
+    let onSelectTool: (ResponseTool) -> Void
+    let onShowThoughts: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Dimensions.responseSectionSpacing) {
+            ForEach(activity.parts) { part in
+                partView(part)
+            }
+
+            if !hasTextPart && !fallbackContent.isEmpty {
+                LaTeXMarkdownView(
+                    content: fallbackContent,
+                    isDarkMode: isDarkMode,
+                    isStreaming: isStreaming
+                )
+                .equatable()
+            }
+
+            if isStreaming && fallbackContent.isEmpty && !hasVisiblePartContent && activity.phase != .complete && activity.phase != .stopped && activity.phase != .failed {
+                Text("Thinking")
+                    .foregroundColor(isDarkMode ? .white.opacity(0.8) : Color.black.opacity(0.7))
+                    .modifier(TextPulseAnimation())
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var hasVisiblePartContent: Bool {
+        activity.parts.contains { part in
+            switch part.type {
+            case .text, .reasoning:
+                return !(part.text?.isEmpty ?? true)
+            case .tool:
+                return part.tool != nil
+            case .source:
+                return part.url != nil
+            case .unknown:
+                return false
+            }
+        }
+    }
+
+    private var hasTextPart: Bool {
+        activity.parts.contains {
+            $0.type == .text && !($0.text?.isEmpty ?? true)
+        }
+    }
+
+    @ViewBuilder
+    private func partView(_ part: ResponsePart) -> some View {
+        switch part.type {
+        case .text:
+            if let text = part.text, !text.isEmpty {
+                if canUseChunkedContent(for: part) {
+                    ChunkedContentView(
+                        chunks: contentChunks,
+                        isDarkMode: isDarkMode,
+                        isStreaming: isStreaming
+                    )
+                    .equatable()
+                } else if isPlainText(text) {
+                    StreamingRevealText(
+                        content: text,
+                        isDarkMode: isDarkMode,
+                        isStreaming: isStreaming && part.state == .streaming
+                    )
+                } else if part.state == .streaming && isStreaming {
+                    StreamingMarkdownPartView(content: text, isDarkMode: isDarkMode)
+                } else {
+                    LaTeXMarkdownView(
+                        content: text,
+                        isDarkMode: isDarkMode,
+                        isStreaming: part.state == .streaming && isStreaming
+                    )
+                    .equatable()
+                }
+            }
+        case .reasoning:
+            if let text = part.text, !text.isEmpty {
+                CollapsibleThinkingBox(
+                    thinkingText: text,
+                    isDarkMode: isDarkMode,
+                    isStreaming: part.state == .streaming && isStreaming,
+                    generationTimeSeconds: nil,
+                    thinkingSummary: reasoningPreview(text),
+                    showsThinkingSummaryAfterCompletion: true,
+                    onTap: onShowThoughts
+                )
+                .accessibilityIdentifier("responseThinkingPreview")
+            }
+        case .tool:
+            if let tool = part.tool {
+                Button {
+                    onSelectTool(tool)
+                } label: {
+                    ToolCallRow(tool: tool, isDarkMode: isDarkMode, isStreaming: isStreaming)
+                }
+                .buttonStyle(NoHighlightButtonStyle())
+            }
+        case .source:
+            if let url = URL(string: part.url ?? "") {
+                Link(destination: url) {
+                    HStack(spacing: Theme.Dimensions.relatedItemSpacing) {
+                        Image(systemName: "globe")
+                            .font(.system(size: 13, weight: .medium))
+                        Text(part.title ?? part.url ?? "Source")
+                            .font(.system(size: 13))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Spacer(minLength: 0)
+                        Image(systemName: "arrow.up.right")
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                    .foregroundColor(isDarkMode ? .white.opacity(0.72) : Color.black.opacity(0.62))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        case .unknown:
+            EmptyView()
+        }
+    }
+
+    private func isPlainText(_ content: String) -> Bool {
+        !content.contains(where: { "`*_#>|[]()".contains($0) })
+    }
+
+    private func canUseChunkedContent(for part: ResponsePart) -> Bool {
+        guard contentChunks.isEmpty == false,
+              fallbackContent.isEmpty == false,
+              part.text == fallbackContent else {
+            return false
+        }
+
+        let textPartCount = activity.parts.reduce(into: 0) { count, candidate in
+            if candidate.type == .text, candidate.text != nil {
+                count += 1
+            }
+        }
+        return textPartCount == 1
+    }
+
+    private func reasoningPreview(_ text: String) -> String {
+        text.split(whereSeparator: \.isNewline)
+            .last.map(String.init) ?? text
+    }
+}
+
+/// Keeps a response text part in stable markdown blocks while its content grows.
+/// This is used when a response has multiple text parts, where the message-level
+/// chunker cannot be reused without losing text/tool/text ordering.
+private struct StreamingMarkdownPartView: View {
+    let content: String
+    let isDarkMode: Bool
+
+    @State private var chunker = StreamingMarkdownChunker()
+    @State private var previousContent = ""
+    @State private var chunks: [ContentChunk] = []
+
+    var body: some View {
+        Group {
+            if chunks.isEmpty && !content.isEmpty {
+                LaTeXMarkdownView(
+                    content: content,
+                    isDarkMode: isDarkMode,
+                    isStreaming: true
+                )
+                .equatable()
+            } else {
+                ChunkedContentView(
+                    chunks: chunks,
+                    isDarkMode: isDarkMode,
+                    isStreaming: true
+                )
+                .equatable()
+            }
+        }
+        .onAppear {
+            update(to: content)
+        }
+        .onChange(of: content) { _, newContent in
+            update(to: newContent)
+        }
+    }
+
+    private func update(to newContent: String) {
+        if !newContent.hasPrefix(previousContent) {
+            chunker.reset()
+            previousContent = ""
+        }
+
+        let delta = String(newContent.dropFirst(previousContent.count))
+        if !delta.isEmpty {
+            chunker.appendToken(delta)
+        }
+        previousContent = newContent
+        chunks = chunker.getAllChunks()
+    }
+}
+
+struct ToolCallRow: View {
+    let tool: ResponseTool
+    let isDarkMode: Bool
+    let isStreaming: Bool
+
+    private var symbol: String {
+        switch tool.status {
+        case .pending: return "ellipsis.circle"
+        case .running: return "wrench.and.screwdriver"
+        case .completed: return "checkmark.circle"
+        case .failed: return "xmark.octagon"
+        case .stopped: return "stop.circle"
+        case .unknown: return "questionmark.circle"
+        }
+    }
+
+    private var tint: Color {
+        switch tool.status {
+        case .pending: return isDarkMode ? .white.opacity(0.55) : Color.black.opacity(0.45)
+        case .running: return isDarkMode ? .white.opacity(0.7) : Color.black.opacity(0.6)
+        case .completed: return .green
+        case .failed: return .red
+        case .stopped: return .orange
+        case .unknown: return isDarkMode ? .white.opacity(0.55) : Color.black.opacity(0.45)
+        }
+    }
+
+    private var displayName: String {
+        let title = tool.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !title.isEmpty {
+            return title
+        }
+
+        let normalizedName = tool.name.lowercased()
+        if normalizedName.contains("tavily") || normalizedName.contains("web_search") {
+            return "Search"
+        }
+        if normalizedName.contains("notion") {
+            return "Notion"
+        }
+
+        return tool.name
+            .replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: "-", with: " ")
+            .split(separator: " ")
+            .map { $0.capitalized }
+            .joined(separator: " ")
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: Theme.Dimensions.relatedItemSpacing) {
+            Image(systemName: symbol)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(tint)
+                .frame(width: 18)
+
+            VStack(alignment: .leading, spacing: Theme.Dimensions.compactItemSpacing) {
+                HStack(spacing: Theme.Dimensions.compactItemSpacing) {
+                    Text(displayName)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(isDarkMode ? .white.opacity(0.9) : Color.black.opacity(0.8))
+                    Text(statusLabel)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(isDarkMode ? .white.opacity(0.52) : Color.black.opacity(0.5))
+                    if tool.status == .running {
+                        InlineLoadingDotsView(isDarkMode: isDarkMode)
+                    }
+                }
+
+                if let inputSummary = tool.inputSummary, !inputSummary.isEmpty {
+                    Text(inputSummary)
+                        .font(.system(size: 12))
+                        .foregroundColor(isDarkMode ? .white.opacity(0.62) : Color.black.opacity(0.58))
+                        .lineLimit(2)
+                        .truncationMode(.tail)
+                }
+
+                if let output = tool.output, !output.isEmpty {
+                    Text(preview(output))
+                        .font(.system(size: 12))
+                        .foregroundColor(isDarkMode ? .white.opacity(0.55) : Color.black.opacity(0.55))
+                        .lineLimit(3)
+                        .truncationMode(.tail)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if tool.outputTruncated == true {
+                    Text("Preview truncated")
+                        .font(.system(size: 11))
+                        .foregroundColor(isDarkMode ? .white.opacity(0.48) : Color.black.opacity(0.48))
+                }
+
+                if let errorText = tool.errorText, !errorText.isEmpty {
+                    Text(errorText)
+                        .font(.system(size: 12))
+                        .foregroundColor(.red.opacity(0.82))
+                        .lineLimit(2)
+                        .truncationMode(.tail)
+                }
+            }
+
+            Spacer(minLength: 0)
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(isDarkMode ? .white.opacity(0.38) : Color.black.opacity(0.38))
+        }
+        .padding(Theme.Dimensions.paddingMedium)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(isDarkMode ? Color.white.opacity(0.06) : Color.black.opacity(0.04))
+        )
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(displayName)
+        .accessibilityValue(accessibilityStatus)
+    }
+
+    /// Inline preview is capped; the full (server-truncated) result is shown in the sheet.
+    private func preview(_ text: String) -> String {
+        let collapsed = text.replacingOccurrences(of: "\n", with: " ")
+        return collapsed.count <= ToolCallRow.previewLimit
+            ? collapsed
+            : String(collapsed.prefix(ToolCallRow.previewLimit)) + "…"
+    }
+
+    static let previewLimit = 500
+
+    private var accessibilityStatus: String {
+        switch tool.status {
+        case .pending: return "Pending"
+        case .running: return "Running"
+        case .completed: return "Completed"
+        case .failed: return "Failed"
+        case .stopped: return "Stopped"
+        case .unknown: return "Unknown status"
+        }
+    }
+
+    private var statusLabel: String {
+        switch tool.status {
+        case .pending: return "Waiting"
+        case .running: return "Running"
+        case .completed: return "Done"
+        case .failed: return "Failed"
+        case .stopped: return "Stopped"
+        case .unknown: return "Unknown"
+        }
+    }
+}
+
+struct ToolOutputSheet: View {
+    let tool: ResponseTool
+    let isDarkMode: Bool
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: Theme.Dimensions.responseSectionSpacing) {
+                    if let inputSummary = tool.inputSummary, !inputSummary.isEmpty {
+                        Text(inputSummary)
+                            .font(.system(.subheadline))
+                            .foregroundColor(isDarkMode ? .white.opacity(0.65) : Color.black.opacity(0.6))
+                    }
+
+                    Text(tool.output ?? tool.errorText ?? "No output yet.")
+                        .font(.system(.body, design: .monospaced))
+                        .foregroundColor(tool.errorText == nil
+                            ? (isDarkMode ? .white.opacity(0.9) : Color.black.opacity(0.8))
+                            : .red.opacity(0.82))
+                        .textSelection(.enabled)
+
+                    if tool.outputTruncated == true {
+                        Text("Preview truncated")
+                            .font(.system(.footnote))
+                            .foregroundColor(isDarkMode ? .white.opacity(0.55) : Color.black.opacity(0.55))
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(16)
+            }
+            .navigationTitle(tool.title ?? tool.name.replacingOccurrences(of: "_", with: " "))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
     }
 }
 
@@ -1013,36 +1549,39 @@ struct PulsingAnimation: ViewModifier {
 }
 
 struct TextPulseAnimation: ViewModifier {
-    @State private var offset: CGFloat = -1.0
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func body(content: Content) -> some View {
-        content
-            .overlay(
-                GeometryReader { geometry in
-                    let shimmerWidth = geometry.size.width * 0.4
-                    LinearGradient(
-                        colors: [
-                            .clear,
-                            .white.opacity(0.35),
-                            .clear
-                        ],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                    .frame(width: shimmerWidth)
-                    .offset(x: offset * (geometry.size.width + shimmerWidth))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .mask(content)
-            )
-            .onAppear {
-                withAnimation(
-                    .easeInOut(duration: 2.0)
-                    .repeatForever(autoreverses: false)
-                ) {
-                    offset = 1.0
+        if reduceMotion {
+            content
+        } else {
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
+                let duration = 1.4
+                let progress = context.date.timeIntervalSinceReferenceDate
+                    .truncatingRemainder(dividingBy: duration) / duration
+
+                content.overlay {
+                    GeometryReader { geometry in
+                        let shimmerWidth = max(36, geometry.size.width * 0.45)
+                        let x = CGFloat(progress) * (geometry.size.width + shimmerWidth) - shimmerWidth
+                        LinearGradient(
+                            colors: [
+                                .clear,
+                                colorScheme == .dark ? .white.opacity(0.55) : .black.opacity(0.24),
+                                .clear
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                        .frame(width: shimmerWidth)
+                        .offset(x: x)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .mask(content)
                 }
             }
+        }
     }
 }
 
@@ -1068,7 +1607,7 @@ struct ChunkedContentView: View, Equatable {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Theme.Dimensions.responseSectionSpacing) {
             ForEach(chunks) { chunk in
                 ChunkView(chunk: chunk, isDarkMode: isDarkMode, isStreaming: isStreaming)
             }
@@ -1095,6 +1634,12 @@ struct ChunkView: View, Equatable {
     var body: some View {
         if chunk.type == .table && isStreaming {
             GeneratingTableView(isDarkMode: isDarkMode)
+        } else if chunk.type == .paragraph && isPlainText(chunk.content) {
+            StreamingRevealText(
+                content: chunk.content,
+                isDarkMode: isDarkMode,
+                isStreaming: isStreaming && !chunk.isComplete
+            )
         } else {
             LaTeXMarkdownView(
                 content: chunk.content,
@@ -1103,6 +1648,77 @@ struct ChunkView: View, Equatable {
             )
             .equatable()
         }
+    }
+
+    private func isPlainText(_ content: String) -> Bool {
+        !content.contains(where: { "`*_#>|[]()".contains($0) })
+    }
+}
+
+/// Fades only newly received plain-text content during streaming.
+/// Existing text keeps its opacity and layout, so token cadence cannot flash the
+/// entire answer or move the viewport.
+struct StreamingRevealText: View {
+    let content: String
+    let isDarkMode: Bool
+    let isStreaming: Bool
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var stablePrefix = ""
+    @State private var pendingSuffix = ""
+    @State private var suffixOpacity = 1.0
+
+    var body: some View {
+        let foregroundColor = isDarkMode ? Color.white : Color.black
+
+        Group {
+            if reduceMotion {
+                Text(content).foregroundColor(foregroundColor)
+            } else {
+                Text(stablePrefix).foregroundColor(foregroundColor) +
+                    Text(pendingSuffix).foregroundColor(foregroundColor.opacity(suffixOpacity))
+            }
+        }
+        .lineSpacing(4)
+        .fixedSize(horizontal: false, vertical: true)
+        .onAppear {
+            if stablePrefix.isEmpty && pendingSuffix.isEmpty {
+                stablePrefix = content
+            }
+        }
+        .onChange(of: content) { _, newContent in
+            guard !reduceMotion else { return }
+            updateReveal(to: newContent)
+        }
+    }
+
+    private func updateReveal(to newContent: String) {
+        let renderedContent = stablePrefix + pendingSuffix
+        guard newContent != renderedContent else { return }
+
+        guard isStreaming else {
+            stablePrefix = newContent
+            pendingSuffix = ""
+            suffixOpacity = 1
+            return
+        }
+
+        let prefix = commonPrefix(renderedContent, newContent)
+        stablePrefix = prefix
+        pendingSuffix = String(newContent.dropFirst(prefix.count))
+        suffixOpacity = 0
+        withAnimation(.easeOut(duration: 0.15)) {
+            suffixOpacity = 1
+        }
+    }
+
+    private func commonPrefix(_ lhs: String, _ rhs: String) -> String {
+        var result = ""
+        for (left, right) in zip(lhs, rhs) {
+            guard left == right else { break }
+            result.append(left)
+        }
+        return result
     }
 }
 
@@ -1265,10 +1881,10 @@ struct UserMessageEditView: View {
                 }) {
                     Text("Save")
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.white)
+                        .foregroundColor(isDarkMode ? Color.sendButtonForegroundDark : Color.sendButtonForegroundLight)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
-                        .background(Color.accentPrimary)
+                        .background(isDarkMode ? Color.sendButtonBackgroundDark : Color.sendButtonBackgroundLight)
                         .cornerRadius(6)
                 }
                 .buttonStyle(PlainButtonStyle())

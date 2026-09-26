@@ -238,6 +238,7 @@ struct Message: Identifiable, Codable, Equatable {
     var timestamp: Date
     var isCollapsed: Bool = true
     var isStreaming: Bool = false
+    var responseActivity: ResponseActivity? = nil
     var streamError: String? = nil
     var isRequestError: Bool = false
     var generationTimeSeconds: Double? = nil
@@ -286,6 +287,7 @@ struct Message: Identifiable, Codable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case id, role, content, thoughts, isThinking, timestamp, isCollapsed, isStreaming, streamError, isRequestError, generationTimeSeconds, webSearchState
+        case responseActivity
         case webSearch // Alternative key used by React app
         case urlFetches
         case attachments
@@ -314,6 +316,7 @@ struct Message: Identifiable, Codable, Equatable {
 
         isCollapsed = try container.decodeIfPresent(Bool.self, forKey: .isCollapsed) ?? true
         isStreaming = try container.decodeIfPresent(Bool.self, forKey: .isStreaming) ?? false
+        responseActivity = try container.decodeIfPresent(ResponseActivity.self, forKey: .responseActivity)
         streamError = try container.decodeIfPresent(String.self, forKey: .streamError)
         isRequestError = try container.decodeIfPresent(Bool.self, forKey: .isRequestError) ?? false
         generationTimeSeconds = try container.decodeIfPresent(Double.self, forKey: .generationTimeSeconds)
@@ -336,6 +339,7 @@ struct Message: Identifiable, Codable, Equatable {
         try container.encode(Self.iso8601Formatter.string(from: timestamp), forKey: .timestamp)
         try container.encode(isCollapsed, forKey: .isCollapsed)
         try container.encode(isStreaming, forKey: .isStreaming)
+        try container.encodeIfPresent(responseActivity, forKey: .responseActivity)
         try container.encodeIfPresent(streamError, forKey: .streamError)
         if isRequestError { try container.encode(isRequestError, forKey: .isRequestError) }
         try container.encodeIfPresent(generationTimeSeconds, forKey: .generationTimeSeconds)

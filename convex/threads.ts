@@ -13,6 +13,7 @@ import { paginationOptsValidator } from "convex/server";
 import {
   abortStream,
   getThreadMetadata,
+  listMessages,
   listUIMessages,
   isStepCount,
   syncStreams,
@@ -23,13 +24,17 @@ import { getAuthUserId } from "@convex-dev/auth/server"
 import { agent } from "./agents/simple";
 import { chatSystemInstructions } from "./agents/prompts";
 import { userNotionInstruction } from "@/lib/ai";
+import { isModelEnabled, isPremiumModel } from "@/lib/provider";
 import { z } from "zod/v3";
 import {
   gateway,
   type ToolSet,
 } from "ai";
 import { createMCPClient } from "@ai-sdk/mcp";
-import { mergeMobileStreamText } from "@/lib/mobile-stream";
+import {
+  mergeMobileStreamText,
+  projectStoredResponse,
+} from "@/lib/mobile-stream";
 
 export const listThreads = query({
   args: {
@@ -357,6 +362,59 @@ export const getDefaultThreadId = query({
   },
 });
 
+const mobileToolValidator = v.object({
+  id: v.string(),
+  name: v.string(),
+  title: v.optional(v.string()),
+  // Keep the wire boundary forward-compatible. Swift maps unknown values to
+  // an explicit neutral enum case instead of failing the whole subscription.
+  status: v.string(),
+  inputSummary: v.optional(v.string()),
+  output: v.optional(v.string()),
+  outputTruncated: v.optional(v.boolean()),
+  errorText: v.optional(v.string()),
+});
+
+const mobileResponsePartValidator = v.union(
+  v.object({
+    id: v.string(),
+    type: v.union(v.literal("text"), v.literal("reasoning")),
+    text: v.string(),
+    state: v.union(v.literal("streaming"), v.literal("done")),
+  }),
+  v.object({
+    id: v.string(),
+    type: v.literal("source"),
+    sourceId: v.string(),
+    url: v.string(),
+    title: v.optional(v.string()),
+  }),
+  v.object({
+    id: v.string(),
+    type: v.literal("tool"),
+    tool: mobileToolValidator,
+  }),
+  // Unknown future part kinds remain decodable and can be ignored by older
+  // clients while known fields stay available for diagnostics.
+  v.object({
+    id: v.string(),
+    type: v.string(),
+    text: v.optional(v.string()),
+    state: v.optional(v.string()),
+    sourceId: v.optional(v.string()),
+    url: v.optional(v.string()),
+    title: v.optional(v.string()),
+    tool: v.optional(mobileToolValidator),
+  }),
+);
+
+const mobileResponseValidator = v.object({
+  phase: v.string(),
+  parts: v.array(mobileResponsePartValidator),
+  tools: v.array(mobileToolValidator),
+  errorText: v.optional(v.string()),
+});
+
 const mobileMessageValidator = v.object({
   id: v.string(),
   role: v.string(),
@@ -364,81 +422,80 @@ const mobileMessageValidator = v.object({
   status: v.string(),
   order: v.number(),
   createdAt: v.number(),
+  response: v.optional(mobileResponseValidator),
+  errorText: v.optional(v.string()),
 });
 
-const mobileThreadValidator = v.object({
-  id: v.string(),
-  title: v.string(),
-  createdAt: v.number(),
+const mobileAccountValidator = v.object({
+  isAnonymous: v.boolean(),
+  name: v.optional(v.string()),
+  email: v.optional(v.string()),
+  trialMessages: v.number(),
+  trialTokens: v.number(),
+  tokens: v.number(),
 });
 
 /**
  * Small, stable transport shape for native clients.
  *
- * Agent UIMessage parts are intentionally flattened here. Swift should not need
- * to mirror the AI SDK's dynamic tool/content union to render basic chat history.
+ * Agent UIMessage parts are projected into a small ordered presentation model.
+ * Swift should not need to mirror the AI SDK's dynamic tool/content union.
  */
 export const getMobileChat = query({
-  args: { threadId: v.optional(v.string()) },
+  args: {},
   returns: v.object({
     threadId: v.union(v.string(), v.null()),
-    title: v.string(),
-    threads: v.array(mobileThreadValidator),
     messages: v.array(mobileMessageValidator),
+    account: v.union(mobileAccountValidator, v.null()),
     remainingMessages: v.union(v.number(), v.null()),
   }),
-  handler: async (ctx, args) => {
+  handler: async (ctx) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) {
-      return {
-        threadId: null,
-        title: "Vlad",
-        threads: [],
-        messages: [],
-        remainingMessages: null,
-      };
+      return { threadId: null, messages: [], account: null, remainingMessages: null };
     }
 
-    const [threadResult, user] = await Promise.all([
-      ctx.runQuery(components.agent.threads.listThreadsByUserId, {
-        userId,
-        paginationOpts: { cursor: null, numItems: 100 },
-      }),
+    const [threadId, user] = await Promise.all([
+      getDefaultThreadForUser(ctx, userId),
       ctx.db.get(userId),
     ]);
-    const threads = threadResult.page.map((thread) => ({
-      id: thread._id,
-      title: thread.title ?? "Untitled",
-      createdAt: thread._creationTime,
-    }));
-    const threadId = args.threadId ?? threads[0]?.id ?? null;
     if (!threadId) {
       return {
         threadId: null,
-        title: "Vlad",
-        threads,
         messages: [],
+        account: user ? mobileAccount(user) : null,
         remainingMessages: user?.isAnonymous ? (user.trialMessages ?? 0) : null,
       };
     }
-    await authorizeThreadAccess(ctx, threadId, true);
 
-    const [result, metadata] = await Promise.all([
-      listUIMessages(ctx, components.agent, {
-        threadId,
-        paginationOpts: { cursor: null, numItems: 100 },
-      }),
-      getThreadMetadata(ctx, components.agent, { threadId }),
+    const paginationOpts = { cursor: null, numItems: 100 };
+    const [result, canonicalResult] = await Promise.all([
+      listUIMessages(ctx, components.agent, { threadId, paginationOpts }),
+      listMessages(ctx, components.agent, { threadId, paginationOpts }),
     ]);
+    const errorsByMessageID = new Map<string, string>();
+    for (const message of canonicalResult.page) {
+      if (message.error) {
+        errorsByMessageID.set(message._id, message.error);
+      }
+    }
 
-    const messages = result.page.map((message) => ({
-      id: message.key,
-      role: message.role,
-      text: message.text,
-      status: message.status,
-      order: message.order,
-      createdAt: message._creationTime,
-    }));
+    const messages = result.page.map((message) => {
+      const errorText = errorsByMessageID.get(message.id);
+      const response = message.role === "assistant"
+        ? projectStoredResponse(message.parts, message.status, errorText)
+        : undefined;
+      return {
+        id: message.key,
+        role: message.role,
+        text: message.text,
+        status: message.status,
+        order: message.order,
+        createdAt: message._creationTime,
+        ...(response ? { response } : {}),
+        ...(errorText ? { errorText } : {}),
+      };
+    });
     const activeStreams = await syncStreams(ctx, components.agent, {
       threadId,
       streamArgs: { kind: "list" },
@@ -461,56 +518,34 @@ export const getMobileChat = query({
 
     return {
       threadId,
-      title: metadata.title ?? "Untitled",
-      threads,
       messages: mergeMobileStreamText(
         messages,
         streamMessages,
         activeDeltas?.kind === "deltas" ? activeDeltas.deltas : [],
       ),
+      account: user ? mobileAccount(user) : null,
       remainingMessages: user?.isAnonymous ? (user.trialMessages ?? 0) : null,
     };
   },
 });
 
-export const createMobileThread = mutation({
-  args: {},
-  returns: v.string(),
-  handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new ConvexError("Please sign in to continue.");
-    const { threadId } = await agent.createThread(ctx, {
-      userId,
-      title: "Untitled",
-    });
-    return threadId;
-  },
-});
-
-export const renameMobileThread = mutation({
-  args: { threadId: v.string(), title: v.string() },
-  returns: v.null(),
-  handler: async (ctx, { threadId, title }) => {
-    await authorizeThreadAccess(ctx, threadId, true);
-    const normalizedTitle = title.trim();
-    if (!normalizedTitle) throw new ConvexError("Chat title cannot be empty.");
-    await agent.updateThreadMetadata(ctx, {
-      threadId,
-      patch: { title: normalizedTitle },
-    });
-    return null;
-  },
-});
-
-export const deleteMobileThread = mutation({
-  args: { threadId: v.string() },
-  returns: v.null(),
-  handler: async (ctx, { threadId }) => {
-    await authorizeThreadAccess(ctx, threadId, true);
-    await agent.deleteThreadAsync(ctx, { threadId });
-    return null;
-  },
-});
+function mobileAccount(user: {
+  isAnonymous?: boolean;
+  name?: string;
+  email?: string;
+  trialMessages?: number;
+  trialTokens?: number;
+  tokens?: number;
+}) {
+  return {
+    isAnonymous: Boolean(user.isAnonymous),
+    ...(user.name === undefined ? {} : { name: user.name }),
+    ...(user.email === undefined ? {} : { email: user.email }),
+    trialMessages: user.trialMessages ?? 0,
+    trialTokens: user.trialTokens ?? 0,
+    tokens: user.tokens ?? 0,
+  };
+}
 
 export const getUIMessages = query({
   args: {
@@ -537,9 +572,8 @@ export const generateReply = action({
     prompt: v.string(),
     model: v.string(),
     searchEnabled: v.optional(v.boolean()),
-    threadId: v.optional(v.string()),
   },
-  handler: async (ctx, { prompt, model, searchEnabled = false, threadId: requestedThreadId }) => {
+  handler: async (ctx, { prompt, model, searchEnabled = false }) => {
     try {
     const userId = await getAuthUserId(ctx);
     if (!userId) {
@@ -551,17 +585,24 @@ export const generateReply = action({
       throw new ConvexError("We couldn't load your account. Please refresh and try again.");
     }
 
-    if (!user.isAnonymous) {
-      if (user.trialTokens <= 0 && user.tokens <= 0) {
-        throw new ConvexError("You have run out of credits. Buy more to continue.");
-      }
-    } else if ((user.trialMessages ?? 0) <= 0) {
-      throw new ConvexError("You've reached the anonymous message limit. Sign in with Google for unlimited messages.");
-    }
+    // Admission gate: balance, premium access and usage caps are enforced
+    // BEFORE generation starts (usageGate also covers anonymous users, so
+    // anonymous callers cannot reach premium models). Settlement accounts
+    // for completed work separately.
+    await ctx.runMutation(api.users.usageGate, { model });
 
     const text = prompt.trim();
     if (!text) {
       throw new ConvexError("Your message is empty. Please type something first.");
+    }
+
+    // usageGate (above) already enforced tier eligibility and subscription
+    // access; this only blocks operationally disabled free models. Premium
+    // models are enabled:false by definition, so they must not be caught here.
+    if (!isPremiumModel(model) && !isModelEnabled(model)) {
+      throw new ConvexError(
+        "This model is currently unavailable. Please pick another model.",
+      );
     }
 
     const notionConn = await ctx.runQuery(internal.notion.getConnectionForUser, {
@@ -575,10 +616,7 @@ export const generateReply = action({
       ? userNotionInstruction(notionConn.workspaceName)
       : "";
 
-    if (requestedThreadId) {
-      await authorizeThreadAccess(ctx, requestedThreadId, true);
-    }
-    const threadId = requestedThreadId ?? await getOrCreateDefaultThread(ctx, userId);
+    const threadId = await getOrCreateDefaultThread(ctx, userId);
     const { thread } = await agent.continueThread(ctx, { threadId, userId });
 
     const result = await thread.streamText(
@@ -599,7 +637,13 @@ export const generateReply = action({
         },
       },
       {
-        saveStreamDeltas: true,
+        // The native client renders from these durable deltas. Do not add a
+        // transport delay here; provider output should reach the subscription
+        // as soon as the SDK emits it.
+        saveStreamDeltas: {
+          chunking: "word",
+          throttleMs: 0,
+        },
         storageOptions: { saveMessages: "all" },
       },
     );
@@ -626,6 +670,23 @@ export const generateReply = action({
     }
     const usageObject = toUsageObject(usage);
 
+    // Same shape @posthog/ai emits: tool-call items inside the assistant
+    // message of $ai_output_choices, so PostHog's AI dashboard counts them.
+    const toolCallItems = await result.steps
+      .then((steps) =>
+        steps.flatMap((step) =>
+          step.toolCalls.map((call) => ({
+            type: "tool-call" as const,
+            id: call.toolCallId,
+            function: {
+              name: call.toolName,
+              arguments: call.input,
+            },
+          })),
+        ),
+      )
+      .catch(() => []);
+
     if (outputText) {
       if (user.isAnonymous) {
         await ctx.runMutation(api.users.messages, {});
@@ -643,13 +704,14 @@ export const generateReply = action({
       usageObject.totalTokens !== undefined ||
       usageObject.inputTokens !== undefined ||
       usageObject.outputTokens !== undefined;
-    if (hasUsage || providerMetadata) {
+    if (hasUsage || providerMetadata || toolCallItems.length > 0) {
       try {
         await ctx.runAction(internal.posthog.captureLlmGeneration, {
           distinctId: userId,
           traceId: `${threadId}:${result.order}`,
           threadId,
           order: result.order,
+          sessionId: threadId,
           model,
           provider: "AI Gateway",
           input: [{ role: "user", content: text }],
@@ -657,10 +719,20 @@ export const generateReply = action({
             ? [
                 {
                   role: "assistant",
-                  content: [{ type: "text", text: outputText }],
+                  content: [
+                    { type: "text", text: outputText },
+                    ...toolCallItems,
+                  ],
                 },
               ]
-            : [],
+            : toolCallItems.length > 0
+              ? [
+                  {
+                    role: "assistant",
+                    content: toolCallItems,
+                  },
+                ]
+              : [],
           usage: usageObject,
           providerMetadata,
         });
@@ -688,13 +760,23 @@ export const abortReply = mutation({
   handler: async (ctx, args) => {
     await authorizeThreadAccess(ctx, args.threadId, true);
 
+    const activeStreams = await syncStreams(ctx, components.agent, {
+      threadId: args.threadId,
+      streamArgs: { kind: "list" },
+    });
+    const activeOrders = activeStreams?.kind === "list"
+      ? activeStreams.messages.map((message) => message.order)
+      : [];
+    const orders = args.order === undefined
+      ? [...new Set(activeOrders)]
+      : [args.order];
     let aborted = false;
-    if (args.order !== undefined) {
+    for (const order of orders) {
       aborted = await abortStream(ctx, components.agent, {
         threadId: args.threadId,
-        order: args.order,
+        order,
         reason: "User stopped generation",
-      });
+      }) || aborted;
     }
 
     const pending = await ctx.runQuery(
@@ -723,6 +805,39 @@ export const abortReply = mutation({
       aborted,
       failedPending: pending.page.length,
     };
+  },
+});
+
+export const deleteMobileMessagesFrom = action({
+  args: { threadId: v.string(), startOrder: v.number() },
+  returns: v.object({ deleted: v.boolean() }),
+  handler: async (ctx, { threadId, startOrder }) => {
+    await authorizeThreadAccess(ctx, threadId, true);
+
+    let nextOrder = startOrder;
+    let nextStepOrder = 0;
+    let isDone = false;
+    while (!isDone) {
+      const result = await agent.deleteMessageRange(ctx, {
+        threadId,
+        startOrder: nextOrder,
+        startStepOrder: nextStepOrder,
+        endOrder: Number.MAX_SAFE_INTEGER,
+      });
+      isDone = result.isDone;
+      const resumedOrder = result.lastOrder ?? nextOrder;
+      const resumedStepOrder = result.lastStepOrder ?? nextStepOrder;
+      if (
+        !isDone &&
+        resumedOrder === nextOrder &&
+        resumedStepOrder === nextStepOrder
+      ) {
+        throw new Error("Message deletion did not advance.");
+      }
+      nextOrder = resumedOrder;
+      nextStepOrder = resumedStepOrder;
+    }
+    return { deleted: true };
   },
 });
 

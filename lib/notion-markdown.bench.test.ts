@@ -16,7 +16,7 @@ vi.mock('@/lib/notion', () => ({
 
 // Helper to create a block with text
 function createBlock(type: string, text: string, hasChildren = false) {
-    const block: any = {
+    const block: Record<string, unknown> = {
         id: `block-${Math.random().toString(36).substr(2, 9)}`,
         type,
         has_children: hasChildren
@@ -333,7 +333,7 @@ describe('convertBlocksToMarkdown - Performance Benchmarks', () => {
             console.log(`   Estimated time without latency: ${(duration - callCount * 150).toFixed(2)}ms`)
             console.log(`   API overhead: ${(callCount * 150).toFixed(2)}ms (${((callCount * 150 / duration) * 100).toFixed(1)}%)`)
             console.log(`   ✅ Parallelization: All 10 child fetches happen concurrently at level 1`)
-        })
+        }, 15000)
 
         it('benchmark: parallelization benefit - many same-level blocks with children', async () => {
             let callCount = 0

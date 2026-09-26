@@ -34,6 +34,15 @@ targets:
   VladChat:
     type: application
     platform: iOS
+    attributes:
+      SystemCapabilities:
+        com.apple.SignInWithApple:
+          enabled: 1
+    entitlements:
+      path: VladChat.entitlements
+      properties:
+        com.apple.developer.applesignin:
+          - Default
     sources:
       - path: Sources
       - path: Resources

@@ -40,6 +40,17 @@ enum Theme {
         static let paddingLarge: CGFloat = 16
         static let paddingExtraLarge: CGFloat = 24
 
+        // Layout roles. Components should use these names instead of inventing
+        // a second spacing scale for equivalent content.
+        static let transcriptGutter: CGFloat = 16
+        static let messageGroupSpacing: CGFloat = 24
+        static let responseSectionSpacing: CGFloat = 12
+        static let relatedItemSpacing: CGFloat = 8
+        static let compactItemSpacing: CGFloat = 4
+        static let controlLabelSpacing: CGFloat = 6
+        static let controlHitTarget: CGFloat = 44
+        static let bottomFollowTolerance: CGFloat = 24
+
         // Common corner radius values
         static let cornerRadiusSmall: CGFloat = 8
         static let cornerRadiusMedium: CGFloat = 12
