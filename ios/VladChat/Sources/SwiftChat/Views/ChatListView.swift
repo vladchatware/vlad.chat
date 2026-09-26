@@ -87,7 +87,7 @@ struct ChatListView: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: shouldShowAccountPrompt ? 12 : 0) {
                 if shouldShowAccountPrompt {
-                    AccountView(viewModel: viewModel, onDismiss: dismissAccountPrompt)
+                    AccountPromptView(viewModel: viewModel, onDismiss: dismissAccountPrompt)
                         .frame(maxWidth: 600)
                         .padding(.horizontal, 16)
                         .frame(maxWidth: .infinity)

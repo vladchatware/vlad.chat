@@ -19,6 +19,7 @@ struct ChatContainer: View {
 
     @State private var messageText = ""
     @State private var isAccountPromptPresented = false
+    @State private var isAccountSheetPresented = false
 
     var body: some View {
         NavigationStack {
@@ -37,7 +38,7 @@ struct ChatContainer: View {
                 .toolbar {
                     ToolbarItem(placement: .principal) {
                         Button {
-                            isAccountPromptPresented = true
+                            isAccountSheetPresented = true
                         } label: {
                             VladIdentityHeader()
                         }
@@ -47,6 +48,13 @@ struct ChatContainer: View {
                         .accessibilityIdentifier("openAccount")
                     }
                 }
+        }
+        .sheet(isPresented: $isAccountSheetPresented) {
+            AccountView(viewModel: viewModel) {
+                isAccountSheetPresented = false
+            }
+            .presentationDetents([.medium])
+            .presentationDragIndicator(.visible)
         }
         .environmentObject(viewModel)
         .onAppear {

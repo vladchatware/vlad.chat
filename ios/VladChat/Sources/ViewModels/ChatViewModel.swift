@@ -29,6 +29,7 @@ final class ChatViewModel: ObservableObject {
     @Published var pendingImageThumbnails: [String: String] = [:]
     @Published var account: MobileAccount?
     @Published var isLinkingAccount = false
+    @Published var isLoggingOut = false
 
     var messages: [Message] { currentChat?.messages ?? [] }
 
@@ -292,6 +293,24 @@ final class ChatViewModel: ObservableObject {
         linkOAuthAccount(provider: "apple")
     }
 
+    func logOut() {
+        guard let client, account?.isAnonymous == false, !isLoggingOut else { return }
+        isLoggingOut = true
+        Task { [weak self] in
+            guard let self else { return }
+            defer { isLoggingOut = false }
+            await client.logout()
+            do {
+                if case .failure(let error) = await client.login() {
+                    throw error
+                }
+                subscribe(using: client)
+            } catch {
+                attachmentError = Self.userFacingMessage(for: error)
+            }
+        }
+    }
+
     private func linkOAuthAccount(provider: String) {
         guard let client, let authProvider, account?.isAnonymous != false else { return }
         isLinkingAccount = true
@@ -331,6 +350,7 @@ final class ChatViewModel: ObservableObject {
                     self?.enqueue(mobileChat)
                 }
             } catch {
+                guard !Task.isCancelled else { return }
                 self?.attachmentError = Self.userFacingMessage(for: error)
             }
         }

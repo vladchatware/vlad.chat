@@ -5,19 +5,124 @@ struct AccountView: View {
     @ObservedObject var viewModel: ChatViewModel
     let onDismiss: () -> Void
 
-    @Environment(\.colorScheme) private var colorScheme
+    var body: some View {
+        VStack(spacing: 16) {
+            AccountDetailsCard(account: viewModel.account, onDismiss: onDismiss)
 
-    private var account: MobileAccount? { viewModel.account }
+            if viewModel.account?.isAnonymous ?? true {
+                AccountLinkingButtons(viewModel: viewModel)
+            } else {
+                Button(action: viewModel.logOut) {
+                    HStack(spacing: 8) {
+                        if viewModel.isLoggingOut {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Image(systemName: "rectangle.portrait.and.arrow.right")
+                                .accessibilityHidden(true)
+                        }
+                        Text(viewModel.isLoggingOut ? "Signing Out" : "Sign Out")
+                    }
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(.red)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(viewModel.isLoggingOut)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct AccountDetailsCard: View {
+    let account: MobileAccount?
+    let onDismiss: () -> Void
+
     private var isAnonymous: Bool { account?.isAnonymous ?? true }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(isAnonymous ? "Anonymous account" : (account?.name ?? "Account"))
+                        .font(.title3.weight(.semibold))
+                        .lineLimit(2)
+
+                    if let email = account?.email, !email.isEmpty {
+                        Text(email)
+                            .font(.body)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    } else if isAnonymous {
+                        Text("Link an account to keep your chats when you switch devices.")
+                            .font(.body)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                Spacer(minLength: 0)
+
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Close Account")
+            }
+
+            HStack(spacing: 16) {
+                creditValue(title: "Trial", value: account?.trialTokens.formatted() ?? "—")
+                creditValue(title: "Purchased", value: account?.tokens.formatted() ?? "—")
+            }
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+            if #available(iOS 26, *) {
+                RoundedRectangle(cornerRadius: 28)
+                    .fill(.clear)
+                    .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 28))
+            } else {
+                RoundedRectangle(cornerRadius: 28)
+                    .fill(.regularMaterial)
+            }
+        }
+    }
+
+    private func creditValue(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.title3)
+                .monospacedDigit()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+struct AccountPromptView: View {
+    @ObservedObject var viewModel: ChatViewModel
+    let onDismiss: () -> Void
+
+    private var isAnonymous: Bool { viewModel.account?.isAnonymous ?? true }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 6) {
                     heading
 
-                    Text(isAnonymous
-                         ? "Link an account to keep your chats when you switch devices."
-                         : (account?.email ?? "Your chats are linked to this account."))
+                    Text("Link an account to keep your chats when you switch devices.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -29,31 +134,14 @@ struct AccountView: View {
                     Image(systemName: "xmark")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(.secondary)
-                        .frame(width: 32, height: 32)
+                        .frame(width: 44, height: 44)
                         .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Dismiss account notice")
             }
 
-            if isAnonymous {
-                HStack(spacing: 8) {
-                    GoogleOAuthButton(isEnabled: !viewModel.isLinkingAccount) {
-                        viewModel.linkGoogleAccount()
-                    }
-
-                    AppleOAuthButton(isEnabled: !viewModel.isLinkingAccount) {
-                        viewModel.linkAppleAccount()
-                    }
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 44)
-                }
-            } else if let account {
-                HStack(spacing: 16) {
-                    creditValue(title: "Trial", value: account.trialTokens.formatted())
-                    creditValue(title: "Purchased", value: account.tokens.formatted())
-                }
-            }
+            AccountLinkingButtons(viewModel: viewModel)
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -71,7 +159,7 @@ struct AccountView: View {
 
     @ViewBuilder
     private var heading: some View {
-        if isAnonymous, let account, account.trialMessages <= 2 {
+        if isAnonymous, let account = viewModel.account, account.trialMessages <= 2 {
             if account.trialMessages > 0 {
                 Text("\(Int(account.trialMessages)) free messages left", comment: "Near-limit notice title showing how many anonymous chat messages remain.")
                     .font(.headline)
@@ -79,28 +167,29 @@ struct AccountView: View {
                 Text("No free messages left")
                     .font(.headline)
             }
-        } else if isAnonymous {
+        } else {
             Text("Keep your chats")
                 .font(.headline)
-        } else {
-            Text(account?.name ?? "Account")
-                .font(.headline)
         }
     }
+}
 
-    @ViewBuilder
-    private func creditValue(title: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(.subheadline.weight(.medium))
-                .monospacedDigit()
+private struct AccountLinkingButtons: View {
+    @ObservedObject var viewModel: ChatViewModel
+
+    var body: some View {
+        HStack(spacing: 8) {
+            GoogleOAuthButton(isEnabled: !viewModel.isLinkingAccount) {
+                viewModel.linkGoogleAccount()
+            }
+
+            AppleOAuthButton(isEnabled: !viewModel.isLinkingAccount) {
+                viewModel.linkAppleAccount()
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 44)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
-
 }
 
 private struct GoogleOAuthButton: View {
