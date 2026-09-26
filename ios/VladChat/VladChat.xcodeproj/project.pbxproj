@@ -33,6 +33,7 @@
 		8C8644934B7800B1A5BE7DB0 /* ChatModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A55061FA5619976004A5D058 /* ChatModels.swift */; };
 		8CF8B8FA8A8DF28A2967F0EF /* ConvexModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 608E17D6E91F466C95ED8B9F /* ConvexModels.swift */; };
 		9933692D39557A3BBC092003 /* VladChatApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8FC30CEB41B68299B76A47B /* VladChatApp.swift */; };
+		8E989642A9371E8C5C36CAB8 /* AttachmentUploadService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A509CDAC4C85623707707EF9 /* AttachmentUploadService.swift */; };
 		A1B2C3D4E5F60718293A4B5C /* InferenceStateGallery.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B5D /* InferenceStateGallery.swift */; };
 		A4CDE519CF14447809110045 /* ChatListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D47BDA3E80D5E451FF8E14C4 /* ChatListView.swift */; };
 		ADBE7C19239C867EFF1724C8 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BD9E62D28947946EFF6C9065 /* Assets.xcassets */; };
@@ -97,6 +98,7 @@
 		A1B2C3D4E5F60718293A4B5D /* InferenceStateGallery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InferenceStateGallery.swift; sourceTree = "<group>"; };
 		A22C39F702AD1937842D4BD6 /* CameraPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPickerView.swift; sourceTree = "<group>"; };
 		A3025EBF89C03C17CFD4FB9C /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
+		A509CDAC4C85623707707EF9 /* AttachmentUploadService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentUploadService.swift; sourceTree = "<group>"; };
 		A55061FA5619976004A5D058 /* ChatModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatModels.swift; sourceTree = "<group>"; };
 		AE2F2F42D1A563F9C5AEC08F /* NetworkMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkMonitor.swift; sourceTree = "<group>"; };
 		AF0406B54D2766858ED20F26 /* MessageTableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageTableView.swift; sourceTree = "<group>"; };
@@ -213,11 +215,20 @@
 				F35D340C8E731DF8F9F67A0C /* Config */,
 				E0E28E323A94BAB6C1936F50 /* Convex */,
 				35415D81DB0B42F4BDBA6B99 /* Models */,
+				E9A761B49C0F417A81D425EA /* Services */,
 				A24B218BD7C01E7D0F7C6DB7 /* SwiftChat */,
 				79982D5223196B71CFAC14F7 /* ViewModels */,
 				129613A2370057455DFD521B /* Views */,
 			);
 			path = Sources;
+			sourceTree = "<group>";
+		};
+		E9A761B49C0F417A81D425EA /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				A509CDAC4C85623707707EF9 /* AttachmentUploadService.swift */,
+			);
+			path = Services;
 			sourceTree = "<group>";
 		};
 		57AA725C10C74BA67551F554 /* Utilities */ = {
@@ -507,6 +518,7 @@
 				F4AD256AE67F212AEC788E52 /* ConvexAnonymousAuthProvider.swift in Sources */,
 				3E37990548DAC6DA0C15236A /* ConvexConcurrency.swift in Sources */,
 				8CF8B8FA8A8DF28A2967F0EF /* ConvexModels.swift in Sources */,
+				8E989642A9371E8C5C36CAB8 /* AttachmentUploadService.swift in Sources */,
 				2B43C7A56F91502AF35237D2 /* DocumentPickerView.swift in Sources */,
 				86DCECDBD54739D5D8D499E0 /* KeychainStore.swift in Sources */,
 				2B9E925ED3F6BCCEE366C8A1 /* LaTeXMarkdownView.swift in Sources */,

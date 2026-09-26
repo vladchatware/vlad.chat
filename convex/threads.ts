@@ -17,6 +17,7 @@ import {
   listUIMessages,
   isStepCount,
   syncStreams,
+  storeFile,
   vMessage,
   vStreamArgs,
 } from "@convex-dev/agent";
@@ -736,6 +737,17 @@ export const generateReply = action({
       requestedThreadId ?? (await getOrCreateDefaultThread(ctx, userId));
     const { thread } = await agent.continueThread(ctx, { threadId, userId });
     const modelPrompt = await mobileModelPrompt(ctx, text, attachments);
+    const promptMessageId = modelPrompt.kind === "attachments"
+      ? (
+          await agent.saveMessage(ctx, {
+            threadId,
+            userId,
+            message: modelPrompt.prompt[0],
+            metadata: { fileIds: modelPrompt.fileIds },
+            skipEmbeddings: true,
+          })
+        ).messageId
+      : undefined;
 
     const result = await thread.streamText(
       {
@@ -743,7 +755,8 @@ export const generateReply = action({
         instructions: notionInstruction
           ? `${chatSystemInstructions}${notionInstruction}`
           : undefined,
-        prompt: modelPrompt,
+        prompt: modelPrompt.prompt,
+        promptMessageId,
         tools,
         stopWhen: isStepCount(8),
         onError: async () => {
@@ -881,10 +894,14 @@ async function mobileModelPrompt(
   ctx: ActionCtx,
   text: string,
   attachments: Array<{ storageId: Id<"_storage">; fileName: string; mimeType: string }>,
-): Promise<string | ModelMessage[]> {
-  if (!attachments.length) return text;
+): Promise<
+  | { kind: "text"; prompt: string }
+  | { kind: "attachments"; prompt: ModelMessage[]; fileIds: string[] }
+> {
+  if (!attachments.length) return { kind: "text", prompt: text };
 
   const content: Exclude<UserContent, string> = text ? [{ type: "text", text }] : [];
+  const fileIds: string[] = [];
   for (const attachment of attachments) {
     const blob = await ctx.storage.get(attachment.storageId);
     if (!blob) {
@@ -893,14 +910,16 @@ async function mobileModelPrompt(
     if (blob.size > 20 * 1024 * 1024) {
       throw new ConvexError(`Attachment '${attachment.fileName}' exceeds 20 MB.`);
     }
-    content.push({
-      type: "file",
-      data: { type: "data", data: new Uint8Array(await blob.arrayBuffer()) },
-      filename: attachment.fileName,
-      mediaType: attachment.mimeType,
-    });
+    const { file, filePart, imagePart } = await storeFile(
+      ctx,
+      components.agent,
+      blob,
+      { filename: attachment.fileName },
+    );
+    content.push(imagePart ?? filePart);
+    fileIds.push(file.fileId);
   }
-  return [{ role: "user", content }];
+  return { kind: "attachments", prompt: [{ role: "user", content }], fileIds };
 }
 
 export const abortReply = mutation({
