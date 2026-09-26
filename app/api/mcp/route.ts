@@ -621,8 +621,8 @@ For database queries, first use notion-get-database to discover available proper
       }
     )
 
-    // V-83 computer use: same tools as lib/computer-use. Product lounge loads
-    // them via Convex getMcpTools → this MCP endpoint (no threads.ts wiring).
+    // V-83 computer use: same tools as lib/computer-use. Convex generateReply
+    // loads them via getMcpTools → this endpoint (no threads.ts tool wiring).
     registerComputerUseMcpTools(server)
   },
   {},

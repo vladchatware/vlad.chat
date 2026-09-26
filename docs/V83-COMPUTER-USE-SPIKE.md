@@ -237,7 +237,7 @@ Exact JSON field: **`viewerUrl`** (alongside `screenshotUrl`).
 ### CTO manual verify
 
 1. Ensure Preview has `COMPUTER_USE_ENABLED=1` + sandbox auth (OIDC or token triplet).
-2. Call `computer_open` with a public URL (via lounge / MCP).
+2. Call `computer_open` with a public URL (via chat / MCP).
 3. Open the returned `viewerUrl` in a browser (HTTPS noVNC).
 4. Confirm Chromium is visible; click/type in the viewer — mouse should move on the desk.
 5. Have the agent `computer_act` — you should see the same page update live.

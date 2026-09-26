@@ -1,6 +1,6 @@
 /**
  * Computer-use agent skill — runtime copy of `skills/computer-use/SKILL.md`.
- * Inject into generateReply / chat / lounge instructions when computer_* tools
+ * Inject into generateReply / chat instructions when computer_* tools
  * are present. Keep this file in sync with the SKILL.md body.
  */
 export const COMPUTER_USE_SKILL_NAME = "computer-use" as const;

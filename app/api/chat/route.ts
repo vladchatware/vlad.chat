@@ -67,8 +67,8 @@ export async function POST(req: Request) {
     }
   }
 
-  // Computer use (V-83): legacy/styleguide path. Product lounge uses Convex
-  // generateReply → getMcpTools → /api/mcp (computer_* registered there).
+  // Computer use (V-83): legacy/styleguide path. Convex generateReply also
+  // receives these tools from the site MCP; The Lounge explicitly filters them.
   // Clients only render tool JSON (screenshotUrl / handoff); no UI-only orchestration.
   let instructions = system
   if (computerUseToolsAvailable()) {

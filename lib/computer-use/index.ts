@@ -1,13 +1,14 @@
 /**
  * Computer use — shared backend agent tools (web + iOS).
  *
- * Product path (lounge / Convex generateReply):
+ * Product path (Convex generateReply):
  *   getMcpTools → GET/POST ${NEXT_PUBLIC_SITE_URL}/api/mcp
  *     → computer_* (when COMPUTER_USE_ENABLED + sandbox creds)
  *       → Vercel Sandbox + Playwright
  *         → screenshotUrl via /api/computer-use/screenshots/:id
  *
- * Legacy / styleguide: POST /api/chat also merges createComputerUseTools.
+ * Legacy web / styleguide: POST /api/chat also merges createComputerUseTools.
+ * The Lounge filters computer_* tools from its site MCP toolset.
  * Clients only render tool results; they do not own sandbox lifecycle.
  */
 export {

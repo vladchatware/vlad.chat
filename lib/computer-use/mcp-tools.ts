@@ -25,8 +25,9 @@ const sessionIdField = z
 
 /**
  * Register computer_* tools on the site MCP server when flag + sandbox creds
- * are available. Convex `getMcpTools` already loads `${SITE_URL}/api/mcp`, so
- * lounge generateReply picks these up with no threads.ts tool wiring.
+ * are available. Convex `getMcpTools` loads `${SITE_URL}/api/mcp`, so
+ * generateReply picks these up with no threads.ts tool wiring. The Lounge
+ * filters computer_* tools from its MCP toolset.
  */
 export function registerComputerUseMcpTools(server: McpToolServer): void {
   if (!computerUseToolsAvailable()) return;

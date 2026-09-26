@@ -136,7 +136,7 @@ function fail(err) {
     '--remote-debugging-port=9222',
     '--remote-debugging-address=127.0.0.1',
     '--user-data-dir=/tmp/cu-profile',
-    '--window-size=1024,720',
+    '--window-size=1280,720',
     '--window-position=0,0',
     '--no-first-run',
     '--no-default-browser-check',

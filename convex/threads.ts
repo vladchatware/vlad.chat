@@ -745,7 +745,8 @@ export const generateReply = action({
     });
     const userNotionToken = await getValidNotionToken(ctx, notionConn);
 
-    // computer_* arrives via site MCP when COMPUTER_USE_ENABLED + sandbox creds;
+    // computer_* arrives via site MCP for the iOS Grok Bot path when
+    // COMPUTER_USE_ENABLED + sandbox creds;
     // pass userId as x-computer-session for sandbox isolation.
     const tools = await getMcpTools(
       searchEnabled,
