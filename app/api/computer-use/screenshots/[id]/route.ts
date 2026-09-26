@@ -10,7 +10,7 @@ export async function GET(
   if (!id || !/^cu_[a-z0-9_]+$/i.test(id)) {
     return new NextResponse("Not found", { status: 404 });
   }
-  const artifact = getScreenshot(id);
+  const artifact = await getScreenshot(id);
   if (!artifact) {
     return new NextResponse("Expired or unknown screenshot", { status: 404 });
   }

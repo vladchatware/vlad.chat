@@ -79,15 +79,15 @@ function failCap(op: ComputerToolResult["op"], err: unknown): ComputerToolResult
   };
 }
 
-function attachShot(
+async function attachShot(
   sessionKey: string,
   png: Buffer | null,
   base: ComputerToolResult,
   budget?: ComputerBudgetStatus,
-): ComputerToolResult {
+): Promise<ComputerToolResult> {
   const withBudget = budget ? { ...base, budget } : base;
   if (!png || png.length === 0) return withBudget;
-  const artifact = putScreenshot(sessionKey, png);
+  const artifact = await putScreenshot(sessionKey, png);
   return {
     ...withBudget,
     screenshotId: artifact.id,
@@ -249,7 +249,7 @@ export async function runComputerToolOp(
           sessionKey,
           { op: "screenshot" },
         );
-        shot = attachShot(
+        shot = await attachShot(
           sessionKey,
           png,
           {

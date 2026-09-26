@@ -108,6 +108,17 @@ export default defineSchema({
     scope: v.optional(v.string()),
   })
     .index("userId", ["userId"]),
+  computerUseScreenshots: defineTable({
+    artifactId: v.string(),
+    storageId: v.id("_storage"),
+    sessionKey: v.string(),
+    contentType: v.union(v.literal("image/jpeg"), v.literal("image/png")),
+    size: v.number(),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+  })
+    .index("byArtifactId", ["artifactId"])
+    .index("byExpiresAt", ["expiresAt"]),
   // Daily ephemeral group chat - cleared every day
   loungeMessages: defineTable({
     userId: v.optional(v.id("users")), // Optional for bot messages
