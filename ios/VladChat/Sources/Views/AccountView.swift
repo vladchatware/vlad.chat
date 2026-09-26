@@ -7,7 +7,7 @@ struct AccountView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
+            VStack(spacing: 20) {
                 AccountDetailsCard(
                     account: viewModel.account,
                     usageSummary: viewModel.usageSummary,
@@ -38,7 +38,7 @@ struct AccountView: View {
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.top, 8)
+            .padding(.top, 16)
         }
         .scrollIndicators(.hidden)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -53,7 +53,7 @@ private struct AccountDetailsCard: View {
     private var isAnonymous: Bool { account?.isAnonymous ?? true }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 24) {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(isAnonymous ? "Anonymous account" : (account?.name ?? "Account"))
@@ -93,7 +93,8 @@ private struct AccountDetailsCard: View {
 
             AccountUsageSection(summary: usageSummary)
         }
-        .padding(20)
+        .padding(.horizontal, 22)
+        .padding(.vertical, 28)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background {
             if #available(iOS 26, *) {
@@ -128,7 +129,7 @@ private struct AccountUsageSection: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Text(usageLabel)
                     .font(.subheadline)
@@ -148,6 +149,19 @@ private struct AccountUsageSection: View {
 
             ProgressView(value: usage, total: 100)
                 .tint(.primary)
+
+            if let summary, !summary.isAnonymous {
+                UsageWindowRow(
+                    title: "5h",
+                    used: summary.fiveHourCreditsUsed,
+                    limit: summary.fiveHourCreditsLimit
+                )
+                UsageWindowRow(
+                    title: "Weekly",
+                    used: summary.weeklyCreditsUsed,
+                    limit: summary.weeklyCreditsLimit
+                )
+            }
 
             if let summary {
                 HStack {
@@ -171,6 +185,40 @@ private struct AccountUsageSection: View {
         return summary.isAnonymous
             ? "Free Message Usage"
             : "Trial Usage"
+    }
+}
+
+private struct UsageWindowRow: View {
+    let title: LocalizedStringResource
+    let used: Double
+    let limit: Double
+
+    private var progress: Double {
+        guard limit > 0 else { return 0 }
+        return min(max(used / limit, 0), 1)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(title)
+                    .font(.subheadline)
+
+                Spacer()
+
+                Text(progress, format: .percent.precision(.fractionLength(0)))
+                    .font(.subheadline.weight(.medium))
+                    .monospacedDigit()
+            }
+
+            Text("\(used.formatted()) / \(limit.formatted()) credits")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+
+            ProgressView(value: progress)
+                .tint(.primary)
+        }
     }
 }
 

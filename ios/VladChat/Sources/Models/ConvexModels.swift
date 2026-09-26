@@ -167,6 +167,10 @@ struct MobileUsageSummary: Decodable, Equatable, Sendable {
     let totalTokensTracked: Double
     let freeMessagesLeft: Double
     let usageTrackedPercent: Double
+    let fiveHourCreditsUsed: Double
+    let fiveHourCreditsLimit: Double
+    let weeklyCreditsUsed: Double
+    let weeklyCreditsLimit: Double
 }
 
 struct GenerationResult: Decodable, Sendable {
