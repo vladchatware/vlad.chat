@@ -11,6 +11,7 @@ import {
 } from "./sandbox";
 import { putScreenshot, screenshotPublicUrl } from "./artifacts";
 import { handoffMessage, looksLikePaymentOrSigning } from "./safety";
+import { computerToolModelOutput } from "./vision";
 import type {
   ComputerAction,
   ComputerBudgetStatus,
@@ -303,6 +304,7 @@ export function createComputerUseTools(ctx: ComputerToolContext = {}) {
       }),
       execute: async ({ url }): Promise<ComputerToolResult> =>
         runComputerToolOp(sessionKey, "open", { url }),
+      toModelOutput: ({ output }) => computerToolModelOutput(output),
     }),
 
     computer_screenshot: tool({
@@ -311,6 +313,7 @@ export function createComputerUseTools(ctx: ComputerToolContext = {}) {
       inputSchema: z.object({}),
       execute: async (): Promise<ComputerToolResult> =>
         runComputerToolOp(sessionKey, "screenshot"),
+      toModelOutput: ({ output }) => computerToolModelOutput(output),
     }),
 
     computer_act: tool({
@@ -321,6 +324,7 @@ export function createComputerUseTools(ctx: ComputerToolContext = {}) {
         runComputerToolOp(sessionKey, "act", {
           action: action as ComputerAction,
         }),
+      toModelOutput: ({ output }) => computerToolModelOutput(output),
     }),
 
     computer_handoff: tool({
@@ -339,6 +343,7 @@ export function createComputerUseTools(ctx: ComputerToolContext = {}) {
       }),
       execute: async ({ reason, message }): Promise<ComputerToolResult> =>
         runComputerToolOp(sessionKey, "handoff", { reason, message }),
+      toModelOutput: ({ output }) => computerToolModelOutput(output),
     }),
 
     computer_end: tool({
@@ -347,6 +352,7 @@ export function createComputerUseTools(ctx: ComputerToolContext = {}) {
       inputSchema: z.object({}),
       execute: async (): Promise<ComputerToolResult> =>
         runComputerToolOp(sessionKey, "end"),
+      toModelOutput: ({ output }) => computerToolModelOutput(output),
     }),
   };
 }

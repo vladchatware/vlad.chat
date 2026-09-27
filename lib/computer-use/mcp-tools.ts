@@ -1,20 +1,15 @@
 import { z } from "zod";
-/** Minimal surface — avoid pulling full MCP Server generics into Next build. */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- MCP Server.tool generics are not usable at the route boundary
-type McpToolServer = { tool: (...args: any[]) => unknown };
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
   computerActionSchema,
   computerUseToolsAvailable,
   runComputerToolOp,
 } from "./tools";
 import { resolveMcpComputerSessionKey } from "./mcp-session";
-import type { ComputerAction, ComputerToolResult } from "./types";
+import type { ComputerAction } from "./types";
+import { computerToolMcpResult } from "./vision";
 
-function mcpResult(result: ComputerToolResult) {
-  return {
-    content: [{ type: "text" as const, text: JSON.stringify(result) }],
-  };
-}
+type McpToolServer = Pick<McpServer, "tool">;
 
 const sessionIdField = z
   .string()
@@ -41,7 +36,7 @@ export function registerComputerUseMcpTools(server: McpToolServer): void {
     },
     async ({ url, sessionId }) => {
       const sessionKey = resolveMcpComputerSessionKey(sessionId);
-      return mcpResult(await runComputerToolOp(sessionKey, "open", { url }));
+      return computerToolMcpResult(await runComputerToolOp(sessionKey, "open", { url }));
     },
   );
 
@@ -53,7 +48,7 @@ export function registerComputerUseMcpTools(server: McpToolServer): void {
     },
     async ({ sessionId }) => {
       const sessionKey = resolveMcpComputerSessionKey(sessionId);
-      return mcpResult(await runComputerToolOp(sessionKey, "screenshot"));
+      return computerToolMcpResult(await runComputerToolOp(sessionKey, "screenshot"));
     },
   );
 
@@ -66,7 +61,7 @@ export function registerComputerUseMcpTools(server: McpToolServer): void {
     },
     async ({ action, sessionId }) => {
       const sessionKey = resolveMcpComputerSessionKey(sessionId);
-      return mcpResult(
+      return computerToolMcpResult(
         await runComputerToolOp(sessionKey, "act", {
           action: action as ComputerAction,
         }),
@@ -84,7 +79,7 @@ export function registerComputerUseMcpTools(server: McpToolServer): void {
     },
     async ({ reason, message, sessionId }) => {
       const sessionKey = resolveMcpComputerSessionKey(sessionId);
-      return mcpResult(
+      return computerToolMcpResult(
         await runComputerToolOp(sessionKey, "handoff", { reason, message }),
       );
     },
@@ -98,7 +93,7 @@ export function registerComputerUseMcpTools(server: McpToolServer): void {
     },
     async ({ sessionId }) => {
       const sessionKey = resolveMcpComputerSessionKey(sessionId);
-      return mcpResult(await runComputerToolOp(sessionKey, "end"));
+      return computerToolMcpResult(await runComputerToolOp(sessionKey, "end"));
     },
   );
 }

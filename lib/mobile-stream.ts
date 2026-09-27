@@ -116,7 +116,13 @@ export function toolOutputText(output: unknown): string {
     return output;
   }
   if (output && typeof output === "object") {
-    const content = (output as { content?: unknown }).content;
+    const envelope = output as { type?: string; content?: unknown; value?: unknown };
+    // MCP returns { content }; Convex's persisted UI projection returns the
+    // canonical content array (or { type: "content", value }). Keep image bytes
+    // out of the bounded native tool preview in every representation.
+    const content = Array.isArray(output)
+      ? output
+      : envelope.type === "content" ? envelope.value : envelope.content;
     if (Array.isArray(content)) {
       const text = content
         .filter(

@@ -29,6 +29,8 @@ Always:
 
 Never chain multiple guessed acts from a stale frame. **After every act, always re-shot before the next decision.**
 
+Screenshot-bearing results include image content for your vision and compact JSON for the client. A screenshot URL alone is not a visible frame. If image delivery fails, call \`computer_screenshot\` and wait for an image before acting again.
+
 ## Coordinates and focus
 
 - Use **window-local coordinates from the shot just taken** (not an older frame, not guessed layout).
