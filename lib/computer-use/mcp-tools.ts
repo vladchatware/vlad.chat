@@ -1,5 +1,4 @@
 import { z } from "zod";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
   computerActionSchema,
   computerUseToolsAvailable,
@@ -9,7 +8,15 @@ import { resolveMcpComputerSessionKey } from "./mcp-session";
 import type { ComputerAction } from "./types";
 import { computerToolMcpResult } from "./vision";
 
-type McpToolServer = Pick<McpServer, "tool">;
+/** Only the Zod 3 registration overload used here, with typed input and output. */
+type McpToolServer = {
+  tool<Shape extends z.ZodRawShape>(
+    name: string,
+    description: string,
+    parameters: Shape,
+    execute: (args: z.infer<z.ZodObject<Shape>>) => Promise<Awaited<ReturnType<typeof computerToolMcpResult>>>,
+  ): void;
+};
 
 const sessionIdField = z
   .string()
