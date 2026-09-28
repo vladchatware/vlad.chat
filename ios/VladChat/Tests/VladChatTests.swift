@@ -184,10 +184,136 @@ struct VladChatTests {
         #expect(parsed?.hasScreenshot == true)
     }
 
+    @Test func computerToolResultPreservesViewerAlongsideMCPMetadata() throws {
+        let viewer = "https://sb-example.vercel.run/vnc.html?autoconnect=1&resize=scale"
+        let result = #"{"ok":true,"op":"open","viewerUrl":"https://sb-example.vercel.run/vnc.html?autoconnect=1&resize=scale"}"#
+        let metadata = #"{"conversation_id":"conversation-example"}"#
+        for texts in [[result, metadata], [metadata, result]] {
+            let blocks = texts.map { ["type": "text", "text": $0] }
+            let payloads = [
+                try JSONEncoder().encode(blocks),
+                try JSONEncoder().encode(["content": blocks]),
+            ]
+            for data in payloads {
+                let parsed = ComputerToolResult.parse(from: String(decoding: data, as: UTF8.self))
+                #expect(parsed?.ok == true)
+                #expect(parsed?.op == .open)
+                #expect(parsed?.viewerUrl == viewer)
+            }
+        }
+    }
+
+    @Test func computerViewerAcceptsOnlyTrustedSandboxRFBURLs() throws {
+        let validURL = "https://sb-example.vercel.run/vladchat.html"
+        let valid = try #require(ComputerToolResult.parse(from: """
+        {"ok":true,"op":"open","nativeViewerUrl":"\(validURL)"}
+        """))
+        #expect(valid.nativeViewerUrl == validURL)
+        #expect(valid.validatedNativeViewerURL?.absoluteString == validURL)
+
+        let untrusted = try #require(ComputerToolResult.parse(from: """
+        {"ok":true,"op":"open","nativeViewerUrl":"https://attacker.example/vladchat.html"}
+        """))
+        #expect(untrusted.validatedNativeViewerURL == nil)
+
+        let mobileValid = MobileComputerViewerSession(
+            sessionId: String(repeating: "c", count: 32),
+            viewerUrl: "https://sb-example.vercel.run/vnc.html",
+            nativeViewerUrl: validURL
+        )
+        #expect(mobileValid.validatedNativeViewerURL?.absoluteString == validURL)
+
+        let mobileInvalid = MobileComputerViewerSession(
+            sessionId: String(repeating: "c", count: 32),
+            viewerUrl: nil,
+            nativeViewerUrl: "https://attacker.example/vladchat.html"
+        )
+        #expect(mobileInvalid.validatedNativeViewerURL == nil)
+    }
+
+    @MainActor
+    @Test func publishedComputerSessionStartsBeforeToolResultArrives() throws {
+        let sessionId = String(repeating: "d", count: 32)
+        let viewerURL = "https://sb-example.vercel.run/vladchat.html"
+        let viewModel = ChatViewModel()
+        defer { viewModel.computerUseController.stop() }
+
+        let mobileChat = MobileChat(
+            threadId: "thread-active",
+            title: "Active thread",
+            threads: nil,
+            messages: [],
+            account: nil,
+            remainingMessages: nil,
+            computerViewer: MobileComputerViewerSession(
+                sessionId: sessionId,
+                viewerUrl: "https://sb-example.vercel.run/vnc.html",
+                nativeViewerUrl: viewerURL
+            )
+        )
+
+        viewModel.updateComputerUseSession(from: mobileChat, isActive: true)
+
+        #expect(viewModel.computerUseController.state == "connecting")
+        #expect(viewModel.computerUseController.presentation == .floating)
+    }
+
+    @MainActor
+    @Test func completedComputerToolCanResumeItsStillLiveSession() throws {
+        let sessionId = String(repeating: "f", count: 32)
+        let viewerURL = "https://sb-example.vercel.run/vladchat.html"
+        let output = """
+        {"ok":true,"op":"open","nativeViewerUrl":"\(viewerURL)"}
+        """
+        let openTool = ResponseTool(
+            id: "open-call",
+            name: "computer_open",
+            status: .completed,
+            output: output,
+            title: nil,
+            inputSummary: nil,
+            outputTruncated: nil,
+            errorText: nil
+        )
+        let assistantMessage = ChatMessage(
+            id: "completed-message",
+            role: "assistant",
+            text: "Computer session opened.",
+            status: "completed",
+            order: 1,
+            createdAt: 1,
+            response: ResponseActivity(phase: .complete, tools: [openTool]),
+            errorText: nil,
+            attachments: []
+        )
+        let viewModel = ChatViewModel()
+        defer { viewModel.computerUseController.stop() }
+
+        let mobileChat = MobileChat(
+            threadId: "thread-existing",
+            title: "Existing thread",
+            threads: nil,
+            messages: [assistantMessage],
+            account: nil,
+            remainingMessages: nil,
+            computerViewer: MobileComputerViewerSession(
+                sessionId: sessionId,
+                viewerUrl: "https://sb-example.vercel.run/vnc.html",
+                nativeViewerUrl: viewerURL
+            )
+        )
+
+        viewModel.updateComputerUseSession(from: mobileChat, isActive: false)
+
+        #expect(viewModel.computerUseController.state == "connecting")
+        #expect(viewModel.computerUseController.presentation == .floating)
+        #expect(viewModel.computerUseController.canControl)
+    }
+
     @Test func computerToolResultParsesJSONEncodedString() {
         // Double-encoded: a JSON string whose value is the ComputerToolResult JSON.
         let inner = #"{"ok":true,"op":"screenshot","screenshotUrl":"https://cdn.example/s.png"}"#
-        let encodedData = try! JSONSerialization.data(withJSONObject: inner)
+        let encodedData = try! JSONEncoder().encode(inner)
         let encoded = String(data: encodedData, encoding: .utf8)!
         let parsed = ComputerToolResult.parse(from: encoded)
         #expect(parsed?.op == .screenshot)
@@ -213,6 +339,45 @@ struct VladChatTests {
 
         let future = ComputerToolResult.parse(from: #"{"ok":false,"op":"act","code":"future_code","error":"x"}"#)
         #expect(future?.code == .unknown)
+    }
+
+    @Test func computerToolStatusUsesOperationOutcome() throws {
+        let failure = try #require(ComputerToolResult.parse(from:
+            #"{"ok":false,"op":"act","code":"runtime","error":"Click failed."}"#
+        ))
+        let failedStatus = ComputerUseDisplayStatus(toolStatus: .completed, result: failure)
+        #expect(failedStatus == .failed)
+        #expect(failedStatus.label == "Failed")
+        #expect(failedStatus.needsAttention)
+
+        let success = try #require(ComputerToolResult.parse(from: #"{"ok":true,"op":"act"}"#))
+        #expect(ComputerUseDisplayStatus(toolStatus: .completed, result: success) == .done)
+        #expect(ComputerUseDisplayStatus(toolStatus: .failed, result: success) == .failed)
+    }
+
+    @Test func computerToolHandoffNeedsUserRegardlessOfCompletion() throws {
+        for ok in [true, false] {
+            let result = try #require(ComputerToolResult.parse(from: """
+            {"ok":\(ok),"op":"handoff","handoff":{"type":"computer_handoff","reason":"2fa","message":"Enter your verification code.","requiresUser":true}}
+            """))
+            for transportStatus in [ResponseTool.Status.completed, .failed] {
+                let status = ComputerUseDisplayStatus(toolStatus: transportStatus, result: result)
+                #expect(status == .needsUser)
+                #expect(status.label == "Needs you")
+                #expect(status.needsAttention)
+            }
+        }
+    }
+
+    @Test func computerToolStatusPreservesLifecycleWithoutResult() {
+        let statuses: [(ResponseTool.Status, ComputerUseDisplayStatus)] = [
+            (.pending, .waiting), (.running, .running), (.completed, .done),
+            (.failed, .failed), (.stopped, .stopped), (.unknown, .unknown),
+        ]
+        for (transportStatus, expected) in statuses {
+            #expect(ComputerUseDisplayStatus(toolStatus: transportStatus, result: nil) == expected)
+        }
+        #expect(ComputerUseDisplayStatus(toolStatus: nil, result: nil) == .unknown)
     }
 
     @Test func computerToolNamesAreRecognizedWithoutOutput() {
@@ -256,4 +421,3 @@ struct VladChatTests {
         #expect(result.op == .handoff)
     }
 }
-

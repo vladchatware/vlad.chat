@@ -24,7 +24,9 @@ export { registerComputerUseMcpTools } from "./mcp-tools";
 export {
   computerSessionAls,
   computerSessionFromRequest,
+  computerThreadFromRequest,
   resolveMcpComputerSessionKey,
+  resolveMcpComputerThreadId,
 } from "./mcp-session";
 export {
   computerUseEnabled,

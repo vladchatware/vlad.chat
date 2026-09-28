@@ -10,7 +10,7 @@
 //  - MCP content wrapper: {"content":[{"type":"text","text":"<json>"}]}
 //  - MCP content array alone: [{"type":"text","text":"<json>"}]
 //  - JSON-encoded string of either of the above
-//  Clients only render; no sandbox orchestration on device. No VNC (V-84).
+//  Clients render tool output and live viewer URLs; sandbox orchestration stays server-side.
 //
 
 import Foundation
@@ -132,6 +132,48 @@ struct ComputerBudgetStatus: Codable, Equatable, Sendable {
     let ttlMs: Int
     let elapsedMs: Int
     let note: String
+
+    var displaySummary: String {
+        "\(stepsUsed)/\(maxSteps) steps · \(stepsRemaining) left"
+    }
+}
+
+/// A completed tool call can still return a failed operation or a handoff.
+enum ComputerUseDisplayStatus: Equatable, Sendable {
+    case waiting, running, done, failed, stopped, needsUser, unknown
+
+    init(toolStatus: ResponseTool.Status?, result: ComputerToolResult?) {
+        if result?.hasHandoff == true {
+            self = .needsUser
+        } else if result?.ok == false || toolStatus == .failed {
+            self = .failed
+        } else {
+            switch toolStatus {
+            case .pending?: self = .waiting
+            case .running?: self = .running
+            case .completed?: self = .done
+            case .stopped?: self = .stopped
+            case .failed?: self = .failed
+            case .unknown?, nil: self = .unknown
+            }
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .waiting: return "Waiting"
+        case .running: return "Running"
+        case .done: return "Done"
+        case .failed: return "Failed"
+        case .stopped: return "Stopped"
+        case .needsUser: return "Needs you"
+        case .unknown: return "Unknown"
+        }
+    }
+
+    var needsAttention: Bool {
+        self == .failed || self == .needsUser
+    }
 }
 
 /// Shared tool-result payload from `computer_*` tools (web + iOS).
@@ -148,6 +190,8 @@ struct ComputerToolResult: Codable, Equatable, Sendable {
     let height: Int?
     let handoff: ComputerHandoffEvent?
     let sandboxName: String?
+    let viewerUrl: String?
+    let nativeViewerUrl: String?
     let error: String?
     let code: ComputerErrorCode?
     let budget: ComputerBudgetStatus?
@@ -190,8 +234,8 @@ extension ComputerToolResult {
     /// Best-effort parse of a tool `output` string.
     /// Accepts plain `ComputerToolResult` JSON, MCP `{content:[{type:text,text}]}`
     /// wrappers, content arrays, or a JSON-encoded string of any of those.
-    static func parse(from output: String?) -> ComputerToolResult? {
-        guard let output else { return nil }
+    static func parse(from output: String?, depth: Int = 0) -> ComputerToolResult? {
+        guard depth < 8, let output else { return nil }
         let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
@@ -203,18 +247,18 @@ extension ComputerToolResult {
         }
 
         guard let data = candidate.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) else {
+              let json = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) else {
             return nil
         }
-        return parse(jsonValue: json, depth: 0)
+        return parse(jsonValue: json, depth: depth)
     }
 
     /// Parse from an already-deserialized JSON value (object / array / string).
     static func parse(jsonValue: Any, depth: Int = 0) -> ComputerToolResult? {
-        guard depth < 4 else { return nil }
+        guard depth < 8 else { return nil }
 
         if let string = jsonValue as? String {
-            return parse(from: string)
+            return parse(from: string, depth: depth + 1)
         }
 
         if let dict = jsonValue as? [String: Any] {
@@ -223,13 +267,22 @@ extension ComputerToolResult {
                let result = try? JSONDecoder().decode(ComputerToolResult.self, from: data) {
                 return result
             }
-            if let text = mcpTextPayload(from: dict) {
-                return parse(from: text) ?? parse(jsonValue: text, depth: depth + 1)
+            if let content = dict["content"] as? [Any] {
+                return parse(jsonValue: content, depth: depth + 1)
             }
         }
 
-        if let array = jsonValue as? [Any], let text = mcpTextFromContentArray(array) {
-            return parse(from: text) ?? parse(jsonValue: text, depth: depth + 1)
+        if let array = jsonValue as? [Any] {
+            // MCP may append a separate conversation-metadata text block.
+            // Each block is an independent JSON document, not a JSON fragment.
+            for item in array {
+                guard let part = item as? [String: Any],
+                      part["type"] == nil || part["type"] as? String == "text",
+                      let text = part["text"] as? String else { continue }
+                if let result = parse(from: text, depth: depth + 1) {
+                    return result
+                }
+            }
         }
 
         return nil
@@ -260,25 +313,6 @@ extension ComputerToolResult {
         dict["ok"] != nil && dict["op"] != nil
     }
 
-    /// Extract joined text from MCP `{ content: [{ type: "text", text: "..." }, ...] }`.
-    private static func mcpTextPayload(from dict: [String: Any]) -> String? {
-        guard let content = dict["content"] else { return nil }
-        if let array = content as? [Any] {
-            return mcpTextFromContentArray(array)
-        }
-        return nil
-    }
-
-    private static func mcpTextFromContentArray(_ array: [Any]) -> String? {
-        let texts: [String] = array.compactMap { item in
-            guard let part = item as? [String: Any] else { return nil }
-            // Prefer explicit text parts; also accept bare `{text: "..."}`.
-            if let type = part["type"] as? String, type != "text" { return nil }
-            return part["text"] as? String
-        }
-        let joined = texts.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-        return joined.isEmpty ? nil : joined
-    }
 }
 
 extension ResponseTool {

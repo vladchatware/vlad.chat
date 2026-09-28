@@ -11,6 +11,28 @@ const MAX_SCREENSHOT_BYTES = 1024 * 1024;
 const SCREENSHOT_TTL_MS = 30 * 60 * 1000;
 const ARTIFACT_ID = /^cu_[a-z0-9_]{8,80}$/i;
 const CONTENT_TYPES = new Set(["image/jpeg", "image/png"]);
+const LIVE_SESSION_ID = /^[a-f0-9]{32}$/;
+
+export function getActiveLiveSessionForThread(
+  session: {
+    sessionId: string;
+    threadId?: string;
+    viewerUrl?: string;
+    nativeViewerUrl?: string;
+    expiresAt: number;
+  } | null | undefined,
+  threadId: string,
+  now = Date.now(),
+) {
+  if (!session || session.threadId !== threadId || session.expiresAt <= now) {
+    return null;
+  }
+  return {
+    sessionId: session.sessionId,
+    ...(session.viewerUrl === undefined ? {} : { viewerUrl: session.viewerUrl }),
+    ...(session.nativeViewerUrl === undefined ? {} : { nativeViewerUrl: session.nativeViewerUrl }),
+  };
+}
 
 function matchesImageContentType(
   bytes: Uint8Array,
@@ -74,6 +96,157 @@ export const save = internalMutation({
     return null;
   },
 });
+
+export const upsertLiveSession = internalMutation({
+  args: {
+    sessionKey: v.string(),
+    sessionId: v.string(),
+    threadId: v.optional(v.string()),
+    viewerUrl: v.optional(v.string()),
+    nativeViewerUrl: v.optional(v.string()),
+    updatedAt: v.number(),
+    expiresAt: v.number(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("computerUseSessions")
+      .withIndex("bySessionKey", (q) => q.eq("sessionKey", args.sessionKey))
+      .unique();
+    if (existing) await ctx.db.delete(existing._id);
+    await ctx.db.insert("computerUseSessions", args);
+    return null;
+  },
+});
+
+export const liveSessionByKey = internalQuery({
+  args: { sessionKey: v.string() },
+  returns: v.union(
+    v.object({
+      _id: v.id("computerUseSessions"),
+      _creationTime: v.number(),
+      sessionKey: v.string(),
+      sessionId: v.string(),
+      threadId: v.optional(v.string()),
+      viewerUrl: v.optional(v.string()),
+      nativeViewerUrl: v.optional(v.string()),
+      videoUrl: v.optional(v.string()),
+      updatedAt: v.number(),
+      expiresAt: v.number(),
+    }),
+    v.null(),
+  ),
+  handler: async (ctx, { sessionKey }) =>
+    ctx.db
+      .query("computerUseSessions")
+      .withIndex("bySessionKey", (q) => q.eq("sessionKey", sessionKey))
+      .unique(),
+});
+
+export const cleanupExpiredLiveSessions = internalMutation({
+  args: {},
+  returns: v.null(),
+  handler: async (ctx) => {
+    const expired = await ctx.db
+      .query("computerUseSessions")
+      .withIndex("byExpiresAt", (q) => q.lt("expiresAt", Date.now()))
+      .take(100);
+    for (const session of expired) await ctx.db.delete(session._id);
+    if (expired.length === 100) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.computerUseScreenshots.cleanupExpiredLiveSessions,
+        {},
+      );
+    }
+    return null;
+  },
+});
+
+export const publish = httpAction(async (ctx, request) => {
+  if (!isAuthorized(request)) return json({ error: "Unauthorized" }, 401);
+
+  const body: unknown = await request.json().catch(() => null);
+  if (!body || typeof body !== "object") {
+    return json({ error: "Invalid live session payload" }, 400);
+  }
+  const payload = body as Record<string, unknown>;
+  const { sessionKey, sessionId, status, viewerUrl, nativeViewerUrl } = payload;
+  if (
+    typeof sessionKey !== "string" ||
+    !sessionKey.trim() ||
+    sessionKey.length > 128 ||
+    typeof sessionId !== "string" ||
+    !LIVE_SESSION_ID.test(sessionId) ||
+    (payload.threadId !== undefined &&
+      (typeof payload.threadId !== "string" || payload.threadId.length > 128)) ||
+    (status !== "active" && status !== "ended")
+  ) {
+    return json({ error: "Invalid live session metadata" }, 400);
+  }
+
+  if (status === "ended") {
+    const existing = await ctx.runQuery(internal.computerUseScreenshots.liveSessionByKey, {
+      sessionKey,
+    });
+    if (existing?.sessionId === sessionId) {
+      await ctx.runMutation(internal.computerUseScreenshots.cleanupSessionByKey, {
+        sessionKey,
+        sessionId,
+      });
+    }
+    return json({ ok: true });
+  }
+
+  if (
+    viewerUrl !== undefined &&
+    (typeof viewerUrl !== "string" || !isValidSandboxUrl(viewerUrl, /\/[^/]*vnc[^/]*\.html$/i))
+  ) {
+    return json({ error: "Invalid live viewer URL" }, 400);
+  }
+  if (
+    nativeViewerUrl !== undefined &&
+    (typeof nativeViewerUrl !== "string" || !isValidSandboxUrl(nativeViewerUrl, /\/vladchat\.html$/))
+  ) {
+    return json({ error: "Invalid native viewer URL" }, 400);
+  }
+
+  const now = Date.now();
+  await ctx.runMutation(internal.computerUseScreenshots.upsertLiveSession, {
+    sessionKey,
+    sessionId,
+    ...(typeof payload.threadId === "string" ? { threadId: payload.threadId } : {}),
+    ...(typeof viewerUrl === "string" ? { viewerUrl } : {}),
+    ...(typeof nativeViewerUrl === "string" ? { nativeViewerUrl } : {}),
+    updatedAt: now,
+    expiresAt: now + SCREENSHOT_TTL_MS,
+  });
+  return json({ ok: true });
+});
+
+export const cleanupSessionByKey = internalMutation({
+  args: { sessionKey: v.string(), sessionId: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { sessionKey, sessionId }) => {
+    const existing = await ctx.db
+      .query("computerUseSessions")
+      .withIndex("bySessionKey", (q) => q.eq("sessionKey", sessionKey))
+      .unique();
+    if (existing?.sessionId === sessionId) await ctx.db.delete(existing._id);
+    return null;
+  },
+});
+
+function isValidSandboxUrl(value: string, pathPattern: RegExp): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" &&
+      url.hostname.endsWith(".vercel.run") &&
+      pathPattern.test(url.pathname);
+  } catch {
+    return false;
+  }
+}
 
 export const byArtifactId = internalQuery({
   args: { artifactId: v.string() },

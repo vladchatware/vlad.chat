@@ -177,6 +177,24 @@ struct MobileChat: Decodable, Equatable, Sendable {
     let messages: [ChatMessage]
     let account: MobileAccount?
     let remainingMessages: Double?
+    let computerViewer: MobileComputerViewerSession?
+}
+
+struct MobileComputerViewerSession: Decodable, Equatable, Sendable {
+    let sessionId: String
+    let viewerUrl: String?
+    let nativeViewerUrl: String?
+
+
+    var validatedNativeViewerURL: URL? {
+        guard let url = URL(string: nativeViewerUrl ?? ""),
+              url.scheme == "https",
+              url.host?.hasSuffix(".vercel.run") == true,
+              url.path == "/vladchat.html" else {
+            return nil
+        }
+        return url
+    }
 }
 
 struct MobileThread: Decodable, Identifiable, Equatable, Sendable {

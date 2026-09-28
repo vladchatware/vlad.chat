@@ -128,10 +128,10 @@ Short-lived, gated sessions — not an always-on desktop. Limits are normal ops 
 
 | Cap | Value | Constant |
 |---|---|---|
-| Max TTL | **8 min** | `COMPUTER_USE_MAX_TTL_MS` |
+| Max TTL | **30 min** | `COMPUTER_USE_MAX_TTL_MS` |
 | Max steps | **20 / session** | `COMPUTER_USE_MAX_STEPS` |
 | Concurrent | **1 / user** | `COMPUTER_USE_MAX_CONCURRENT` |
-| Idle reclaim | **90 s** | `COMPUTER_USE_IDLE_MS` |
+| Idle reclaim | **30 min** | `COMPUTER_USE_IDLE_MS` |
 | Default | **OFF** | `COMPUTER_USE_ENABLED` unset |
 | Stream | screenshots + **live noVNC** (`viewerUrl`) | V-84 acceptance gate |
 | Fail closed | `ok:false` + `code` | `budget_exceeded` \| `ttl_exceeded` \| `step_limit` |
@@ -160,7 +160,7 @@ Cold Playwright install is expensive in wall time — prefer a warm `COMPUTER_US
 | MCP wiring | `app/api/mcp/route.ts` registers computer_* when flag+creds; Convex getMcpTools loads them |
 | Legacy chat | `app/api/chat/route.ts` still merges tools (styleguide); product path is MCP |
 | Dep | `@vercel/sandbox` added to `package.json` (install on next `bun install`) |
-| Hard caps | 8 min TTL / 20 steps / 1 concurrent / 90s idle — fail closed |
+| Hard caps | 30 min TTL / 20 steps / 1 concurrent — fail closed |
 | Payments | Fail-closed; `computer_handoff` for payment/signing/SSO/2FA/captcha |
 
 ### Draft gaps (intentional)

@@ -6,20 +6,19 @@ import {
   INSTALL_DESK_SH,
   INSTALL_CUA_SH,
   START_DESK_SH,
-  COMPUTER_USE_SNAPSHOT_VERSION,
-  COMPUTER_USE_SNAPSHOT_MARKER,
   LAUNCH_CHROME_CJS,
   RUNNER_CJS,
   SHOOTER_CJS,
 } from "./playwright-scripts";
+import { NATIVE_VIEWER_HTML } from "./native-viewer-script";
 import { CUA_BRIDGE_CJS } from "./cua-bridge-script";
-import { SOFT_CURSOR_PY } from "./soft-cursor-script";
+import { publishLiveComputerSession } from "./artifacts";
 
 /** Session operational limits — tune here; fail closed when hit. */
-export const COMPUTER_USE_MAX_TTL_MS = 8 * 60 * 1000; // 8 min wall clock
+export const COMPUTER_USE_MAX_TTL_MS = 30 * 60 * 1000; // 30 min for a user-visible live desk
 export const COMPUTER_USE_MAX_STEPS = 20; // per session
 export const COMPUTER_USE_MAX_CONCURRENT = 1; // per user/session key
-export const COMPUTER_USE_IDLE_MS = 90 * 1000; // reclaim if idle
+export const COMPUTER_USE_IDLE_MS = COMPUTER_USE_MAX_TTL_MS; // keep passive floating preview alive
 /** Sandbox create timeout must not exceed TTL. */
 const SANDBOX_CREATE_TIMEOUT_MS = COMPUTER_USE_MAX_TTL_MS;
 
@@ -99,7 +98,10 @@ function credFields(params: Record<string, unknown>) {
   return {};
 }
 
-export async function getOrCreateSessionSandbox(sessionKey: string): Promise<{
+export async function getOrCreateSessionSandbox(
+  sessionKey: string,
+  threadId?: string,
+): Promise<{
   sandbox: Sandbox;
   session: ComputerSession;
 }> {
@@ -112,29 +114,23 @@ export async function getOrCreateSessionSandbox(sessionKey: string): Promise<{
       : sandboxNameFor(sessionKey));
   const params = { ...createParams(), name };
 
-  let sandbox: Sandbox;
-  try {
-    sandbox = await Sandbox.create(
-      params as Parameters<typeof Sandbox.create>[0],
-    );
-  } catch (createError) {
-    try {
-      sandbox = await Sandbox.get({
-        name,
-        ...credFields(params),
-      } as Parameters<typeof Sandbox.get>[0]);
-    } catch {
-      throw createError;
-    }
-  }
+  // A named sandbox can outlive the snapshot it was created from. `getOrCreate`
+  // handles Vercel's `snapshot_not_found` response by deleting that stale sandbox
+  // and creating a fresh one; a create/get fallback leaves it stuck forever.
+  const sandbox = await Sandbox.getOrCreate(
+    params as Parameters<typeof Sandbox.getOrCreate>[0],
+  );
 
   const session: ComputerSession = {
     sessionKey,
+    sessionId: existing?.sessionId ?? createHash("sha256").update(name).digest("hex").slice(0, 32),
+    threadId: threadId ?? existing?.threadId,
     sandboxName: name,
     createdAt: existing?.createdAt ?? Date.now(),
     lastUsedAt: Date.now(),
     stepCount: existing?.stepCount ?? 0,
     viewerUrl: existing?.viewerUrl,
+    nativeViewerUrl: existing?.nativeViewerUrl,
     deskReady: existing?.deskReady,
   };
   sessions.set(sessionKey, session);
@@ -143,8 +139,7 @@ export async function getOrCreateSessionSandbox(sessionKey: string): Promise<{
     cmd: "bash",
     args: [
       "-lc",
-      `if [ "$(cat "$HOME/${COMPUTER_USE_SNAPSHOT_MARKER}" 2>/dev/null)" = "${COMPUTER_USE_SNAPSHOT_VERSION}" ] `
-        + "&& [ -d /tmp/cu-npm/node_modules/playwright ] "
+      "if [ -d /tmp/cu-npm/node_modules/playwright ] "
         + "&& ls /tmp/cu-browsers/chromium-*/chrome-linux*/chrome >/dev/null 2>&1 "
         + "&& command -v Xvfb >/dev/null 2>&1 "
         + "&& command -v x11vnc >/dev/null 2>&1 "
@@ -156,7 +151,7 @@ export async function getOrCreateSessionSandbox(sessionKey: string): Promise<{
   const setupReady = (await setupCheck.stdout()).trim().endsWith("ready");
   if (configuredSnapshot && !setupReady) {
     throw new Error(
-      `Configured computer-use snapshot is missing setup ${COMPUTER_USE_SNAPSHOT_VERSION}; recreate it before using COMPUTER_USE_SNAPSHOT_ID.`,
+      "Configured computer-use snapshot is missing required desktop dependencies; recreate it before using COMPUTER_USE_SNAPSHOT_ID.",
     );
   }
   if (!setupReady) {
@@ -180,18 +175,6 @@ export async function getOrCreateSessionSandbox(sessionKey: string): Promise<{
     if (deskInstall.exitCode !== 0) {
       throw new Error(
         `Desk install failed: ${(await deskInstall.stderr()) || (await deskInstall.stdout())}`,
-      );
-    }
-    const markSetup = await sandbox.runCommand({
-      cmd: "bash",
-      args: [
-        "-lc",
-        `mkdir -p "$HOME/.local/share/vladchat" && printf '%s' '${COMPUTER_USE_SNAPSHOT_VERSION}' > "$HOME/${COMPUTER_USE_SNAPSHOT_MARKER}"`,
-      ],
-    });
-    if (markSetup.exitCode !== 0) {
-      throw new Error(
-        `Could not mark computer-use setup ready: ${(await markSetup.stderr()) || (await markSetup.stdout())}`,
       );
     }
   }
@@ -225,7 +208,7 @@ export async function getOrCreateSessionSandbox(sessionKey: string): Promise<{
 
   // Live desk: Xvfb + x11vnc + noVNC + headed Chromium (CDP :9222) so humans can VNC-control.
   // Re-run START when in-memory deskReady but CDP died (warm lambda / crashed chrome).
-  let deskOk = Boolean(session.deskReady && session.viewerUrl);
+  let deskOk = Boolean(session.deskReady && session.viewerUrl && session.nativeViewerUrl);
   if (deskOk) {
     const cdp = await sandbox.runCommand({
       cmd: "bash",
@@ -242,7 +225,7 @@ export async function getOrCreateSessionSandbox(sessionKey: string): Promise<{
       { path: "/tmp/cu/runner.cjs", content: Buffer.from(RUNNER_CJS) },
       { path: "/tmp/cu/shooter.cjs", content: Buffer.from(SHOOTER_CJS) },
       { path: "/tmp/cu/cua-bridge.cjs", content: Buffer.from(CUA_BRIDGE_CJS) },
-      { path: "/tmp/cu/soft-cursor.py", content: Buffer.from(SOFT_CURSOR_PY) },
+      { path: "/tmp/cu/native-viewer.html", content: Buffer.from(NATIVE_VIEWER_HTML) },
     ]);
     const deskStart = await sandbox.runCommand({
       cmd: "bash",
@@ -255,16 +238,14 @@ export async function getOrCreateSessionSandbox(sessionKey: string): Promise<{
         `Desk start failed (exit ${String(deskStart.exitCode)}): ${details || "no stderr or stdout"}`,
       );
     }
-    try {
-      if (typeof (sandbox as { update?: (p: { ports: number[] }) => Promise<unknown> }).update === "function") {
-        await (sandbox as { update: (p: { ports: number[] }) => Promise<unknown> }).update({
-          ports: [6080],
-        });
-      }
-    } catch {
-      /* port may already be mapped from create */
+    const routeUpdateSandbox = sandbox as Sandbox & {
+      update?: (params: { ports: number[] }) => Promise<unknown>;
+    };
+    if (typeof routeUpdateSandbox.update === "function") {
+      await routeUpdateSandbox.update({ ports: [6080] });
     }
     let viewerUrl: string | undefined;
+    let nativeViewerUrl: string | undefined;
     try {
       const base = sandbox.domain(6080);
       const root = base.replace(/\/$/, "");
@@ -277,12 +258,14 @@ export async function getOrCreateSessionSandbox(sessionKey: string): Promise<{
         /* default vnc.html */
       }
       viewerUrl = `${root}/${entry}?autoconnect=1&resize=scale`;
+      nativeViewerUrl = `${root}/vladchat.html`;
     } catch (err) {
       throw new Error(
         `Sandbox port 6080 not routed for noVNC: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
     session.viewerUrl = viewerUrl;
+    session.nativeViewerUrl = nativeViewerUrl;
     session.deskReady = true;
     sessions.set(sessionKey, session);
   }
@@ -291,8 +274,24 @@ export async function getOrCreateSessionSandbox(sessionKey: string): Promise<{
     { path: "/tmp/cu/runner.cjs", content: Buffer.from(RUNNER_CJS) },
     { path: "/tmp/cu/shooter.cjs", content: Buffer.from(SHOOTER_CJS) },
     { path: "/tmp/cu/cua-bridge.cjs", content: Buffer.from(CUA_BRIDGE_CJS) },
-    { path: "/tmp/cu/soft-cursor.py", content: Buffer.from(SOFT_CURSOR_PY) },
   ]);
+
+  session.sessionId = createHash("sha256")
+    .update(`${sessionKey}:${session.sandboxName}:${session.createdAt}`)
+    .digest("hex")
+    .slice(0, 32);
+  sessions.set(sessionKey, session);
+  try {
+    await publishLiveComputerSession(sessionKey, session.sessionId, {
+      viewerUrl: session.viewerUrl,
+      nativeViewerUrl: session.nativeViewerUrl,
+      ...(session.threadId === undefined ? {} : { threadId: session.threadId }),
+    });
+  } catch (error) {
+    console.warn(
+      `Could not publish live computer session: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 
   return { sandbox, session };
 }
@@ -305,7 +304,7 @@ export function budgetStatus(session: ComputerSession) {
     maxSteps: COMPUTER_USE_MAX_STEPS,
     ttlMs: COMPUTER_USE_MAX_TTL_MS,
     elapsedMs,
-    note: "Computer-use sessions are short-lived. Caps: 8 min / 20 steps / 1 sandbox.",
+    note: "Computer-use sessions are short-lived. Caps: 30 min / 20 steps / 1 sandbox.",
   };
 }
 
@@ -320,13 +319,7 @@ function assertSessionCaps(sessionKey: string, session: ComputerSession | undefi
   if (now - session.createdAt > COMPUTER_USE_MAX_TTL_MS) {
     throw new ComputerUseCapError(
       "ttl_exceeded",
-      `Computer-use session exceeded ${COMPUTER_USE_MAX_TTL_MS / 60000} min TTL. Call computer_end and start a new short task.`,
-    );
-  }
-  if (now - session.lastUsedAt > COMPUTER_USE_IDLE_MS) {
-    throw new ComputerUseCapError(
-      "budget_exceeded",
-      `Computer-use idle > ${COMPUTER_USE_IDLE_MS / 1000}s — sandbox reclaimed. Open again if needed.`,
+      `Computer-use session exceeded ${COMPUTER_USE_MAX_TTL_MS / 60000} min TTL. Call computer_open to start a fresh session.`,
     );
   }
   if (session.stepCount >= COMPUTER_USE_MAX_STEPS) {
@@ -348,25 +341,28 @@ export async function reclaimIfIdle(sessionKey: string): Promise<boolean> {
 export async function runComputerOp(
   sessionKey: string,
   cmd: Record<string, unknown>,
+  threadId?: string,
 ): Promise<{
   meta: Record<string, unknown>;
   png: Buffer | null;
   sandboxName: string;
   viewerUrl?: string;
+  nativeViewerUrl?: string;
   budget: ReturnType<typeof budgetStatus>;
 }> {
-  // Idle reclaim before create/reuse (fail closed — no silent burn).
   const prior = sessions.get(sessionKey);
-  if (prior && Date.now() - prior.lastUsedAt > COMPUTER_USE_IDLE_MS) {
-    await endComputerSession(sessionKey);
-    throw new ComputerUseCapError(
-      "budget_exceeded",
-      `Computer-use idle > ${COMPUTER_USE_IDLE_MS / 1000}s — sandbox reclaimed. Open again for a short task.`,
-    );
+  if (prior) {
+    try {
+      assertSessionCaps(sessionKey, prior);
+    } catch (error) {
+      if (cmd.op !== "open" || !(error instanceof ComputerUseCapError)) throw error;
+      // A requested open is the recovery path after expiry or a spent step cap.
+      // Reclaim once, then create a fresh viewer in this same tool call.
+      await endComputerSession(sessionKey);
+    }
   }
-  if (prior) assertSessionCaps(sessionKey, prior);
 
-  const { sandbox, session } = await getOrCreateSessionSandbox(sessionKey);
+  const { sandbox, session } = await getOrCreateSessionSandbox(sessionKey, threadId);
   assertSessionCaps(sessionKey, session);
 
   async function readShotMeta(): Promise<{
@@ -459,6 +455,7 @@ export async function runComputerOp(
       png,
       sandboxName: session.sandboxName,
       viewerUrl: session.viewerUrl,
+      nativeViewerUrl: session.nativeViewerUrl,
       budget: budgetStatus(session),
     };
   }
@@ -481,6 +478,7 @@ export async function runComputerOp(
         args: [
           "-lc",
           cuEnv
+            + "rm -f /tmp/cu/meta.json; "
             + "export PLAYWRIGHT_BROWSERS_PATH=/tmp/cu-browsers NODE_OPTIONS='--max-old-space-size=192'; "
             + `node /tmp/cu/runner.cjs '${payload}'`,
         ],
@@ -490,7 +488,7 @@ export async function runComputerOp(
         const errBuf = await sandbox.readFileToBuffer({ path: "/tmp/cu/meta.json" });
         const errMeta = errBuf ? JSON.parse(errBuf.toString("utf8")) : null;
         const base =
-          errMeta?.error || (await run.stderr()) || `runner exit ${run.exitCode}`;
+          (await run.stderr()) || errMeta?.error || `runner exit ${run.exitCode}`;
         const viewer = session.viewerUrl ? ` viewerUrl=${session.viewerUrl}` : "";
         throw new Error(`${base}${viewer}`);
       }
@@ -522,6 +520,7 @@ export async function runComputerOp(
       png,
       sandboxName: session.sandboxName,
       viewerUrl: session.viewerUrl,
+      nativeViewerUrl: session.nativeViewerUrl,
       budget: budgetStatus(session),
     };
   }
@@ -533,6 +532,7 @@ export async function runComputerOp(
     args: [
       "-lc",
       cuEnv
+        + "rm -f /tmp/cu/meta.json; "
         + "export PLAYWRIGHT_BROWSERS_PATH=/tmp/cu-browsers NODE_OPTIONS='--max-old-space-size=192'; "
         + `node /tmp/cu/runner.cjs '${payload}'`,
     ],
@@ -542,38 +542,39 @@ export async function runComputerOp(
     const errBuf = await sandbox.readFileToBuffer({ path: "/tmp/cu/meta.json" });
     const errMeta = errBuf ? JSON.parse(errBuf.toString("utf8")) : null;
     const base =
-      errMeta?.error || (await run.stderr()) || `runner exit ${run.exitCode}`;
-    // computer_open: desk/viewerUrl is the acceptance signal. Runner SIGKILL(137)
-    // on navigate used to fail the whole op even though noVNC was healthy.
-    if (cmd.op === "open" && session.viewerUrl) {
+      (await run.stderr()) || errMeta?.error || `runner exit ${run.exitCode}`;
+    // Keep desktop viewing available while reporting page navigation failure truthfully.
+    if (cmd.op === "open" && session.viewerUrl && session.nativeViewerUrl) {
       await runCua("refresh-target").catch(() => undefined);
       session.lastUsedAt = Date.now();
       session.stepCount += 1;
       sessions.set(sessionKey, session);
       return {
         meta: {
-          ok: true,
+          ok: false,
           url: typeof cmd.url === "string" ? cmd.url : undefined,
           action: "open",
           shot: false,
-          runnerExit: run.exitCode,
-          note: String(base).slice(0, 240),
+          error: String(base).slice(0, 240),
         },
         png: null,
         sandboxName: session.sandboxName,
         viewerUrl: session.viewerUrl,
-        budget: budgetStatus(session),
+        nativeViewerUrl: session.nativeViewerUrl,
+          budget: budgetStatus(session),
       };
     }
     const viewer = session.viewerUrl ? ` viewerUrl=${session.viewerUrl}` : "";
     throw new Error(`${base}${viewer}`);
   }
 
+  const runMeta = await readShotMeta();
   if (cmd.op === "open") {
+    // Refresh the optional cua-driver target only after preserving the browser
+    // result. A missing daemon writes its error to meta.json and must not turn a
+    // successful Playwright navigation into a failed computer_open result.
     await runCua("refresh-target").catch(() => undefined);
   }
-
-  const runMeta = await readShotMeta();
   session.lastUsedAt = Date.now();
   session.stepCount += 1;
   sessions.set(sessionKey, session);
@@ -582,6 +583,7 @@ export async function runComputerOp(
     png: null,
     sandboxName: session.sandboxName,
     viewerUrl: session.viewerUrl,
+    nativeViewerUrl: session.nativeViewerUrl,
     budget: budgetStatus(session),
   };
 }
@@ -590,11 +592,19 @@ export async function endComputerSession(sessionKey: string): Promise<void> {
   const existing = sessions.get(sessionKey);
   if (!existing) return;
   try {
+    try {
+      await publishLiveComputerSession(sessionKey, existing.sessionId, null);
+    } catch (error) {
+      console.warn(
+        `Could not clear live computer session: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
     const params = createParams();
     const sandbox = await Sandbox.get({
       name: existing.sandboxName,
       ...credFields(params),
-    } as Parameters<typeof Sandbox.get>[0]);
+    } as Parameters<typeof Sandbox.get>[0]).catch(() => null);
+    if (!sandbox) return;
     try {
       await sandbox.stop();
     } catch {

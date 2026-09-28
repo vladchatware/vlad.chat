@@ -20,6 +20,19 @@ struct VladChatApp: App {
     private var isSeededChatHistoryUITest: Bool {
         ProcessInfo.processInfo.arguments.contains("--ui-test-seeded-chat-history")
     }
+
+    private var computerUseE2EScenario: ComputerUseE2EHarnessView.Scenario? {
+        if ProcessInfo.processInfo.arguments.contains("--ui-test-computer-sandbox-failure") {
+            return .sandboxResumeFailure
+        }
+        if ProcessInfo.processInfo.arguments.contains("--ui-test-computer-viewer") {
+            return .viewerFixture
+        }
+        if ProcessInfo.processInfo.arguments.contains("--ui-test-computer-viewer-connecting") {
+            return .viewerConnecting
+        }
+        return nil
+    }
 #endif
 
     var body: some Scene {
@@ -34,6 +47,8 @@ struct VladChatApp: App {
                 ThinkingLabelE2EView(viewModel: chat)
             } else if isInferenceGalleryUITest {
                 InferenceStateGallery()
+            } else if let computerUseE2EScenario {
+                ComputerUseE2EHarnessView(scenario: computerUseE2EScenario)
             } else {
                 chatApplication
             }

@@ -2,12 +2,12 @@
 //  ComputerUseBox.swift
 //  VladChat
 //
-//  Graceful rendering for V-83 computer-use tool results:
-//  screenshotUrl thumbnails + computer_handoff callouts.
-//  No VNC / live desktop (that is V-84).
+//  Computer-use status cards and handoff callouts.
 //
 
 import SwiftUI
+import Combine
+import UIKit
 
 /// Inline computer-use tool card shown in the transcript.
 struct ComputerUseToolCard: View {
@@ -30,10 +30,8 @@ struct ComputerUseToolCard: View {
         return .unknown
     }
 
-    private var isEmphasized: Bool {
-        result?.hasHandoff == true
-            || tool.status == .failed
-            || result?.ok == false
+    private var displayStatus: ComputerUseDisplayStatus {
+        ComputerUseDisplayStatus(toolStatus: tool.status, result: result)
     }
 
     var body: some View {
@@ -53,16 +51,7 @@ struct ComputerUseToolCard: View {
                     ComputerHandoffBanner(handoff: handoff, isDarkMode: isDarkMode)
                 }
 
-                if result.hasScreenshot, let urlString = result.screenshotUrl, let url = URL(string: urlString) {
-                    ComputerScreenshotThumbnail(
-                        url: url,
-                        width: result.width,
-                        height: result.height,
-                        pageTitle: result.title,
-                        pageURL: result.url,
-                        isDarkMode: isDarkMode
-                    )
-                } else if shouldShowStatusSummary(result) {
+                if shouldShowStatusSummary(result) {
                     Text(result.statusSummary)
                         .font(Theme.Typography.activitySecondary)
                         .foregroundColor(secondaryForeground)
@@ -70,7 +59,7 @@ struct ComputerUseToolCard: View {
                 }
 
                 if let budget = result.budget {
-                    Text("\(budget.stepsUsed)/\(budget.maxSteps) steps")
+                    Text(budget.displaySummary)
                         .font(Theme.Typography.caption)
                         .foregroundColor(tertiaryForeground)
                 }
@@ -96,7 +85,7 @@ struct ComputerUseToolCard: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .activityCard(isDarkMode: isDarkMode, emphasized: isEmphasized)
+        .activityCard(isDarkMode: isDarkMode, emphasized: displayStatus.needsAttention)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityLabel(op.displayTitle)
@@ -126,17 +115,13 @@ struct ComputerUseToolCard: View {
 
             Text(statusLabel)
                 .font(Theme.Typography.caption)
-                .foregroundColor(tertiaryForeground)
+                .foregroundColor(displayStatus.needsAttention ? headerTint : tertiaryForeground)
 
-            if tool.status == .running {
+            if displayStatus == .running {
                 InlineLoadingDotsView(isDarkMode: isDarkMode)
             }
 
             Spacer(minLength: 0)
-
-            Image(systemName: "chevron.right")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundColor(tertiaryForeground)
         }
     }
 
@@ -148,10 +133,10 @@ struct ComputerUseToolCard: View {
     }
 
     private var headerTint: Color {
-        if result?.hasHandoff == true { return .orange }
-        switch tool.status {
+        switch displayStatus {
+        case .needsUser: return .orange
         case .failed: return .red
-        case .completed: return isDarkMode ? .white.opacity(0.72) : Color.black.opacity(0.55)
+        case .done: return isDarkMode ? .white.opacity(0.72) : Color.black.opacity(0.55)
         case .running: return isDarkMode ? .white.opacity(0.78) : Color.black.opacity(0.62)
         default: return isDarkMode ? .white.opacity(0.55) : Color.black.opacity(0.45)
         }
@@ -170,22 +155,102 @@ struct ComputerUseToolCard: View {
     }
 
     private var statusLabel: String {
-        if result?.hasHandoff == true { return "Handoff" }
-        switch tool.status {
-        case .pending: return "Waiting"
-        case .running: return "Running"
-        case .completed: return "Done"
-        case .failed: return "Failed"
-        case .stopped: return "Stopped"
-        case .unknown: return "Unknown"
-        }
+        displayStatus.label
     }
 
     private var accessibilityStatus: String {
         if let handoff = result?.handoff {
-            return "\(handoff.reason.displayTitle). \(handoff.message)"
+            return "\(statusLabel). \(handoff.reason.displayTitle). \(handoff.message)"
         }
         return statusLabel
+    }
+}
+
+/// Transcript status for the computer session. Live viewing happens in the floating computer preview.
+struct ComputerUseSessionCard: View {
+    let tools: [ResponseTool]
+    let isDarkMode: Bool
+
+    private var results: [ComputerToolResult] {
+        tools.compactMap(\.computerResult)
+    }
+
+    private var screenshots: [ComputerToolResult] {
+        results.filter(\.hasScreenshot)
+    }
+
+    private var latestResult: ComputerToolResult? {
+        tools.last?.computerResult
+    }
+
+    private var displayStatus: ComputerUseDisplayStatus {
+        ComputerUseDisplayStatus(toolStatus: tools.last?.status, result: latestResult)
+    }
+
+    private var budget: ComputerBudgetStatus? {
+        results.reversed().compactMap(\.budget).first
+    }
+
+    private var statusTint: Color {
+        switch displayStatus {
+        case .needsUser: return .orange
+        case .failed: return .red
+        default: return isDarkMode ? .white.opacity(0.55) : .black.opacity(0.5)
+        }
+    }
+
+    private var foreground: Color {
+        isDarkMode ? .white.opacity(0.92) : Color.black.opacity(0.86)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Dimensions.relatedItemSpacing) {
+            HStack(spacing: 10) {
+                Image(systemName: "desktopcomputer")
+                    .foregroundColor(displayStatus.needsAttention ? statusTint : foreground)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Computer use")
+                        .font(Theme.Typography.activityTitle)
+                        .foregroundColor(foreground)
+                    HStack(spacing: 6) {
+                        Text(displayStatus.label)
+                            .foregroundColor(statusTint)
+                        if !screenshots.isEmpty {
+                            Text("· \(screenshots.count) \(screenshots.count == 1 ? "screen" : "screens")")
+                        }
+                        if displayStatus == .running || displayStatus == .waiting {
+                            InlineLoadingDotsView(isDarkMode: isDarkMode)
+                        }
+                    }
+                    .font(Theme.Typography.caption)
+                    .foregroundColor(isDarkMode ? .white.opacity(0.55) : .black.opacity(0.5))
+                }
+                Spacer(minLength: 0)
+            }
+            if let handoff = latestResult?.handoff {
+                ComputerHandoffBanner(handoff: handoff, isDarkMode: isDarkMode)
+            }
+            if let budget {
+                Text(budget.displaySummary)
+                    .font(Theme.Typography.caption)
+                    .foregroundColor(isDarkMode ? .white.opacity(0.55) : .black.opacity(0.5))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .activityCard(isDarkMode: isDarkMode, emphasized: displayStatus.needsAttention)
+        .accessibilityLabel("Computer use")
+        .accessibilityValue(accessibilityStatus)
+        .accessibilityIdentifier("computerUseSessionCard")
+    }
+
+    private var accessibilityStatus: String {
+        var parts = [displayStatus.label]
+        if let handoff = latestResult?.handoff {
+            parts.append(handoff.reason.displayTitle)
+            parts.append(handoff.message)
+        }
+        if let budget { parts.append(budget.displaySummary) }
+        return parts.joined(separator: ". ")
     }
 }
 
@@ -221,171 +286,29 @@ struct ComputerHandoffBanner: View {
     }
 }
 
-/// Async screenshot thumbnail for `screenshotUrl` — not a live VNC surface.
-struct ComputerScreenshotThumbnail: View {
-    let url: URL
-    let width: Int?
-    let height: Int?
-    let pageTitle: String?
-    let pageURL: String?
-    let isDarkMode: Bool
-
-    private var aspect: CGFloat {
-        guard let width, let height, width > 0, height > 0 else {
-            return 16.0 / 9.0
+extension ComputerToolResult {
+    var validatedViewerURL: URL? {
+        guard op != .end,
+              let viewerUrl,
+              let url = URL(string: viewerUrl),
+              url.scheme == "https",
+              url.host?.hasSuffix(".vercel.run") == true,
+              url.path.lowercased().contains("vnc") else {
+            return nil
         }
-        return CGFloat(width) / CGFloat(height)
+        return url
     }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Dimensions.compactItemSpacing) {
-            if let pageTitle, !pageTitle.isEmpty {
-                Text(pageTitle)
-                    .font(Theme.Typography.activitySecondary)
-                    .foregroundColor(isDarkMode ? .white.opacity(0.7) : Color.black.opacity(0.6))
-                    .lineLimit(1)
-            } else if let pageURL, let host = URL(string: pageURL)?.host {
-                Text(host.replacingOccurrences(of: "www.", with: ""))
-                    .font(Theme.Typography.caption)
-                    .foregroundColor(isDarkMode ? .white.opacity(0.5) : Color.black.opacity(0.5))
-                    .lineLimit(1)
-            }
-
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case .empty:
-                    placeholder
-                        .overlay { ProgressView().scaleEffect(0.8) }
-                case .success(let image):
-                    image
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                case .failure:
-                    placeholder
-                        .overlay {
-                            Image(systemName: "photo")
-                                .foregroundColor(isDarkMode ? .white.opacity(0.4) : .black.opacity(0.35))
-                        }
-                @unknown default:
-                    placeholder
-                }
-            }
-            .frame(maxWidth: .infinity)
-            .aspectRatio(aspect, contentMode: .fit)
-            .clipShape(RoundedRectangle(cornerRadius: Theme.Dimensions.cornerRadiusMedium, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.Dimensions.cornerRadiusMedium, style: .continuous)
-                    .strokeBorder(isDarkMode ? Color.white.opacity(0.12) : Color.black.opacity(0.08), lineWidth: 1)
-            )
-            .accessibilityLabel("Computer-use screenshot")
-            .accessibilityIdentifier("computerScreenshotThumbnail")
+    var validatedNativeViewerURL: URL? {
+        guard op != .end,
+              let nativeViewerUrl,
+              let url = URL(string: nativeViewerUrl),
+              url.scheme == "https",
+              url.host?.hasSuffix(".vercel.run") == true,
+              url.path == "/vladchat.html" else {
+            return nil
         }
+        return url
     }
 
-    private var placeholder: some View {
-        RoundedRectangle(cornerRadius: Theme.Dimensions.cornerRadiusMedium, style: .continuous)
-            .fill(isDarkMode ? Color.white.opacity(0.06) : Color.black.opacity(0.04))
-            .aspectRatio(aspect, contentMode: .fit)
-            .frame(maxWidth: .infinity)
-    }
-}
-
-/// Detail sheet content when a computer-use tool is opened.
-struct ComputerUseDetailContent: View {
-    let tool: ResponseTool
-    let result: ComputerToolResult?
-    let isDarkMode: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Dimensions.responseSectionSpacing) {
-            if let result {
-                if let handoff = result.handoff {
-                    ComputerHandoffBanner(handoff: handoff, isDarkMode: isDarkMode)
-                }
-
-                if result.hasScreenshot, let urlString = result.screenshotUrl, let url = URL(string: urlString) {
-                    ComputerScreenshotThumbnail(
-                        url: url,
-                        width: result.width,
-                        height: result.height,
-                        pageTitle: result.title,
-                        pageURL: result.url,
-                        isDarkMode: isDarkMode
-                    )
-                }
-
-                metaGrid(result)
-
-                if let error = result.error, !error.isEmpty, result.handoff == nil {
-                    Text(error)
-                        .font(.system(.body))
-                        .foregroundColor(.red.opacity(0.82))
-                }
-            }
-
-            if let inputSummary = tool.inputSummary, !inputSummary.isEmpty {
-                labeledBlock(title: "Input", body: inputSummary)
-            }
-
-            // When structured parse succeeds, keep the card clean — no ugly JSON dump.
-            // Only fall back to raw output / error text when we could not decode ComputerToolResult.
-            if result == nil {
-                if let output = tool.output, !output.isEmpty {
-                    labeledBlock(title: "Raw output", body: output, monospaced: true)
-                } else if let errorText = tool.errorText {
-                    labeledBlock(title: "Error", body: errorText)
-                }
-
-                if tool.outputTruncated == true {
-                    Text("Preview truncated")
-                        .font(Theme.Typography.caption)
-                        .foregroundColor(isDarkMode ? .white.opacity(0.55) : Color.black.opacity(0.55))
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    @ViewBuilder
-    private func metaGrid(_ result: ComputerToolResult) -> some View {
-        VStack(alignment: .leading, spacing: Theme.Dimensions.compactItemSpacing) {
-            metaRow("Operation", result.op.rawValue)
-            if let url = result.url { metaRow("URL", url) }
-            if let title = result.title { metaRow("Title", title) }
-            if let action = result.action { metaRow("Action", action) }
-            if let budget = result.budget {
-                metaRow("Budget", "\(budget.stepsUsed)/\(budget.maxSteps) steps · \(budget.stepsRemaining) left")
-                if !budget.note.isEmpty {
-                    metaRow("Budget note", budget.note)
-                }
-            }
-            if let code = result.code { metaRow("Code", "\(code.rawValue) · \(code.displayTitle)") }
-        }
-    }
-
-    private func metaRow(_ label: String, _ value: String) -> some View {
-        HStack(alignment: .top) {
-            Text(label)
-                .font(Theme.Typography.caption)
-                .foregroundColor(isDarkMode ? .white.opacity(0.5) : Color.black.opacity(0.5))
-                .frame(width: 88, alignment: .leading)
-            Text(value)
-                .font(Theme.Typography.activitySecondary)
-                .foregroundColor(isDarkMode ? .white.opacity(0.85) : Color.black.opacity(0.8))
-                .textSelection(.enabled)
-            Spacer(minLength: 0)
-        }
-    }
-
-    private func labeledBlock(title: String, body: String, monospaced: Bool = false) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(Theme.Typography.caption)
-                .foregroundColor(isDarkMode ? .white.opacity(0.5) : Color.black.opacity(0.5))
-            Text(body)
-                .font(monospaced ? .system(.footnote, design: .monospaced) : Theme.Typography.activitySecondary)
-                .foregroundColor(isDarkMode ? .white.opacity(0.88) : Color.black.opacity(0.8))
-                .textSelection(.enabled)
-        }
-    }
 }

@@ -8,6 +8,7 @@ import { createMcpHandler } from "mcp-handler"
 import {
   computerSessionAls,
   computerSessionFromRequest,
+  computerThreadFromRequest,
   registerComputerUseMcpTools,
 } from "@/lib/computer-use"
 import type {
@@ -635,10 +636,12 @@ For database queries, first use notion-get-database to discover available proper
  */
 async function withComputerSession(req: Request): Promise<Response> {
   const session = computerSessionFromRequest(req)
-  if (session) {
-    return await computerSessionAls.run(session, () => handler(req))
-  }
-  return handler(req)
+  const threadId = computerThreadFromRequest(req)
+  if (!session && !threadId) return handler(req)
+  return await computerSessionAls.run(
+    { sessionKey: session || "mcp-default", threadId },
+    () => handler(req),
+  )
 }
 
 export {

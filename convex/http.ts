@@ -9,6 +9,7 @@ import {
   download as downloadComputerUseScreenshot,
   upload as uploadComputerUseScreenshot,
 } from "./computerUseScreenshots";
+import { publish as publishComputerUseSession } from "./computerUseScreenshots";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY)
 const webhook_secret = process.env.STRIPE_WEBHOOK_SECRET
@@ -25,6 +26,12 @@ http.route({
   path: "/computer-use/screenshots",
   method: "POST",
   handler: uploadComputerUseScreenshot,
+});
+
+http.route({
+  path: "/computer-use/sessions",
+  method: "POST",
+  handler: publishComputerUseSession,
 });
 
 http.route({

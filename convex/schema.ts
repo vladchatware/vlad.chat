@@ -119,6 +119,18 @@ export default defineSchema({
   })
     .index("byArtifactId", ["artifactId"])
     .index("byExpiresAt", ["expiresAt"]),
+  computerUseSessions: defineTable({
+    sessionKey: v.string(),
+    sessionId: v.string(),
+    threadId: v.optional(v.string()),
+    viewerUrl: v.optional(v.string()),
+    nativeViewerUrl: v.optional(v.string()),
+    videoUrl: v.optional(v.string()),
+    updatedAt: v.number(),
+    expiresAt: v.number(),
+  })
+    .index("bySessionKey", ["sessionKey"])
+    .index("byExpiresAt", ["expiresAt"]),
   // Daily ephemeral group chat - cleared every day
   loungeMessages: defineTable({
     userId: v.optional(v.id("users")), // Optional for bot messages

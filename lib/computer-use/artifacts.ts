@@ -129,6 +129,36 @@ export async function putScreenshot(
   return artifact;
 }
 
+export async function publishLiveComputerSession(
+  sessionKey: string,
+  sessionId: string,
+  session: { viewerUrl?: string; nativeViewerUrl?: string; threadId?: string } | null,
+): Promise<void> {
+  const config = screenshotStorageConfig();
+  if (!config) return;
+
+  const response = await fetch(`${config.siteUrl}/computer-use/sessions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${config.secret}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      sessionKey,
+      sessionId,
+      status: session ? "active" : "ended",
+      ...(session ? session : {}),
+    }),
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    const details = await response.text().catch(() => "");
+    throw new Error(
+      `Convex live-session publish failed (${response.status})${details ? `: ${details}` : ""}`,
+    );
+  }
+}
+
 export async function getScreenshot(
   id: string,
 ): Promise<ScreenshotArtifact | undefined> {

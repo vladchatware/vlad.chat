@@ -691,7 +691,7 @@ private struct InferenceStateFixture: Identifiable {
         InferenceStateFixture(
             id: "computer-screenshot",
             title: "Computer screenshot",
-            description: "V-83 screenshotUrl card — thumbnail, not live VNC.",
+            description: "Captured browser screen shown in the stacked session preview.",
             activity: ResponseActivity(
                 phase: .tool,
                 tools: [computerScreenshotTool()],

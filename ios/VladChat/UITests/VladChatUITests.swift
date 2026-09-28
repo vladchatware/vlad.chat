@@ -202,6 +202,162 @@ final class VladChatUITests: XCTestCase {
         Thread.sleep(forTimeInterval: 1)
     }
 
+    func testCompletedSandboxResumeFailureShowsTerminalErrorWithoutLiveSpinner() {
+        app.launchArguments = ["--ui-test-computer-sandbox-failure"]
+        app.launch()
+
+        let sessionCard = app.descendants(matching: .any)
+            .matching(identifier: "computerUseSessionCard")
+            .firstMatch
+        XCTAssertTrue(sessionCard.waitForExistence(timeout: 5))
+        XCTAssertEqual(sessionCard.label, "Computer use")
+        XCTAssertTrue(sessionCard.value as? String == "Failed")
+        XCTAssertFalse(app.buttons["computerUseSessionCard"].exists)
+        sessionCard.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertFalse(app.navigationBars["Computer Open"].exists)
+        XCTAssertFalse(app.staticTexts["Connecting to live browser…"].exists)
+    }
+
+    func testComputerViewerCollapsesAndOpensKeyboardFromInspector() {
+        app.launchArguments = ["--ui-test-computer-viewer"]
+        app.launch()
+
+        let preview = app.webViews["computerDesktopPreview"]
+        XCTAssertTrue(preview.waitForExistence(timeout: 5))
+        let chatCanvas = app.staticTexts["chatCanvas"]
+        let composer = app.descendants(matching: .any)["chatComposer"]
+        let header = app.navigationBars.firstMatch
+        XCTAssertTrue(chatCanvas.exists)
+        XCTAssertTrue(composer.exists)
+        XCTAssertTrue(header.exists)
+        XCTAssertTrue(app.buttons["showChats"].exists)
+        XCTAssertFalse(app.staticTexts["Computer"].exists)
+        XCTAssertFalse(app.buttons["Hide computer"].exists)
+        XCTAssertEqual(preview.frame.width / preview.frame.height, 16.0 / 9.0, accuracy: 0.03)
+        XCTAssertGreaterThanOrEqual(preview.frame.minY, header.frame.maxY, "The floating preview should stay below the chat header")
+        XCTAssertLessThanOrEqual(preview.frame.maxY, composer.frame.minY - 8, "The floating preview should stay above the composer")
+        preview.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(
+            forDuration: 0.1,
+            thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.18, dy: 0.35))
+        )
+        XCTAssertLessThan(preview.frame.minX, 28, "The floating preview should settle against the left dock after dragging")
+        let upperLaneY = preview.frame.midY
+        XCTAssertGreaterThanOrEqual(preview.frame.minY, header.frame.maxY)
+        XCTAssertLessThan(preview.frame.maxY, composer.frame.minY)
+        preview.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(
+            forDuration: 0.1,
+            thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.82, dy: 0.35))
+        )
+        XCTAssertGreaterThan(preview.frame.maxX, app.frame.maxX - 28, "Dragging from the left dock should follow the swipe to the right dock")
+        XCTAssertEqual(preview.frame.midY, upperLaneY, accuracy: 20, "A horizontal swipe should keep the preview at its vertical position")
+        preview.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(
+            forDuration: 0.1,
+            thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.82, dy: 0.78))
+        )
+        XCTAssertGreaterThan(preview.frame.maxX, app.frame.maxX - 28)
+        let lowerLaneY = preview.frame.midY
+        XCTAssertGreaterThan(lowerLaneY, upperLaneY + 100, "A vertical swipe should keep the preview near its release point")
+        XCTAssertLessThanOrEqual(preview.frame.maxY, composer.frame.minY - 8, "The lower dock should remain above the composer")
+        preview.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(
+            forDuration: 0.1,
+            thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.18, dy: 0.78))
+        )
+        XCTAssertLessThan(preview.frame.minX, 28)
+        XCTAssertEqual(preview.frame.midY, lowerLaneY, accuracy: 20, "A horizontal swipe should preserve the lower vertical position")
+        let foldY = preview.frame.midY
+        preview.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(
+            forDuration: 0.1,
+            thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0.78))
+        )
+        let restorePreview = app.buttons["Restore computer preview"]
+        XCTAssertTrue(restorePreview.waitForExistence(timeout: 5))
+        XCTAssertLessThan(restorePreview.frame.minX, 28, "A leftward fold should leave restore tab at the same screen edge")
+        XCTAssertEqual(restorePreview.frame.midY, foldY, accuracy: 30, "Restore tab should stay at the preview's folded vertical position")
+        restorePreview.tap()
+        XCTAssertTrue(preview.waitForExistence(timeout: 5))
+        XCTAssertLessThan(preview.frame.minX, 28)
+        XCTAssertEqual(preview.frame.midY, foldY, accuracy: 30, "Unfolding should restore preview at its previous position")
+        preview.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(
+            forDuration: 0.1,
+            thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.18, dy: 0.1))
+        )
+        XCTAssertGreaterThanOrEqual(
+            preview.frame.minY,
+            header.frame.maxY + 8,
+            "The top dock should leave room for the navigation bar"
+        )
+        preview.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(
+            forDuration: 0.1,
+            thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0.1))
+        )
+        XCTAssertTrue(restorePreview.waitForExistence(timeout: 5))
+        XCTAssertGreaterThanOrEqual(
+            restorePreview.frame.minY,
+            header.frame.maxY + 8,
+            "A folded tab should stay below the navigation bar"
+        )
+        restorePreview.tap()
+        XCTAssertGreaterThanOrEqual(preview.frame.minY, header.frame.maxY + 8)
+        let expandTarget = app.buttons["computerExpandTarget"]
+        XCTAssertTrue(expandTarget.waitForExistence(timeout: 5))
+        expandTarget.tap()
+
+        XCTAssertFalse(chatCanvas.isHittable, "The chat should be covered by the inspector modal")
+        XCTAssertFalse(app.buttons["showChats"].isHittable, "The inspector modal should block the chat navigation control")
+        XCTAssertTrue(app.navigationBars["Inspector"].exists)
+        XCTAssertTrue(app.webViews["computerInspectorPreview"].exists)
+        let trackpad = app.descendants(matching: .any)
+            .matching(identifier: "computerTrackpad")
+            .firstMatch
+        XCTAssertTrue(trackpad.waitForExistence(timeout: 5))
+        let initialCursor = trackpad.value as? String
+        trackpad.swipeRight()
+        XCTAssertNotEqual(trackpad.value as? String, initialCursor, "A trackpad swipe should move the remote cursor")
+        XCTAssertFalse(app.staticTexts["Computer"].exists)
+        XCTAssertFalse(app.staticTexts["You have control"].exists)
+        XCTAssertFalse(app.buttons["Hide computer"].exists)
+        XCTAssertTrue(app.buttons["Collapse to preview"].exists)
+        app.buttons["Collapse to preview"].tap()
+        XCTAssertTrue(preview.waitForExistence(timeout: 5))
+        XCTAssertTrue(chatCanvas.isHittable)
+        XCTAssertTrue(app.buttons["showChats"].isHittable)
+        XCTAssertFalse(app.navigationBars["Inspector"].exists)
+        XCTAssertFalse(app.buttons["Collapse to preview"].exists)
+        XCTAssertTrue(expandTarget.isHittable)
+        XCTAssertLessThanOrEqual(preview.frame.width, 300)
+        expandTarget.tap()
+
+        XCTAssertTrue(app.buttons["Collapse to preview"].waitForExistence(timeout: 5))
+        let keyboard = app.buttons["Keyboard"]
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
+        keyboard.tap()
+        XCTAssertTrue(app.textFields["Type to computer"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["remoteKey_Escape"].exists)
+        app.buttons["Collapse to preview"].tap()
+        XCTAssertTrue(preview.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["Collapse to preview"].exists)
+        XCTAssertTrue(expandTarget.isHittable)
+    }
+
+    func testOpeningInspectorShowsLoadingWhileVNCConnects() {
+        app.launchArguments = ["--ui-test-computer-viewer-connecting"]
+        app.launch()
+
+        let openingIndicator = app.descendants(matching: .any)["computerOpeningIndicator"]
+        XCTAssertTrue(openingIndicator.waitForExistence(timeout: 5))
+
+        app.buttons["computerExpandTarget"].tap()
+
+        XCTAssertTrue(app.navigationBars["Inspector"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.webViews["computerInspectorPreview"].exists)
+        XCTAssertTrue(
+            app.descendants(matching: .any)["computerInspectorLoading"].waitForExistence(timeout: 2),
+            "Inspector should show loading feedback instead of a blank pause while VNC connects"
+        )
+        XCTAssertFalse(app.buttons["showChats"].isHittable)
+    }
+
     private func launchGallery() {
         app.launchArguments = ["--ui-test-gallery"]
         app.launch()

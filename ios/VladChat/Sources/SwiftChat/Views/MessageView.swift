@@ -55,7 +55,7 @@ struct MessageView: View {
                         isStreaming: isLoading && isLastMessage,
                         fallbackContent: message.content,
                         contentChunks: message.contentChunks,
-                        onSelectTool: { selectedToolID = $0.id },
+                        onSelectTool: handleToolSelection,
                         onShowThoughts: { showThoughtsSheet = true }
                     )
                 } else if message.role == .assistant &&
@@ -395,7 +395,10 @@ struct MessageView: View {
             )
         ) {
             if let tool = selectedTool {
-                ToolOutputSheet(tool: tool, isDarkMode: isDarkMode)
+                ToolOutputSheet(
+                    tool: tool,
+                    isDarkMode: isDarkMode
+                )
                     .presentationDetents([.medium, .large])
                     .presentationBackground(isDarkMode ? Color(hex: "161616") : Color(UIColor.systemGroupedBackground))
             }
@@ -434,7 +437,7 @@ struct MessageView: View {
                 isDarkMode: isDarkMode,
                 isStreaming: isLoading && isLastMessage,
                 showsThinkingPlaceholder: message.content.isEmpty && message.thoughts == nil && !message.isThinking,
-                onSelectTool: { selectedToolID = $0.id }
+                onSelectTool: handleToolSelection
             )
         }
     }
@@ -465,6 +468,11 @@ struct MessageView: View {
         return message.responseActivity?.parts
             .compactMap(\.tool)
             .first(where: { $0.id == selectedToolID })
+    }
+
+    private func handleToolSelection(_ tool: ResponseTool) {
+        guard !tool.isComputerUseTool else { return }
+        selectedToolID = tool.id
     }
 
     private func copyMessagePart(_ text: String) {
@@ -914,12 +922,12 @@ struct AdaptiveMarkdownText: View {
     }
 
     var body: some View {
-        StructuredText(markdown: content)
-            .textual.structuredTextStyle(.gitHub)
-            .textual.highlighterTheme(.default)
-            .fixedSize(horizontal: false, vertical: true)
+        LaTeXMarkdownView(
+            content: content,
+            isDarkMode: isDarkMode,
+            horizontalPadding: horizontalPadding
+        )
             .padding(.bottom, -16)
-            .padding(.horizontal, horizontalPadding)
             .environment(\.colorScheme, isDarkMode ? .dark : .light)
     }
 }
@@ -1075,13 +1083,27 @@ struct AssistantActivityView: View {
                     terminalStatus
                 }
             } else {
-                ForEach(activity.tools) { tool in
-                    Button {
-                        onSelectTool(tool)
-                    } label: {
-                        ToolCallRow(tool: tool, isDarkMode: isDarkMode, isStreaming: isStreaming)
+                if activity.tools.allSatisfy(\.isComputerUseTool) {
+                    ComputerUseSessionCard(
+                        tools: activity.tools,
+                        isDarkMode: isDarkMode
+                    )
+                } else {
+                    ForEach(activity.tools) { tool in
+                        if tool.isComputerUseTool {
+                            ComputerUseSessionCard(
+                                tools: [tool],
+                                isDarkMode: isDarkMode
+                            )
+                        } else {
+                            Button {
+                                onSelectTool(tool)
+                            } label: {
+                                ToolCallRow(tool: tool, isDarkMode: isDarkMode, isStreaming: isStreaming)
+                            }
+                            .buttonStyle(NoHighlightButtonStyle())
+                        }
                     }
-                    .buttonStyle(NoHighlightButtonStyle())
                 }
                 if isStreaming && showsThinkingPlaceholder && (activity.phase == .thinking || activity.phase == .waiting) {
                     thinkingShimmer
@@ -1222,12 +1244,19 @@ struct OrderedResponsePartsView: View {
             }
         case .tool:
             if let tool = part.tool {
-                Button {
-                    onSelectTool(tool)
-                } label: {
-                    ToolCallRow(tool: tool, isDarkMode: isDarkMode, isStreaming: isStreaming)
+                if tool.isComputerUseTool {
+                    ComputerUseSessionCard(
+                        tools: [tool],
+                        isDarkMode: isDarkMode
+                    )
+                } else {
+                    Button {
+                        onSelectTool(tool)
+                    } label: {
+                        ToolCallRow(tool: tool, isDarkMode: isDarkMode, isStreaming: isStreaming)
+                    }
+                    .buttonStyle(NoHighlightButtonStyle())
                 }
-                .buttonStyle(NoHighlightButtonStyle())
             }
         case .source:
             if let url = URL(string: part.url ?? "") {
@@ -1504,14 +1533,7 @@ struct ToolOutputSheet: View {
         NavigationStack {
             ScrollView {
                 Group {
-                    if tool.isComputerUseTool {
-                        ComputerUseDetailContent(
-                            tool: tool,
-                            result: tool.computerResult,
-                            isDarkMode: isDarkMode
-                        )
-                    } else {
-                        VStack(alignment: .leading, spacing: Theme.Dimensions.responseSectionSpacing) {
+                    VStack(alignment: .leading, spacing: Theme.Dimensions.responseSectionSpacing) {
                             if let inputSummary = tool.inputSummary, !inputSummary.isEmpty {
                                 Text(inputSummary)
                                     .font(.system(.subheadline))
@@ -1530,9 +1552,8 @@ struct ToolOutputSheet: View {
                                     .font(.system(.footnote))
                                     .foregroundColor(isDarkMode ? .white.opacity(0.55) : Color.black.opacity(0.55))
                             }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .padding(Theme.Dimensions.paddingLarge)
             }
@@ -1548,10 +1569,6 @@ struct ToolOutputSheet: View {
 
     private var sheetTitle: String {
         if let title = tool.title, !title.isEmpty { return title }
-        if tool.isComputerUseTool {
-            return tool.computerResult?.op.displayTitle
-                ?? tool.name.replacingOccurrences(of: "_", with: " ").capitalized
-        }
         return tool.name.replacingOccurrences(of: "_", with: " ")
     }
 }
