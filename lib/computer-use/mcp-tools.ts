@@ -1,7 +1,4 @@
 import { z } from "zod";
-/** Minimal surface — avoid pulling full MCP Server generics into Next build. */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- MCP Server.tool generics are not usable at the route boundary
-type McpToolServer = { tool: (...args: any[]) => unknown };
 import {
   computerActionSchema,
   computerUseToolsAvailable,
@@ -11,13 +8,18 @@ import {
   resolveMcpComputerSessionKey,
   resolveMcpComputerThreadId,
 } from "./mcp-session";
-import type { ComputerAction, ComputerToolResult } from "./types";
+import type { ComputerAction } from "./types";
+import { computerToolMcpResult } from "./vision";
 
-function mcpResult(result: ComputerToolResult) {
-  return {
-    content: [{ type: "text" as const, text: JSON.stringify(result) }],
-  };
-}
+/** Only the Zod 3 registration overload used here, with typed input and output. */
+type McpToolServer = {
+  tool<Shape extends z.ZodRawShape>(
+    name: string,
+    description: string,
+    parameters: Shape,
+    execute: (args: z.infer<z.ZodObject<Shape>>) => Promise<Awaited<ReturnType<typeof computerToolMcpResult>>>,
+  ): void;
+};
 
 const sessionIdField = z
   .string()
@@ -44,12 +46,9 @@ export function registerComputerUseMcpTools(server: McpToolServer): void {
     },
     async ({ url, sessionId }) => {
       const sessionKey = resolveMcpComputerSessionKey(sessionId);
-      return mcpResult(await runComputerToolOp(
-        sessionKey,
-        "open",
-        { url },
-        resolveMcpComputerThreadId(),
-      ));
+      return computerToolMcpResult(
+        await runComputerToolOp(sessionKey, "open", { url }, resolveMcpComputerThreadId()),
+      );
     },
   );
 
@@ -61,12 +60,9 @@ export function registerComputerUseMcpTools(server: McpToolServer): void {
     },
     async ({ sessionId }) => {
       const sessionKey = resolveMcpComputerSessionKey(sessionId);
-      return mcpResult(await runComputerToolOp(
-        sessionKey,
-        "screenshot",
-        {},
-        resolveMcpComputerThreadId(),
-      ));
+      return computerToolMcpResult(
+        await runComputerToolOp(sessionKey, "screenshot", {}, resolveMcpComputerThreadId()),
+      );
     },
   );
 
@@ -79,7 +75,7 @@ export function registerComputerUseMcpTools(server: McpToolServer): void {
     },
     async ({ action, sessionId }) => {
       const sessionKey = resolveMcpComputerSessionKey(sessionId);
-      return mcpResult(
+      return computerToolMcpResult(
         await runComputerToolOp(sessionKey, "act", {
           action: action as ComputerAction,
         }, resolveMcpComputerThreadId()),
@@ -97,7 +93,7 @@ export function registerComputerUseMcpTools(server: McpToolServer): void {
     },
     async ({ reason, message, sessionId }) => {
       const sessionKey = resolveMcpComputerSessionKey(sessionId);
-      return mcpResult(
+      return computerToolMcpResult(
         await runComputerToolOp(
           sessionKey,
           "handoff",
@@ -116,12 +112,9 @@ export function registerComputerUseMcpTools(server: McpToolServer): void {
     },
     async ({ sessionId }) => {
       const sessionKey = resolveMcpComputerSessionKey(sessionId);
-      return mcpResult(await runComputerToolOp(
-        sessionKey,
-        "end",
-        {},
-        resolveMcpComputerThreadId(),
-      ));
+      return computerToolMcpResult(
+        await runComputerToolOp(sessionKey, "end", {}, resolveMcpComputerThreadId()),
+      );
     },
   );
 }

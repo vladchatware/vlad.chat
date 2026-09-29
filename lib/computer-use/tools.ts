@@ -11,6 +11,7 @@ import {
 import { resolveSandboxCredentials } from "./credentials";
 import { putScreenshot, screenshotPublicUrl } from "./artifacts";
 import { handoffMessage, looksLikePaymentOrSigning } from "./safety";
+import { computerToolModelOutput } from "./vision";
 import type {
   ComputerAction,
   ComputerBudgetStatus,
@@ -315,6 +316,7 @@ export function createComputerUseTools(ctx: ComputerToolContext = {}) {
       }),
       execute: async ({ url }): Promise<ComputerToolResult> =>
         runComputerToolOp(sessionKey, "open", { url }, ctx.chatId),
+      toModelOutput: ({ output }) => computerToolModelOutput(output),
     }),
 
     computer_screenshot: tool({
@@ -323,6 +325,7 @@ export function createComputerUseTools(ctx: ComputerToolContext = {}) {
       inputSchema: z.object({}),
       execute: async (): Promise<ComputerToolResult> =>
         runComputerToolOp(sessionKey, "screenshot", {}, ctx.chatId),
+      toModelOutput: ({ output }) => computerToolModelOutput(output),
     }),
 
     computer_act: tool({
@@ -333,6 +336,7 @@ export function createComputerUseTools(ctx: ComputerToolContext = {}) {
         runComputerToolOp(sessionKey, "act", {
           action: action as ComputerAction,
         }, ctx.chatId),
+      toModelOutput: ({ output }) => computerToolModelOutput(output),
     }),
 
     computer_handoff: tool({
@@ -351,6 +355,7 @@ export function createComputerUseTools(ctx: ComputerToolContext = {}) {
       }),
       execute: async ({ reason, message }): Promise<ComputerToolResult> =>
         runComputerToolOp(sessionKey, "handoff", { reason, message }, ctx.chatId),
+      toModelOutput: ({ output }) => computerToolModelOutput(output),
     }),
 
     computer_end: tool({
@@ -359,6 +364,7 @@ export function createComputerUseTools(ctx: ComputerToolContext = {}) {
       inputSchema: z.object({}),
       execute: async (): Promise<ComputerToolResult> =>
         runComputerToolOp(sessionKey, "end", {}, ctx.chatId),
+      toModelOutput: ({ output }) => computerToolModelOutput(output),
     }),
   };
 }
