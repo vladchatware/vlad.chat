@@ -4,6 +4,9 @@ import { ConvexError, v } from "convex/values";
 import {
   action,
   ActionCtx,
+  internalAction,
+  internalMutation,
+  internalQuery,
   mutation,
   MutationCtx,
   query,
@@ -44,6 +47,10 @@ import {
   projectStoredResponse,
 } from "@/lib/mobile-stream";
 import type { Id } from "./_generated/dataModel";
+import { WorkflowManager, sendEvent, start, vWorkflowId, vResultValidator } from "@convex-dev/workflow";
+import type { WorkflowId } from "@convex-dev/workflow";
+
+const workflow = new WorkflowManager(components.workflow);
 
 export const listThreads = query({
   args: {
@@ -280,6 +287,7 @@ async function getMcpTools(
 
 async function getValidNotionToken(
   ctx: ActionCtx,
+  userId: Id<"users">,
   conn: {
     accessToken: string;
     refreshToken: string;
@@ -319,7 +327,8 @@ async function getValidNotionToken(
         ? Math.floor(Date.now() / 1000) + tokens.expires_in
         : undefined;
 
-      await ctx.runMutation(api.notion.updateTokens, {
+      await ctx.runMutation(internal.notion.updateTokensForAgent, {
+        userId,
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token || conn.refreshToken,
         expiresAt,
@@ -333,6 +342,420 @@ async function getValidNotionToken(
 
   return conn.accessToken;
 }
+
+const MAX_AGENT_STEPS = 8;
+
+export const getAgentRunInternal = internalQuery({
+  args: { runId: v.id("agentRuns") },
+  handler: async (ctx, { runId }) => ctx.db.get(runId),
+});
+
+export const createAgentRunWithPrompt = internalMutation({
+  args: {
+    threadId: v.string(),
+    userId: v.id("users"),
+    prompt: vMessage,
+    fileIds: v.optional(v.array(v.string())),
+    model: v.string(),
+    searchEnabled: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const latestRun = await ctx.db
+      .query("agentRuns")
+      .withIndex("byThread", (q) => q.eq("threadId", args.threadId))
+      .order("desc")
+      .first();
+    if (
+      latestRun &&
+      ["running", "stopRequested", "paused"].includes(latestRun.status)
+    ) {
+      throw new ConvexError(
+        "This thread has an active or paused response. Resume it before sending another message.",
+      );
+    }
+
+    const savedPrompt = await agent.saveMessage(ctx, {
+      threadId: args.threadId,
+      userId: args.userId,
+      message: args.prompt,
+      metadata: args.fileIds ? { fileIds: args.fileIds } : undefined,
+      skipEmbeddings: true,
+    });
+    const now = Date.now();
+    const runId = await ctx.db.insert("agentRuns", {
+      threadId: args.threadId,
+      userId: args.userId,
+      promptMessageId: savedPrompt.messageId,
+      order: savedPrompt.message.order,
+      model: args.model,
+      searchEnabled: args.searchEnabled,
+      status: "running",
+      stepCount: 0,
+      createdAt: now,
+      updatedAt: now,
+    });
+    return {
+      runId,
+      promptMessageId: savedPrompt.messageId,
+      order: savedPrompt.message.order,
+    };
+  },
+});
+
+export const attachAgentRunWorkflow = internalMutation({
+  args: { runId: v.id("agentRuns"), workflowId: vWorkflowId },
+  returns: v.null(),
+  handler: async (ctx, { runId, workflowId }) => {
+    const run = await ctx.db.get(runId);
+    if (!run) throw new ConvexError("Agent run not found.");
+    await ctx.db.patch(runId, { workflowId, updatedAt: Date.now() });
+    return null;
+  },
+});
+
+export const claimAgentRunStep = internalMutation({
+  args: { runId: v.id("agentRuns"), stepNumber: v.number() },
+  returns: v.boolean(),
+  handler: async (ctx, { runId, stepNumber }) => {
+    const run = await ctx.db.get(runId);
+    if (!run || run.status !== "running") return false;
+    if (run.stepCount + 1 !== stepNumber) {
+      throw new ConvexError("Agent run checkpoint is out of sequence.");
+    }
+    if (run.inFlightStep !== undefined) {
+      if (run.inFlightStep !== stepNumber) {
+        throw new ConvexError("Another agent step is already in flight.");
+      }
+      return true;
+    }
+    await ctx.db.patch(runId, {
+      inFlightStep: stepNumber,
+      updatedAt: Date.now(),
+    });
+    return true;
+  },
+});
+
+export const setAgentRunStatus = internalMutation({
+  args: {
+    runId: v.id("agentRuns"),
+    status: v.union(
+      v.literal("running"),
+      v.literal("paused"),
+      v.literal("completed"),
+      v.literal("failed"),
+    ),
+    error: v.optional(v.string()),
+  },
+  returns: v.null(),
+  handler: async (ctx, { runId, status, error }) => {
+    const run = await ctx.db.get(runId);
+    if (!run) return null;
+    const now = Date.now();
+    await ctx.db.patch(runId, {
+      status,
+      updatedAt: now,
+      ...(status === "completed" || status === "failed"
+        ? { completedAt: now }
+        : {}),
+      ...(error ? { lastError: error } : {}),
+    });
+    return null;
+  },
+});
+
+export const agentRunWorkflow = workflow.define({
+  args: { runId: v.id("agentRuns") },
+  returns: v.null(),
+  handler: async (step, { runId }): Promise<null> => {
+    await step.runMutation(internal.threads.attachAgentRunWorkflow, {
+      runId,
+      workflowId: step.workflowId,
+    });
+
+    for (let stepNumber = 1; stepNumber <= MAX_AGENT_STEPS; stepNumber += 1) {
+      let claimed = false;
+      while (!claimed) {
+        const run = await step.runQuery(internal.threads.getAgentRunInternal, {
+          runId,
+        });
+        if (!run || ["completed", "failed"].includes(run.status)) return null;
+        if (run.status === "stopRequested") {
+          await step.runMutation(internal.threads.setAgentRunStatus, {
+            runId,
+            status: "paused",
+          });
+          await step.awaitEvent({ name: "resume" });
+          await step.runMutation(internal.threads.setAgentRunStatus, {
+            runId,
+            status: "running",
+          });
+          continue;
+        }
+        if (run.status !== "running") return null;
+        claimed = await step.runMutation(internal.threads.claimAgentRunStep, {
+          runId,
+          stepNumber,
+        });
+      }
+
+      const result = await step.runAction(
+        internal.threads.runAgentStep,
+        { runId, stepNumber },
+        { retry: false },
+      );
+      await step.runMutation(internal.users.settleAgentRunStep, {
+        runId,
+        stepNumber,
+        ...result,
+      });
+
+      if (!result.hasToolCalls || stepNumber === MAX_AGENT_STEPS) {
+        await step.runMutation(internal.threads.setAgentRunStatus, {
+          runId,
+          status: "completed",
+        });
+        return null;
+      }
+    }
+
+    return null;
+  },
+});
+
+export const agentRunWorkflowCompleted = internalMutation({
+  args: {
+    workflowId: vWorkflowId,
+    result: vResultValidator,
+    context: v.object({ runId: v.id("agentRuns") }),
+  },
+  returns: v.null(),
+  handler: async (ctx, { context: { runId }, result }) => {
+    const run = await ctx.db.get(runId);
+    if (!run) return null;
+    if (result.kind === "success") {
+      await ctx.db.patch(runId, { status: "completed", updatedAt: Date.now() });
+    } else {
+      const error = result.kind === "failed" ? result.error : "Workflow canceled.";
+      await ctx.db.patch(runId, {
+        status: "failed",
+        lastError: error,
+        updatedAt: Date.now(),
+        completedAt: Date.now(),
+      });
+      const pending = await ctx.runQuery(
+        components.agent.messages.listMessagesByThreadId,
+        {
+          threadId: run.threadId,
+          paginationOpts: { cursor: null, numItems: 20 },
+          order: "desc",
+          statuses: ["pending"],
+        },
+      );
+      await Promise.all(
+        pending.page.map((message) =>
+          ctx.runMutation(components.agent.messages.updateMessage, {
+            messageId: message._id,
+            patch: { status: "failed", error: "The agent run failed. Please try again." },
+          }),
+        ),
+      );
+    }
+    return null;
+  },
+});
+
+export const runAgentStep = internalAction({
+  args: {
+    runId: v.id("agentRuns"),
+    stepNumber: v.number(),
+  },
+  handler: async (ctx, { runId, stepNumber }) => {
+    const run = await ctx.runQuery(internal.threads.getAgentRunInternal, {
+      runId,
+    });
+    if (
+      !run ||
+      run.stepCount + 1 !== stepNumber ||
+      run.inFlightStep !== stepNumber
+    ) {
+      throw new ConvexError("Agent run checkpoint is out of sequence.");
+    }
+
+    const notionConn = await ctx.runQuery(internal.notion.getConnectionForUser, {
+      userId: run.userId,
+    });
+    const userNotionToken = await getValidNotionToken(
+      ctx,
+      run.userId,
+      notionConn,
+    );
+    const tools = await getMcpTools(
+      run.searchEnabled,
+      userNotionToken ?? undefined,
+      String(run.userId),
+      run.threadId,
+    );
+    const notionInstruction = notionConn
+      ? userNotionInstruction(notionConn.workspaceName)
+      : "";
+    const computerInstruction = hasComputerUseTools(tools)
+      ? computerUseInstruction()
+      : "";
+    const extraInstructions = `${notionInstruction}${computerInstruction}`;
+
+    const { thread } = await agent.continueThread(ctx, {
+      threadId: run.threadId,
+      userId: run.userId,
+    });
+    const result = await thread.streamText(
+      {
+        model: gateway.languageModel(run.model),
+        promptMessageId: run.promptMessageId,
+        instructions: extraInstructions
+          ? `${chatSystemInstructions}${extraInstructions}`
+          : undefined,
+        tools,
+        stopWhen: isStepCount(1),
+        onError: async () => {
+          await failPendingMessages(
+            ctx,
+            run.threadId,
+            "The AI provider failed before returning a response.",
+          );
+        },
+      },
+      {
+        saveStreamDeltas: { chunking: "word", throttleMs: 0 },
+        storageOptions: { saveMessages: "all" },
+      },
+    );
+
+    const [outputText, usage, finalStep, steps] = await Promise.all([
+      result.text,
+      result.usage,
+      result.finalStep,
+      result.steps,
+    ]);
+    const lastSavedMessage = result.savedMessages?.at(-1);
+    const order = result.order ?? run.order;
+    const stepOrder = lastSavedMessage?.stepOrder ?? stepNumber;
+    const toolCalls = steps.flatMap((step) => step.toolCalls);
+    const usageObject = toUsageObject(usage);
+    const toolCallItems = toolCalls.map((call) => ({
+      type: "tool-call" as const,
+      id: call.toolCallId,
+      function: { name: call.toolName, arguments: call.input },
+    }));
+    const hasUsage =
+      usageObject.totalTokens !== undefined ||
+      usageObject.inputTokens !== undefined ||
+      usageObject.outputTokens !== undefined;
+    if (hasUsage || finalStep.providerMetadata || toolCallItems.length > 0) {
+      try {
+        await ctx.runAction(internal.posthog.captureLlmGeneration, {
+          distinctId: String(run.userId),
+          traceId: `${run.threadId}:${order}:${stepNumber}`,
+          threadId: run.threadId,
+          order,
+          sessionId: run.threadId,
+          model: run.model,
+          provider: "AI Gateway",
+          output: outputText
+            ? [{
+                role: "assistant",
+                content: [
+                  { type: "text", text: outputText },
+                  ...toolCallItems,
+                ],
+              }]
+            : toolCallItems.length > 0
+              ? [{ role: "assistant", content: toolCallItems }]
+              : [],
+          usage: usageObject,
+          providerMetadata: finalStep.providerMetadata,
+        });
+      } catch (error) {
+        console.error("PostHog LLM capture failed", error);
+      }
+    }
+
+    return {
+      model: run.model,
+      provider: "AI Gateway",
+      order,
+      stepOrder,
+      hasOutput: outputText.length > 0,
+      hasToolCalls: toolCalls.length > 0,
+      toolCallIds: toolCalls.map((call) => call.toolCallId),
+      usage: usageObject,
+      providerMetadata: finalStep.providerMetadata,
+    };
+  },
+});
+
+function findActiveAgentRun(ctx: MutationCtx | QueryCtx, threadId: string) {
+  return ctx.db
+    .query("agentRuns")
+    .withIndex("byThread", (q) => q.eq("threadId", threadId))
+    .order("desc")
+    .first();
+}
+
+export const getAgentRunState = query({
+  args: { threadId: v.string() },
+  handler: async (ctx, { threadId }) => {
+    await authorizeThreadAccess(ctx, threadId, true);
+    const run = await findActiveAgentRun(ctx, threadId);
+    if (!run) return null;
+    return {
+      runId: run._id,
+      status: run.status,
+      stepCount: run.stepCount,
+      updatedAt: run.updatedAt,
+      lastError: run.lastError,
+    };
+  },
+});
+
+export const stopThread = mutation({
+  args: { threadId: v.string() },
+  handler: async (ctx, { threadId }) => {
+    await authorizeThreadAccess(ctx, threadId, true);
+    const run = await findActiveAgentRun(ctx, threadId);
+    if (!run || run.status === "completed" || run.status === "failed") {
+      return { status: run?.status ?? "idle" };
+    }
+    if (run.status === "running") {
+      await ctx.db.patch(run._id, {
+        status: "stopRequested",
+        updatedAt: Date.now(),
+      });
+      return { status: "stopRequested" as const };
+    }
+    return { status: run.status };
+  },
+});
+
+export const resumeThread = mutation({
+  args: { threadId: v.string() },
+  handler: async (ctx, { threadId }) => {
+    await authorizeThreadAccess(ctx, threadId, true);
+    const run = await findActiveAgentRun(ctx, threadId);
+    if (!run || run.status !== "paused" || !run.workflowId) {
+      throw new ConvexError("No paused agent run is ready to resume.");
+    }
+    await sendEvent(ctx, components.workflow, {
+      workflowId: run.workflowId as WorkflowId,
+      name: "resume",
+    });
+    await ctx.db.patch(run._id, {
+      status: "running",
+      updatedAt: Date.now(),
+    });
+    return { status: "running" as const, runId: run._id };
+  },
+});
 
 async function getDefaultThreadForUser(
   ctx: QueryCtx | MutationCtx | ActionCtx,
@@ -733,21 +1156,15 @@ export const generateReply = action({
     ctx,
     { prompt, model, searchEnabled = false, threadId: requestedThreadId, attachments = [] },
   ) => {
+    let preparedRunId: Id<"agentRuns"> | undefined;
     try {
     const userId = await getAuthUserId(ctx);
     if (!userId) {
       throw new ConvexError("Please sign in to continue.");
     }
 
-    const user = await ctx.runQuery(api.users.viewer, {});
-    if (!user) {
-      throw new ConvexError("We couldn't load your account. Please refresh and try again.");
-    }
-
-    // Admission gate: balance, premium access and usage caps are enforced
-    // BEFORE generation starts (usageGate also covers anonymous users, so
-    // anonymous callers cannot reach premium models). Settlement accounts
-    // for completed work separately.
+    // Admission gate runs before the durable run is created. Each completed
+    // model step is settled at its checkpoint.
     await ctx.runMutation(api.users.usageGate, { model });
 
     const text = prompt.trim();
@@ -768,177 +1185,56 @@ export const generateReply = action({
     const threadId =
       requestedThreadId ?? (await getOrCreateDefaultThread(ctx, userId));
 
-    const notionConn = await ctx.runQuery(internal.notion.getConnectionForUser, {
-      userId,
-    });
-    const userNotionToken = await getValidNotionToken(ctx, notionConn);
-
-    // computer_* arrives via site MCP for the iOS Grok Bot path when
-    // COMPUTER_USE_ENABLED + sandbox creds;
-    // pass userId as x-computer-session for sandbox isolation.
-    const tools = await getMcpTools(
-      searchEnabled,
-      userNotionToken ?? undefined,
-      String(userId),
-      threadId,
-    );
-
-    const notionInstruction = notionConn
-      ? userNotionInstruction(notionConn.workspaceName)
-      : "";
-    // skills/computer-use/SKILL.md — inject when computer_* tools are on the MCP surface
-    const computerInstruction = hasComputerUseTools(tools)
-      ? computerUseInstruction()
-      : "";
-    const extraInstructions = `${notionInstruction}${computerInstruction}`;
-
-    const { thread } = await agent.continueThread(ctx, { threadId, userId });
     const modelPrompt = await mobileModelPrompt(ctx, text, attachments);
-    const promptMessageId = modelPrompt.kind === "attachments"
-      ? (
-          await agent.saveMessage(ctx, {
-            threadId,
-            userId,
-            message: modelPrompt.prompt[0],
-            metadata: { fileIds: modelPrompt.fileIds },
-            skipEmbeddings: true,
-          })
-        ).messageId
-      : undefined;
-
-    const result = await thread.streamText(
+    const promptMessage: ModelMessage = modelPrompt.kind === "attachments"
+      ? modelPrompt.prompt[0]
+      : { role: "user", content: modelPrompt.prompt };
+    const prepared = await ctx.runMutation(
+      internal.threads.createAgentRunWithPrompt,
       {
-        model: gateway.languageModel(model),
-        instructions: extraInstructions
-          ? `${chatSystemInstructions}${extraInstructions}`
+        threadId,
+        userId,
+        prompt: promptMessage,
+        fileIds: modelPrompt.kind === "attachments"
+          ? modelPrompt.fileIds
           : undefined,
-        prompt: modelPrompt.prompt,
-        promptMessageId,
-        tools,
-        stopWhen: isStepCount(8),
-        onError: async () => {
-          await failPendingMessages(
-            ctx,
-            threadId,
-            "The AI provider failed before returning a response.",
-          );
-        },
-      },
-      {
-        // The native client renders from these durable deltas. Do not add a
-        // transport delay here; provider output should reach the subscription
-        // as soon as the SDK emits it.
-        saveStreamDeltas: {
-          chunking: "word",
-          throttleMs: 0,
-        },
-        storageOptions: { saveMessages: "all" },
+        model,
+        searchEnabled,
       },
     );
-
-    let outputText: string;
-    let usage: Awaited<typeof result.usage>;
-    let providerMetadata: Awaited<typeof result.finalStep>["providerMetadata"];
-    try {
-      const [textResult, usageResult, finalStep] = await Promise.all([
-        result.text,
-        result.usage,
-        result.finalStep,
-      ]);
-      outputText = textResult;
-      usage = usageResult;
-      providerMetadata = finalStep.providerMetadata;
-    } catch (error) {
-      await failPendingMessages(
-        ctx,
-        threadId,
-        "The AI provider failed before returning a response.",
-      );
-      throw userFacingGenerationError(error);
-    }
-    const usageObject = toUsageObject(usage);
-
-    // Same shape @posthog/ai emits: tool-call items inside the assistant
-    // message of $ai_output_choices, so PostHog's AI dashboard counts them.
-    const toolCallItems = await result.steps
-      .then((steps) =>
-        steps.flatMap((step) =>
-          step.toolCalls.map((call) => ({
-            type: "tool-call" as const,
-            id: call.toolCallId,
-            function: {
-              name: call.toolName,
-              arguments: call.input,
-            },
-          })),
-        ),
-      )
-      .catch(() => []);
-
-    if (outputText) {
-      if (user.isAnonymous) {
-        await ctx.runMutation(api.users.messages, {});
-      } else {
-        await ctx.runMutation(api.users.usage, {
-          usage: usageObject,
-          model,
-          provider: "AI Gateway",
-          providerMetadata,
-        });
-      }
-    }
-
-    const hasUsage =
-      usageObject.totalTokens !== undefined ||
-      usageObject.inputTokens !== undefined ||
-      usageObject.outputTokens !== undefined;
-    if (hasUsage || providerMetadata || toolCallItems.length > 0) {
-      try {
-        await ctx.runAction(internal.posthog.captureLlmGeneration, {
-          distinctId: userId,
-          traceId: `${threadId}:${result.order}`,
-          threadId,
-          order: result.order,
-          sessionId: threadId,
-          model,
-          provider: "AI Gateway",
-          input: [{ role: "user", content: text }],
-          output: outputText
-            ? [
-                {
-                  role: "assistant",
-                  content: [
-                    { type: "text", text: outputText },
-                    ...toolCallItems,
-                  ],
-                },
-              ]
-            : toolCallItems.length > 0
-              ? [
-                  {
-                    role: "assistant",
-                    content: toolCallItems,
-                  },
-                ]
-              : [],
-          usage: usageObject,
-          providerMetadata,
-        });
-      } catch (error) {
-        console.error("PostHog LLM capture failed", error);
-      }
-    }
+    preparedRunId = prepared.runId;
 
     await Promise.allSettled(
       attachments.map(({ storageId }) => ctx.storage.delete(storageId)),
     );
 
+    await start(
+      ctx,
+      internal.threads.agentRunWorkflow,
+      { runId: prepared.runId },
+      {
+        startAsync: true,
+        onComplete: internal.threads.agentRunWorkflowCompleted,
+        context: { runId: prepared.runId },
+      },
+    );
+
     return {
       threadId,
-      order: result.order,
-      promptMessageId: result.promptMessageId,
+      order: prepared.order,
+      promptMessageId: prepared.promptMessageId,
+      runId: prepared.runId,
     };
     } catch (error) {
+      if (preparedRunId) {
+        await ctx.runMutation(internal.threads.setAgentRunStatus, {
+          runId: preparedRunId,
+          status: "failed",
+          error: "Could not start the durable agent workflow.",
+        }).catch((statusError) => {
+          console.error("Failed to mark agent run as failed", statusError);
+        });
+      }
       await Promise.allSettled(
         attachments.map(({ storageId }) => ctx.storage.delete(storageId)),
       );

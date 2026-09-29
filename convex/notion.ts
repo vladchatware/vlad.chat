@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { internalQuery, mutation, query } from "./_generated/server";
+import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { getAuthUserId } from "@convex-dev/auth/server";
 
 export const getConnection = query({
@@ -130,5 +130,29 @@ export const updateTokens = mutation({
         expiresAt: args.expiresAt,
       });
     }
+  },
+});
+
+export const updateTokensForAgent = internalMutation({
+  args: {
+    userId: v.id("users"),
+    accessToken: v.string(),
+    refreshToken: v.string(),
+    expiresAt: v.optional(v.number()),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("notionConnections")
+      .withIndex("userId", (q) => q.eq("userId", args.userId))
+      .first();
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        accessToken: args.accessToken,
+        refreshToken: args.refreshToken,
+        expiresAt: args.expiresAt,
+      });
+    }
+    return null;
   },
 });

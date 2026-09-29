@@ -24,6 +24,7 @@ import type * as storekit from "../storekit.js";
 import type * as threads from "../threads.js";
 import type * as users from "../users.js";
 import type * as validators from "../validators.js";
+import type { ComponentApi as WorkflowComponentApi } from "@convex-dev/workflow/_generated/component.js";
 
 import type {
   ApiFromModules,
@@ -5947,4 +5948,5 @@ export declare const components: {
       };
     };
   };
+  workflow: WorkflowComponentApi<"workflow">;
 };

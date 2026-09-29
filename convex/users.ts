@@ -460,6 +460,80 @@ export const usage = mutation({
   },
 })
 
+export const settleAgentRunStep = internalMutation({
+  args: {
+    runId: v.id("agentRuns"),
+    stepNumber: v.number(),
+    model: v.string(),
+    provider: v.string(),
+    order: v.number(),
+    stepOrder: v.number(),
+    hasOutput: v.boolean(),
+    hasToolCalls: v.boolean(),
+    toolCallIds: v.array(v.string()),
+    usage: usageValidator,
+    providerMetadata: v.optional(vProviderMetadata),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("agentRunSteps")
+      .withIndex("byRunStep", (q) =>
+        q.eq("runId", args.runId).eq("stepNumber", args.stepNumber),
+      )
+      .unique();
+    if (existing) return null;
+
+    const run = await ctx.db.get(args.runId);
+    if (!run) throw new ConvexError("Agent run not found.");
+    if (args.stepNumber !== run.stepCount + 1) {
+      throw new ConvexError("Agent run checkpoint is out of sequence.");
+    }
+
+    const user = await ctx.db.get(run.userId);
+    if (!user) throw new ConvexError("User not found.");
+
+    if (user.isAnonymous) {
+      if (args.hasOutput && !run.anonymousMessageBilled) {
+        const trialMessages = Math.max(0, user.trialMessages ?? 0);
+        if (trialMessages > 0) {
+          await ctx.db.patch(user._id, { trialMessages: trialMessages - 1 });
+        }
+        await ctx.db.patch(run._id, { anonymousMessageBilled: true });
+      }
+    } else {
+      await recordUsage(ctx, run.userId, {
+        model: args.model,
+        provider: args.provider,
+        usage: args.usage,
+        providerMetadata: args.providerMetadata,
+        source: "chat",
+      });
+    }
+
+    await ctx.db.insert("agentRunSteps", {
+      runId: run._id,
+      stepNumber: args.stepNumber,
+      model: args.model,
+      provider: args.provider,
+      order: args.order,
+      stepOrder: args.stepOrder,
+      hasOutput: args.hasOutput,
+      hasToolCalls: args.hasToolCalls,
+      toolCallIds: args.toolCallIds,
+      usage: args.usage,
+      providerMetadata: args.providerMetadata,
+      createdAt: Date.now(),
+    });
+    await ctx.db.patch(run._id, {
+      stepCount: args.stepNumber,
+      inFlightStep: undefined,
+      updatedAt: Date.now(),
+    });
+    return null;
+  },
+});
+
 export const listApiKeys = query({
   args: {},
   returns: v.array(v.object({

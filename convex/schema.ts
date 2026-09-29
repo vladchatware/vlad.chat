@@ -144,6 +144,45 @@ export default defineSchema({
   })
     .index("bySessionKey", ["sessionKey"])
     .index("byExpiresAt", ["expiresAt"]),
+  agentRuns: defineTable({
+    threadId: v.string(),
+    userId: v.id("users"),
+    promptMessageId: v.string(),
+    order: v.number(),
+    model: v.string(),
+    searchEnabled: v.boolean(),
+    workflowId: v.optional(v.string()),
+    status: v.union(
+      v.literal("running"),
+      v.literal("stopRequested"),
+      v.literal("paused"),
+      v.literal("completed"),
+      v.literal("failed"),
+    ),
+    stepCount: v.number(),
+    inFlightStep: v.optional(v.number()),
+    anonymousMessageBilled: v.optional(v.boolean()),
+    lastError: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    completedAt: v.optional(v.number()),
+  })
+    .index("byThread", ["threadId", "createdAt"])
+    .index("byUser", ["userId", "createdAt"]),
+  agentRunSteps: defineTable({
+    runId: v.id("agentRuns"),
+    stepNumber: v.number(),
+    model: v.string(),
+    provider: v.string(),
+    order: v.number(),
+    stepOrder: v.number(),
+    hasOutput: v.boolean(),
+    hasToolCalls: v.boolean(),
+    toolCallIds: v.array(v.string()),
+    usage: usageValidator,
+    providerMetadata: v.optional(vProviderMetadata),
+    createdAt: v.number(),
+  }).index("byRunStep", ["runId", "stepNumber"]),
   // Daily ephemeral group chat - cleared every day
   loungeMessages: defineTable({
     userId: v.optional(v.id("users")), // Optional for bot messages
