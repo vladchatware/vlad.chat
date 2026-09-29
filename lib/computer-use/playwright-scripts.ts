@@ -199,6 +199,11 @@ export DISPLAY=:99
 export PLAYWRIGHT_BROWSERS_PATH=/tmp/cu-browsers
 export PATH="$HOME/.local/bin:$PATH"
 mkdir -p /tmp/cu /tmp/cu-profile
+if [ ! -s /tmp/cu/websockify-tokens ]; then
+  echo "authenticated WebSocket token file missing" >&2
+  exit 1
+fi
+chmod 600 /tmp/cu/websockify-tokens
 # Session bus for AT-SPI (cua-driver get_window_state). Persist for later shot/act cmds.
 if [ -z "\${DBUS_SESSION_BUS_ADDRESS:-}" ] && command -v dbus-launch >/dev/null 2>&1; then
   dbus-launch --sh-syntax > /tmp/cu/dbus.env
@@ -281,11 +286,11 @@ echo "$ENTRY" > /tmp/cu/novnc-entry
 
 start_websockify() {
   if command -v websockify >/dev/null 2>&1; then
-    websockify --web="$NOVNC_WEB" 6080 127.0.0.1:5900 >/tmp/cu/novnc.log 2>&1 &
+    websockify --web="$NOVNC_WEB" --token-plugin TokenFile --token-source /tmp/cu/websockify-tokens 6080 >/tmp/cu/novnc.log 2>&1 &
     return 0
   fi
   if python3 -c 'import websockify' >/dev/null 2>&1; then
-    python3 -m websockify --web="$NOVNC_WEB" 6080 127.0.0.1:5900 >/tmp/cu/novnc.log 2>&1 &
+    python3 -m websockify --web="$NOVNC_WEB" --token-plugin TokenFile --token-source /tmp/cu/websockify-tokens 6080 >/tmp/cu/novnc.log 2>&1 &
     return 0
   fi
   echo "websockify not available" >&2

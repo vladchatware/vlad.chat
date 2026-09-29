@@ -1,3 +1,6 @@
+import type { ComputerSession } from "./types";
+import { COMPUTER_USE_MAX_TTL_MS } from "./limits";
+
 export type ScreenshotArtifact = {
   id: string;
   png: Buffer;
@@ -132,10 +135,13 @@ export async function putScreenshot(
 export async function publishLiveComputerSession(
   sessionKey: string,
   sessionId: string,
-  session: { viewerUrl?: string; nativeViewerUrl?: string; threadId?: string } | null,
+  session: Partial<ComputerSession> | null,
+  status = session ? "active" : "ended",
 ): Promise<void> {
   const config = screenshotStorageConfig();
-  if (!config) return;
+  if (!config) {
+    throw new Error("Persistent computer-use sessions require NEXT_PUBLIC_CONVEX_URL and COMPUTER_USE_STORAGE_SECRET.");
+  }
 
   const response = await fetch(`${config.siteUrl}/computer-use/sessions`, {
     method: "POST",
@@ -144,10 +150,10 @@ export async function publishLiveComputerSession(
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
+      ...(session ? session : {}),
       sessionKey,
       sessionId,
-      status: session ? "active" : "ended",
-      ...(session ? session : {}),
+      status,
     }),
     cache: "no-store",
   });
@@ -158,6 +164,74 @@ export async function publishLiveComputerSession(
     );
   }
 }
+
+export type StoredComputerSession = Pick<ComputerSession, "sessionKey" | "sessionId"> &
+  Partial<Omit<ComputerSession, "sessionKey" | "sessionId">> & {
+  updatedAt: number;
+  expiresAt: number;
+};
+
+async function requestSessionStore(path: string, init: RequestInit): Promise<Response> {
+  const config = screenshotStorageConfig();
+  if (!config) {
+    throw new Error("Persistent computer-use sessions require Convex URL and storage secret.");
+  }
+  return fetch(`${config.siteUrl}${path}`, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${config.secret}`,
+      ...(init.headers || {}),
+    },
+    cache: "no-store",
+  });
+}
+
+export async function getStoredComputerSession(
+  sessionKey: string,
+): Promise<StoredComputerSession | null> {
+  const response = await requestSessionStore(
+    `/computer-use/sessions?sessionKey=${encodeURIComponent(sessionKey)}`,
+    { method: "GET" },
+  );
+  if (!response.ok) {
+    throw new Error(`Convex live-session lookup failed (${response.status}).`);
+  }
+  const body = (await response.json()) as { session: StoredComputerSession | null };
+  return body.session;
+}
+
+export async function recordComputerSessionActivity(
+  session: Pick<ComputerSession, "sessionKey" | "sessionId" | "createdAt">,
+): Promise<{ stepCount: number; lastUsedAt: number }> {
+  const response = await requestSessionStore("/computer-use/sessions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      sessionKey: session.sessionKey,
+      sessionId: session.sessionId,
+      status: "active",
+      event: "activity",
+      expiresAt: session.createdAt + COMPUTER_USE_MAX_TTL_MS,
+    }),
+  });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error || `Convex session activity failed (${response.status}).`);
+  }
+  return (await response.json()) as { stepCount: number; lastUsedAt: number };
+}
+
+export async function listStoredComputerSessionsForCleanup(): Promise<StoredComputerSession[]> {
+  const response = await requestSessionStore("/computer-use/sessions?cleanup=1", {
+    method: "GET",
+  });
+  if (!response.ok) {
+    throw new Error(`Convex session cleanup lookup failed (${response.status}).`);
+  }
+  const body = (await response.json()) as { sessions: StoredComputerSession[] };
+  return body.sessions;
+}
+
 
 export async function getScreenshot(
   id: string,
