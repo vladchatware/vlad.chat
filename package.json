@@ -21,7 +21,7 @@
     "@auth/core": "0.37.0",
     "@convex-dev/agent": "^0.7.1",
     "@convex-dev/auth": "^0.0.90",
-    "@convex-dev/workflow": "0.4.6",
+    "@convex-dev/workflow": "0.4.8",
     "@convex-dev/workpool": "0.4.12",
     "@icons-pack/react-simple-icons": "^13.7.0",
     "@modelcontextprotocol/sdk": "1.26.0",
