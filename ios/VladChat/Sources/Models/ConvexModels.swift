@@ -234,6 +234,10 @@ struct AbortReplyResult: Decodable, Sendable {
     let failedPending: Double
 }
 
+struct StopThreadResult: Decodable, Sendable {
+    let status: String
+}
+
 struct DeleteMobileMessagesResult: Decodable, Sendable {
     let deleted: Bool
 }

@@ -206,16 +206,11 @@ final class ChatViewModel: ObservableObject {
         localGenerationMessageID = nil
         isLoading = false
         guard let client, let threadId = currentChat?.id else { return }
-        let activeOrder = currentChat?.messages
-            .last(where: { $0.role == .assistant && $0.isStreaming })
-            .flatMap { messageOrders[$0.id] }
         Task { [weak self] in
             do {
-                var arguments: [String: ConvexEncodable?] = ["threadId": threadId]
-                if let activeOrder { arguments["order"] = activeOrder }
-                let _: AbortReplyResult = try await client.mutation(
-                    "threads:abortReply",
-                    with: arguments
+                let _: StopThreadResult = try await client.mutation(
+                    "threads:stopThread",
+                    with: ["threadId": threadId]
                 )
             } catch {
                 self?.attachmentError = Self.userFacingMessage(for: error)

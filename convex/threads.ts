@@ -46,7 +46,7 @@ import {
   mergeMobileStreamText,
   projectStoredResponse,
 } from "@/lib/mobile-stream";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import { WorkflowManager, sendEvent, start, vWorkflowId, vResultValidator } from "@convex-dev/workflow";
 import type { WorkflowId } from "@convex-dev/workflow";
 
@@ -1077,6 +1077,23 @@ async function findActiveAgentRun(
   return runningRun ?? stopRequestedRun ?? pausedRun;
 }
 
+async function requestAgentRunStop(ctx: MutationCtx, run: Doc<"agentRuns">) {
+  if (run.status !== "running") return run.status;
+  await ctx.db.patch(run._id, {
+    status: "stopRequested",
+    updatedAt: Date.now(),
+  });
+  if (run.inFlightPhase === "model" && run.inFlightStreamId) {
+    await abortStream(ctx, components.agent, {
+      streamId: run.inFlightStreamId,
+      reason: "User stopped generation",
+    }).catch((error) => {
+      console.error("Could not abort persisted agent stream", error);
+    });
+  }
+  return "stopRequested" as const;
+}
+
 async function startNextQueuedAgentRunForThread(
   ctx: MutationCtx,
   threadId: string,
@@ -1320,25 +1337,10 @@ export const stopThread = mutation({
   handler: async (ctx, { threadId }) => {
     await authorizeThreadAccess(ctx, threadId, true);
     const run = await findActiveAgentRun(ctx, threadId);
-    if (!run || run.status === "completed" || run.status === "failed") {
-      return { status: run?.status ?? "idle" };
-    }
-    if (run.status === "running") {
-      await ctx.db.patch(run._id, {
-        status: "stopRequested",
-        updatedAt: Date.now(),
-      });
-      if (run.inFlightPhase === "model" && run.inFlightStreamId) {
-        await abortStream(ctx, components.agent, {
-          streamId: run.inFlightStreamId,
-          reason: "User stopped generation",
-        }).catch((error) => {
-          console.error("Could not abort persisted agent stream", error);
-        });
-      }
-      return { status: "stopRequested" as const };
-    }
-    return { status: run.status };
+    const status = run
+      ? await requestAgentRunStop(ctx, run)
+      : "idle";
+    return { status };
   },
 });
 
@@ -1910,6 +1912,15 @@ export const abortReply = mutation({
   },
   handler: async (ctx, args) => {
     await authorizeThreadAccess(ctx, args.threadId, true);
+
+    const run = await findActiveAgentRun(ctx, args.threadId);
+    if (run) {
+      const status = await requestAgentRunStop(ctx, run);
+      return {
+        aborted: status === "stopRequested",
+        failedPending: 0,
+      };
+    }
 
     const activeStreams = await syncStreams(ctx, components.agent, {
       threadId: args.threadId,
