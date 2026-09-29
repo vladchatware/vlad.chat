@@ -9,6 +9,18 @@ enum ComputerViewerPresentation: Equatable {
     case inspector
 }
 
+enum ComputerConnectionState: Equatable {
+    case idle
+    case starting
+    case connecting
+    case live
+    case reconnecting
+    case failed
+    case ended
+
+    var canSendInput: Bool { self == .live }
+}
+
 struct ComputerComposerTopPreferenceKey: PreferenceKey {
     static let defaultValue: CGFloat? = nil
 
@@ -19,7 +31,7 @@ struct ComputerComposerTopPreferenceKey: PreferenceKey {
 
 @MainActor
 final class ComputerUseSessionController: NSObject, ObservableObject, WKNavigationDelegate, WKScriptMessageHandler {
-    @Published private(set) var state = "idle"
+    @Published private(set) var state = ComputerConnectionState.idle
     @Published private(set) var presentation: ComputerViewerPresentation = .hidden
     @Published private(set) var isExpanding = false
     @Published private(set) var canControl = false
@@ -30,10 +42,17 @@ final class ComputerUseSessionController: NSObject, ObservableObject, WKNavigati
     let webView: WKWebView
     private let scriptMessageProxy = WeakVNCMessageHandler()
     private var sessionID: String?
+    private var activeNavigationID: String?
+    private(set) var owningThreadID: String?
     private var viewerURL: URL?
     private var heldButtons = 0
     private var pendingPointer: CGPoint?
     private var pointerFlushTask: Task<Void, Never>?
+    private var connectionDeadlineTask: Task<Void, Never>?
+    private var didAutoReconnect = false
+    private var activeNavigation: WKNavigation?
+
+    var retryIsUnavailable: Bool { viewerURL == nil }
 
 
     override init() {
@@ -54,12 +73,20 @@ final class ComputerUseSessionController: NSObject, ObservableObject, WKNavigati
     }
 
 #if DEBUG
-    func loadUITestFixture(isConnecting: Bool = false) {
+    func loadUITestFixture(isConnecting: Bool = false, connectionTimeoutSeconds: UInt64? = nil) {
         sessionID = "ui-test-vnc-session"
         presentation = .floating
-        state = isConnecting ? "connecting" : "connected"
+        state = isConnecting ? .connecting : .live
         canControl = !isConnecting
-        guard !isConnecting else { return }
+        guard !isConnecting else {
+            if let connectionTimeoutSeconds {
+                beginConnectionDeadline(
+                    after: connectionTimeoutSeconds,
+                    message: "Computer connection timed out. Retry to try again."
+                )
+            }
+            return
+        }
         let fixture = """
         <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
         <style>
@@ -82,22 +109,68 @@ final class ComputerUseSessionController: NSObject, ObservableObject, WKNavigati
     }
 #endif
 
-    func start(url: URL, sessionID: String) {
+    func start(url: URL, sessionID: String, threadID: String? = nil) {
         guard url.scheme == "https",
               url.host?.hasSuffix(".vercel.run") == true,
               url.path == "/vladchat.html" else {
             fail("This computer session has no valid iOS VNC endpoint.")
             return
         }
-        if self.sessionID == sessionID, viewerURL == url, state != "failed" { return }
+        if self.sessionID == sessionID, viewerURL == url, state != .failed, state != .ended { return }
         releasePointer()
         self.sessionID = sessionID
+        owningThreadID = threadID
         viewerURL = url
         isExpanding = false
-        state = "connecting"
+        state = .connecting
         errorMessage = nil
         presentation = .floating
-        webView.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData))
+        didAutoReconnect = false
+        beginConnectionDeadline(message: "Computer did not connect in time. Retry to try again.")
+        loadViewer(url)
+    }
+
+    func showStarting(sessionID: String, threadID: String?) {
+        guard self.sessionID == nil || state == .idle || state == .failed || state == .ended else { return }
+        self.sessionID = sessionID
+        owningThreadID = threadID
+        viewerURL = nil
+        activeNavigationID = nil
+        state = .starting
+        errorMessage = nil
+        presentation = .floating
+        beginConnectionDeadline(
+            after: 90,
+            message: "Computer is taking longer than expected. Retry from the conversation."
+        )
+    }
+
+    func showFailure(_ message: String, sessionID: String, threadID: String?) {
+        cancelConnectionDeadline()
+        releasePointer()
+        activeNavigation = nil
+        activeNavigationID = nil
+        webView.stopLoading()
+        webView.loadHTMLString("", baseURL: nil)
+        self.sessionID = sessionID
+        owningThreadID = threadID
+        viewerURL = nil
+        state = .failed
+        errorMessage = message
+        presentation = .floating
+    }
+
+    func markEndedIfActive(message: String = "This computer session has ended. Start a new computer session to continue.") {
+        guard sessionID != nil, state != .idle, state != .ended else { return }
+        cancelConnectionDeadline()
+        releasePointer()
+        activeNavigation = nil
+        activeNavigationID = nil
+        webView.stopLoading()
+        webView.loadHTMLString("", baseURL: nil)
+        state = .ended
+        errorMessage = message
+        if presentation != .inspector { presentation = .hidden }
     }
 
     func updateAgentState(isActive: Bool, needsUser: Bool) {
@@ -107,12 +180,15 @@ final class ComputerUseSessionController: NSObject, ObservableObject, WKNavigati
 
     func retry() {
         guard let viewerURL else { return }
-        state = "connecting"
+        state = .connecting
         errorMessage = nil
-        webView.load(URLRequest(url: viewerURL, cachePolicy: .reloadIgnoringLocalCacheData))
+        didAutoReconnect = false
+        beginConnectionDeadline(message: "Computer did not reconnect in time. Retry to try again.")
+        loadViewer(viewerURL)
     }
 
     func stop() {
+        cancelConnectionDeadline()
         isExpanding = false
         pointerFlushTask?.cancel()
         pointerFlushTask = nil
@@ -120,8 +196,11 @@ final class ComputerUseSessionController: NSObject, ObservableObject, WKNavigati
         releasePointer()
         sessionID = nil
         viewerURL = nil
+        owningThreadID = nil
+        activeNavigation = nil
+        activeNavigationID = nil
         presentation = .hidden
-        state = "idle"
+        state = .idle
         errorMessage = nil
         webView.stopLoading()
         webView.loadHTMLString("", baseURL: nil)
@@ -153,7 +232,7 @@ final class ComputerUseSessionController: NSObject, ObservableObject, WKNavigati
     }
 
     func movePointer(by delta: CGSize, velocity: CGPoint, in viewSize: CGSize) {
-        guard canControl, state == "connected", viewSize.width > 0, viewSize.height > 0 else { return }
+        guard canControl, state.canSendInput, viewSize.width > 0, viewSize.height > 0 else { return }
         let speed = hypot(velocity.x, velocity.y)
         let acceleration = 1 + min(1.5, max(0, (speed - 120) / 720))
         let normalizedX = delta.width * acceleration / viewSize.width
@@ -165,7 +244,7 @@ final class ComputerUseSessionController: NSObject, ObservableObject, WKNavigati
     }
 
     func click(buttonMask: Int = 1, count: Int = 1) {
-        guard canControl, state == "connected" else { return }
+        guard canControl, state.canSendInput else { return }
         for _ in 0..<max(1, count) {
             heldButtons = buttonMask
             sendPointer(mask: heldButtons)
@@ -175,7 +254,7 @@ final class ComputerUseSessionController: NSObject, ObservableObject, WKNavigati
     }
 
     func beginDrag() {
-        guard canControl, state == "connected" else { return }
+        guard canControl, state.canSendInput else { return }
         heldButtons = 1
         sendPointer(mask: heldButtons)
     }
@@ -186,20 +265,20 @@ final class ComputerUseSessionController: NSObject, ObservableObject, WKNavigati
     }
 
     func scroll(deltaY: CGFloat) {
-        guard canControl, state == "connected" else { return }
+        guard canControl, state.canSendInput else { return }
         let mask = deltaY >= 0 ? 16 : 8
         sendPointer(mask: mask)
         sendPointer(mask: 0)
     }
 
     func sendSpecialKey(_ key: RemoteKey) {
-        guard canControl, state == "connected" else { return }
+        guard canControl, state.canSendInput else { return }
         let source = "window.vladVNC?.key(\(key.keysym), \(Self.jsonString(key.code)), true); window.vladVNC?.key(\(key.keysym), \(Self.jsonString(key.code)), false);"
         webView.evaluateJavaScript(source)
     }
 
     func sendText(_ value: String) {
-        guard canControl, state == "connected", !value.isEmpty else { return }
+        guard canControl, state.canSendInput, !value.isEmpty else { return }
         webView.evaluateJavaScript("window.vladVNC?.text(\(Self.jsonString(value))); ")
     }
 
@@ -236,8 +315,61 @@ final class ComputerUseSessionController: NSObject, ObservableObject, WKNavigati
     }
 
     private func fail(_ message: String) {
-        state = "failed"
+        cancelConnectionDeadline()
+        releasePointer()
+        activeNavigation = nil
+        activeNavigationID = nil
+        webView.stopLoading()
+        webView.loadHTMLString("", baseURL: nil)
+        state = .failed
         errorMessage = message
+    }
+
+    private func beginConnectionDeadline(after seconds: UInt64 = 15, message: String) {
+        cancelConnectionDeadline()
+        let expectedSessionID = sessionID
+        connectionDeadlineTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .seconds(seconds))
+            } catch {
+                return
+            }
+            guard let self,
+                  self.sessionID == expectedSessionID,
+                  self.state == .starting || self.state == .connecting || self.state == .reconnecting else { return }
+            self.fail(message)
+        }
+    }
+
+    private func cancelConnectionDeadline() {
+        connectionDeadlineTask?.cancel()
+        connectionDeadlineTask = nil
+    }
+
+    private func reconnectIfNeeded() {
+        guard state == .live || state == .connecting else { return }
+        releasePointer()
+        state = .reconnecting
+        errorMessage = "Connection interrupted. Reconnecting…"
+        beginConnectionDeadline(message: "Computer connection was lost. Retry to reconnect.")
+        guard !didAutoReconnect, let viewerURL else { return }
+        didAutoReconnect = true
+        loadViewer(viewerURL)
+    }
+
+    private func loadViewer(_ url: URL) {
+        let navigationID = UUID().uuidString
+        activeNavigationID = navigationID
+        activeNavigation = webView.load(URLRequest(url: connectionURL(url, navigationID: navigationID), cachePolicy: .reloadIgnoringLocalCacheData))
+    }
+
+    private func connectionURL(_ url: URL, navigationID: String) -> URL {
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url }
+        var items = components.queryItems ?? []
+        items.removeAll { $0.name == "clientNavigation" }
+        items.append(URLQueryItem(name: "clientNavigation", value: navigationID))
+        components.queryItems = items
+        return components.url ?? url
     }
 
     private static func jsonString(_ value: String) -> String {
@@ -249,13 +381,23 @@ final class ComputerUseSessionController: NSObject, ObservableObject, WKNavigati
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         guard let payload = message.body as? [String: Any],
               let type = payload["type"] as? String else { return }
+        if let messageNavigationID = payload["clientNavigation"] as? String {
+            guard messageNavigationID == activeNavigationID else { return }
+        } else if viewerURL != nil {
+            return
+        }
         switch type {
-        case "connecting": state = "connecting"
-        case "connected": state = "connected"
+        case "connecting":
+            if state == .live { reconnectIfNeeded() }
+            else if state != .reconnecting { state = .connecting }
+        case "connected":
+            cancelConnectionDeadline()
+            activeNavigation = nil
+            state = .live
+            errorMessage = nil
+            didAutoReconnect = false
         case "disconnected":
-            state = "failed"
-            errorMessage = "Computer connection closed. Retry to reconnect."
-            releasePointer()
+            reconnectIfNeeded()
         case "desktop":
             if let width = payload["width"] as? CGFloat,
                let height = payload["height"] as? CGFloat,
@@ -267,11 +409,17 @@ final class ComputerUseSessionController: NSObject, ObservableObject, WKNavigati
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        fail("Could not load VNC viewer: \(error.localizedDescription)")
+        guard navigation === activeNavigation else { return }
+        guard (error as NSError).code != NSURLErrorCancelled else { return }
+        if state == .live || state == .reconnecting { reconnectIfNeeded() }
+        else { fail("Could not load the computer viewer. Check connection and retry.") }
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        fail("Could not connect to computer: \(error.localizedDescription)")
+        guard navigation === activeNavigation else { return }
+        guard (error as NSError).code != NSURLErrorCancelled else { return }
+        if state == .reconnecting { fail("Computer connection was lost. Retry to reconnect.") }
+        else { fail("Could not connect to computer. Check connection and retry.") }
     }
 }
 
@@ -316,6 +464,58 @@ struct ComputerVNCWebView: UIViewRepresentable {
     }
 }
 
+private struct ComputerConnectionStatusView: View {
+    @ObservedObject var controller: ComputerUseSessionController
+    let compact: Bool
+
+    var body: some View {
+        switch controller.state {
+        case .idle, .live:
+            if controller.isExpanding { ProgressView().tint(.white) }
+        case .starting, .connecting, .reconnecting:
+            HStack(spacing: 8) {
+                ProgressView().tint(.white)
+                Text(label).font(.caption.weight(.medium)).foregroundStyle(.white)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .background(.black.opacity(0.68), in: Capsule())
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(label)
+            .accessibilityIdentifier(compact ? "computerOpeningIndicator" : "computerInspectorLoading")
+        case .failed, .ended:
+            VStack(spacing: 8) {
+                Image(systemName: controller.state == .ended ? "desktopcomputer" : "wifi.exclamationmark")
+                    .font(.title2)
+                Text(controller.state == .ended ? "Session ended" : "Computer unavailable")
+                    .font(.headline)
+                Text(controller.errorMessage ?? "Start a new computer session to continue.")
+                    .font(.footnote)
+                    .multilineTextAlignment(.center)
+                if controller.state == .failed && !controller.retryIsUnavailable {
+                    Button("Retry") { controller.retry() }
+                        .buttonStyle(.borderedProminent)
+                }
+            }
+            .foregroundStyle(.white)
+            .padding(16)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(.black.opacity(0.94))
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier(controller.state == .ended ? "computerSessionEnded" : "computerConnectionFailed")
+        }
+    }
+
+    private var label: String {
+        switch controller.state {
+        case .starting: return "Starting computer…"
+        case .connecting: return "Connecting to computer…"
+        case .reconnecting: return "Reconnecting…"
+        case .idle, .live, .failed, .ended: return ""
+        }
+    }
+}
+
 struct ComputerTrackpad: UIViewRepresentable {
     @ObservedObject var controller: ComputerUseSessionController
 
@@ -352,7 +552,7 @@ struct ComputerTrackpad: UIViewRepresentable {
 
     func updateUIView(_ view: TrackpadSurface, context: Context) {
         context.coordinator.controller = controller
-        view.isUserInteractionEnabled = controller.canControl && controller.state == "connected"
+        view.isUserInteractionEnabled = controller.canControl && controller.state.canSendInput
         view.accessibilityValue = "\(Int(controller.cursor.x * 100)), \(Int(controller.cursor.y * 100))"
     }
 
@@ -543,36 +743,23 @@ struct ComputerUseViewerOverlay: View {
     }
 
     private func desktopSurface(cornerRadius: CGFloat) -> some View {
-        ComputerVNCWebView(controller: controller)
-            .accessibilityLabel("Computer desktop preview")
-            .accessibilityIdentifier("computerDesktopPreview")
-            .background(.black)
-            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            .overlay {
-                if controller.isExpanding || controller.state == "connecting" {
-                    HStack(spacing: 8) {
-                        ProgressView()
-                            .tint(.white)
-                        Text("Connecting")
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.white)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 9)
-                    .background(.black.opacity(0.65), in: Capsule())
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel("Connecting to computer")
-                    .accessibilityIdentifier("computerOpeningIndicator")
-                } else if controller.state == "failed" {
-                    ContentUnavailableView("Computer unavailable", systemImage: "desktopcomputer", description: Text(controller.errorMessage ?? "Reconnect to resume this session."))
-                }
+        ZStack {
+            if controller.state != .failed && controller.state != .ended {
+                ComputerVNCWebView(controller: controller)
+                    .accessibilityLabel("Computer desktop preview")
+                    .accessibilityIdentifier("computerDesktopPreview")
+                    .background(.black)
             }
+            ComputerConnectionStatusView(controller: controller, compact: true)
+        }
+        .background(.black)
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
     }
 
     private func tuckedTab(geometry: GeometryProxy) -> some View {
         let roundsLeadingEdge = tuckedSide == .trailing
         let button = Button { controller.restore() } label: {
-            Image(systemName: "desktopcomputer")
+            Image(systemName: tuckedSide == .trailing ? "chevron.left" : "chevron.right")
                 .frame(width: 44, height: 64)
                 .background(
                     .regularMaterial,
@@ -704,16 +891,6 @@ struct ComputerUseInspectorScreen: View {
             ComputerInspectorPreview(controller: controller)
                 .padding(.horizontal, 12)
 
-            if let error = controller.errorMessage {
-                HStack {
-                    Text(error).font(.footnote).foregroundStyle(.red)
-                    Spacer()
-                    Button("Retry") { controller.retry() }
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-            }
-
             ComputerInspectorControls(controller: controller) {
                 textFocused = true
             }
@@ -735,9 +912,13 @@ struct ComputerUseInspectorScreen: View {
         .tint(.primary)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button("Done") {
+                Button {
                     textFocused = false
                     controller.collapse()
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
                 .accessibilityLabel("Collapse to preview")
             }
@@ -761,35 +942,13 @@ private struct ComputerInspectorPreview: View {
     @ObservedObject var controller: ComputerUseSessionController
 
     var body: some View {
-        ComputerVNCWebView(controller: controller)
-            .accessibilityIdentifier("computerInspectorPreview")
-            .background(.black)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay {
-                if controller.isExpanding || controller.state == "connecting" {
-                    HStack(spacing: 8) {
-                        ProgressView()
-                            .tint(.white)
-                        Text("Connecting to computer…")
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.white)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 9)
-                    .background(.black.opacity(0.65), in: Capsule())
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel("Connecting to computer")
-                    .accessibilityIdentifier("computerInspectorLoading")
-                } else if controller.state == "failed" {
-                    ContentUnavailableView(
-                        "Computer unavailable",
-                        systemImage: "desktopcomputer",
-                        description: Text(controller.errorMessage ?? "Reconnect to resume this session.")
-                    )
-                }
+        ZStack {
+            if controller.state != .failed && controller.state != .ended {
+                ComputerVNCWebView(controller: controller)
+                    .accessibilityIdentifier("computerInspectorPreview")
+                    .opacity(controller.state == .live || controller.state == .reconnecting ? 1 : 0)
             }
-            .aspectRatio(controller.desktopSize.width / max(1, controller.desktopSize.height), contentMode: .fit)
-            .overlay {
+            if controller.state == .live || controller.state == .reconnecting {
                 ComputerTrackpad(controller: controller)
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel("Computer trackpad")
@@ -799,14 +958,15 @@ private struct ComputerInspectorPreview: View {
                     Image(systemName: "arrow.up.left")
                         .font(.system(size: 17, weight: .bold))
                         .foregroundStyle(.black, .white)
-                        .position(
-                            x: controller.cursor.x * proxy.size.width,
-                            y: controller.cursor.y * proxy.size.height
-                        )
+                        .position(x: controller.cursor.x * proxy.size.width, y: controller.cursor.y * proxy.size.height)
                 }
                 .allowsHitTesting(false)
             }
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            ComputerConnectionStatusView(controller: controller, compact: false)
+        }
+        .background(.black)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .aspectRatio(controller.desktopSize.width / max(1, controller.desktopSize.height), contentMode: .fit)
     }
 }
 
@@ -839,7 +999,7 @@ private struct ComputerInspectorControls: View {
         }
         .buttonStyle(.plain)
         .tint(.primary)
-        .disabled(!controller.canControl || controller.state != "connected")
+        .disabled(!controller.canControl || !controller.state.canSendInput)
         .accessibilityLabel(title)
     }
 }
@@ -862,7 +1022,7 @@ private struct ComputerInspectorKeyboard: View {
                     }
                 }
                 .textFieldStyle(.roundedBorder)
-                .disabled(!controller.canControl || controller.state != "connected")
+                .disabled(!controller.canControl || !controller.state.canSendInput)
                 .accessibilityIdentifier("computerRemoteText")
 
             ScrollView(.horizontal, showsIndicators: false) {
@@ -878,7 +1038,7 @@ private struct ComputerInspectorKeyboard: View {
                                     .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
                             }
                             .tint(.primary)
-                            .disabled(!controller.canControl)
+                            .disabled(!controller.canControl || !controller.state.canSendInput)
                             .accessibilityIdentifier("remoteKey_\(key.code)")
                     }
                 }
@@ -892,7 +1052,7 @@ private struct ComputerInspectorKeyboard: View {
 
 #if DEBUG
 struct ComputerUseE2EHarnessView: View {
-    enum Scenario: Equatable { case sandboxResumeFailure, viewerFixture, viewerConnecting }
+    enum Scenario: Equatable { case sandboxResumeFailure, viewerFixture, viewerConnecting, viewerTimeout }
     let scenario: Scenario
     @StateObject private var controller = ComputerUseSessionController()
     @State private var viewerPresentation: ComputerViewerPresentation = .hidden
@@ -956,6 +1116,8 @@ struct ComputerUseE2EHarnessView: View {
                 controller.loadUITestFixture()
             case .viewerConnecting:
                 controller.loadUITestFixture(isConnecting: true)
+            case .viewerTimeout:
+                controller.loadUITestFixture(isConnecting: true, connectionTimeoutSeconds: 3)
             case .sandboxResumeFailure:
                 break
             }

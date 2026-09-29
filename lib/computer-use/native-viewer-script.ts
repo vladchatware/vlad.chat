@@ -23,7 +23,8 @@ export const NATIVE_VIEWER_HTML = String.raw`<!doctype html>
       rfb.showDotCursor = true;
 
       function publish(type, extra = {}) {
-        window.webkit?.messageHandlers?.vnc?.postMessage({ type, ...extra });
+        const clientNavigation = new URL(location.href).searchParams.get("clientNavigation");
+        window.webkit?.messageHandlers?.vnc?.postMessage({ type, clientNavigation, ...extra });
       }
 
       function publishDesktop() {
@@ -32,11 +33,45 @@ export const NATIVE_VIEWER_HTML = String.raw`<!doctype html>
         if (width && height) publish("desktop", { width, height });
       }
 
+      // noVNC's public connect event only means the RFB handshake completed.
+      // Wait for a pixel-bearing framebuffer update and its display flush before
+      // telling the native UI that the viewer is live. These hooks use noVNC's
+      // existing internal surface, which this page already relies on for input
+      // and framebuffer dimensions.
+      let firstFramePublished = false;
+      let framebufferUpdateHasPixels = false;
+      let transportConnected = false;
+      const display = rfb._display;
+      for (const method of ["fillRect", "copyImage", "imageRect", "blitImage"]) {
+        const draw = display[method];
+        display[method] = function (...args) {
+          if (rfb._FBU.rects > 0) framebufferUpdateHasPixels = true;
+          return draw.apply(this, args);
+        };
+      }
+
+      const framebufferUpdate = rfb._framebufferUpdate;
+      rfb._framebufferUpdate = function (...args) {
+        if (this._FBU.rects === 0) framebufferUpdateHasPixels = false;
+        const complete = framebufferUpdate.apply(this, args);
+        if (complete && framebufferUpdateHasPixels && !firstFramePublished) {
+          framebufferUpdateHasPixels = false;
+          display.flush().then(() => {
+            if (firstFramePublished || !transportConnected) return;
+            firstFramePublished = true;
+            publishDesktop();
+            publish("connected");
+          });
+        }
+        return complete;
+      };
+
       rfb.addEventListener("connect", () => {
+        transportConnected = true;
         publishDesktop();
-        publish("connected");
       });
       rfb.addEventListener("disconnect", event => {
+        transportConnected = false;
         publish("disconnected", { clean: event.detail.clean });
       });
       rfb.addEventListener("desktopname", event => {

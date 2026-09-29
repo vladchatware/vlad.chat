@@ -31,6 +31,9 @@ struct VladChatApp: App {
         if ProcessInfo.processInfo.arguments.contains("--ui-test-computer-viewer-connecting") {
             return .viewerConnecting
         }
+        if ProcessInfo.processInfo.arguments.contains("--ui-test-computer-viewer-timeout") {
+            return .viewerTimeout
+        }
         return nil
     }
 #endif

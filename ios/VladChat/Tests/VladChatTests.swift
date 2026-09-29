@@ -254,7 +254,7 @@ struct VladChatTests {
 
         viewModel.updateComputerUseSession(from: mobileChat, isActive: true)
 
-        #expect(viewModel.computerUseController.state == "connecting")
+        #expect(viewModel.computerUseController.state == .connecting)
         #expect(viewModel.computerUseController.presentation == .floating)
     }
 
@@ -305,9 +305,95 @@ struct VladChatTests {
 
         viewModel.updateComputerUseSession(from: mobileChat, isActive: false)
 
-        #expect(viewModel.computerUseController.state == "connecting")
+        #expect(viewModel.computerUseController.state == .connecting)
         #expect(viewModel.computerUseController.presentation == .floating)
         #expect(viewModel.computerUseController.canControl)
+    }
+
+    @MainActor
+    @Test func runningComputerOpenShowsStartingPreviewBeforeSessionPublication() {
+        let openTool = ResponseTool(
+            id: "open-call-starting",
+            name: "computer_open",
+            status: .running,
+            output: nil,
+            title: nil,
+            inputSummary: "Opening the requested page",
+            outputTruncated: nil,
+            errorText: nil
+        )
+        let message = ChatMessage(
+            id: "streaming-open-message",
+            role: "assistant",
+            text: "",
+            status: "streaming",
+            order: 1,
+            createdAt: 1,
+            response: ResponseActivity(phase: .tool, tools: [openTool]),
+            errorText: nil,
+            attachments: []
+        )
+        let viewModel = ChatViewModel()
+        defer { viewModel.computerUseController.stop() }
+
+        let mobileChat = MobileChat(
+            threadId: "thread-starting",
+            title: "Starting thread",
+            threads: nil,
+            messages: [message],
+            account: nil,
+            remainingMessages: nil,
+            computerViewer: nil
+        )
+
+        viewModel.updateComputerUseSession(from: mobileChat, isActive: true)
+
+        #expect(viewModel.computerUseController.state == .starting)
+        #expect(viewModel.computerUseController.presentation == .floating)
+    }
+
+    @MainActor
+    @Test func completedComputerToolDoesNotReopenItsHistoricalViewerURL() {
+        let staleURL = "https://old-session.vercel.run/vladchat.html"
+        let openTool = ResponseTool(
+            id: "open-call-expired",
+            name: "computer_open",
+            status: .completed,
+            output: #"{"ok":true,"op":"open","nativeViewerUrl":"https://old-session.vercel.run/vladchat.html"}"#,
+            title: nil,
+            inputSummary: nil,
+            outputTruncated: nil,
+            errorText: nil
+        )
+        let message = ChatMessage(
+            id: "completed-old-session",
+            role: "assistant",
+            text: "The browser task completed.",
+            status: "completed",
+            order: 1,
+            createdAt: 1,
+            response: ResponseActivity(phase: .complete, tools: [openTool]),
+            errorText: nil,
+            attachments: []
+        )
+        let viewModel = ChatViewModel()
+        defer { viewModel.computerUseController.stop() }
+
+        let mobileChat = MobileChat(
+            threadId: "thread-expired",
+            title: "Expired thread",
+            threads: nil,
+            messages: [message],
+            account: nil,
+            remainingMessages: nil,
+            computerViewer: nil
+        )
+
+        viewModel.updateComputerUseSession(from: mobileChat, isActive: false)
+
+        #expect(viewModel.computerUseController.state == .idle)
+        #expect(viewModel.computerUseController.presentation == .hidden)
+        #expect(viewModel.computerUseController.webView.url?.absoluteString != staleURL)
     }
 
     @Test func computerToolResultParsesJSONEncodedString() {

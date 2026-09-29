@@ -236,7 +236,9 @@ final class VladChatUITests: XCTestCase {
         XCTAssertEqual(preview.frame.width / preview.frame.height, 16.0 / 9.0, accuracy: 0.03)
         XCTAssertGreaterThanOrEqual(preview.frame.minY, header.frame.maxY, "The floating preview should stay below the chat header")
         XCTAssertLessThanOrEqual(preview.frame.maxY, composer.frame.minY - 8, "The floating preview should stay above the composer")
-        preview.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(
+        let floatingWindow = app.buttons["computerExpandTarget"]
+        XCTAssertTrue(floatingWindow.waitForExistence(timeout: 5))
+        floatingWindow.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(
             forDuration: 0.1,
             thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.18, dy: 0.35))
         )
@@ -244,13 +246,13 @@ final class VladChatUITests: XCTestCase {
         let upperLaneY = preview.frame.midY
         XCTAssertGreaterThanOrEqual(preview.frame.minY, header.frame.maxY)
         XCTAssertLessThan(preview.frame.maxY, composer.frame.minY)
-        preview.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(
+        floatingWindow.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(
             forDuration: 0.1,
             thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.82, dy: 0.35))
         )
         XCTAssertGreaterThan(preview.frame.maxX, app.frame.maxX - 28, "Dragging from the left dock should follow the swipe to the right dock")
         XCTAssertEqual(preview.frame.midY, upperLaneY, accuracy: 20, "A horizontal swipe should keep the preview at its vertical position")
-        preview.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(
+        floatingWindow.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(
             forDuration: 0.1,
             thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.82, dy: 0.78))
         )
@@ -258,14 +260,14 @@ final class VladChatUITests: XCTestCase {
         let lowerLaneY = preview.frame.midY
         XCTAssertGreaterThan(lowerLaneY, upperLaneY + 100, "A vertical swipe should keep the preview near its release point")
         XCTAssertLessThanOrEqual(preview.frame.maxY, composer.frame.minY - 8, "The lower dock should remain above the composer")
-        preview.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(
+        floatingWindow.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(
             forDuration: 0.1,
             thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.18, dy: 0.78))
         )
         XCTAssertLessThan(preview.frame.minX, 28)
         XCTAssertEqual(preview.frame.midY, lowerLaneY, accuracy: 20, "A horizontal swipe should preserve the lower vertical position")
         let foldY = preview.frame.midY
-        preview.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(
+        floatingWindow.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(
             forDuration: 0.1,
             thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0.78))
         )
@@ -356,6 +358,23 @@ final class VladChatUITests: XCTestCase {
             "Inspector should show loading feedback instead of a blank pause while VNC connects"
         )
         XCTAssertFalse(app.buttons["showChats"].isHittable)
+    }
+
+    func testViewerConnectionTimeoutReplacesBlankDesktopWithFailureState() {
+        app.launchArguments = ["--ui-test-computer-viewer-timeout"]
+        app.launch()
+
+        XCTAssertTrue(app.descendants(matching: .any)["computerOpeningIndicator"].waitForExistence(timeout: 5))
+        app.buttons["computerExpandTarget"].tap()
+        XCTAssertTrue(app.navigationBars["Inspector"].waitForExistence(timeout: 5))
+        let loading = app.descendants(matching: .any)["computerInspectorLoading"]
+        let failure = app.descendants(matching: .any)["computerConnectionFailed"]
+        XCTAssertTrue(loading.exists || failure.exists, "Inspector must show either connection progress or its bounded failure state")
+        XCTAssertTrue(failure.waitForExistence(timeout: 6))
+        XCTAssertFalse(app.descendants(matching: .any)["computerInspectorLoading"].exists)
+        XCTAssertFalse(app.webViews["computerInspectorPreview"].exists)
+        XCTAssertTrue(app.staticTexts["Computer unavailable"].exists)
+        XCTAssertFalse(app.buttons["Retry"].exists, "A timeout before receiving a session URL cannot retry stale viewer state")
     }
 
     private func launchGallery() {

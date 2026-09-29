@@ -731,11 +731,16 @@ final class ChatViewModel: ObservableObject {
                let viewerURL = liveSession.validatedNativeViewerURL {
                 computerUseController.start(
                     url: viewerURL,
-                    sessionID: liveSession.sessionId
+                    sessionID: liveSession.sessionId,
+                    threadID: mobileChat.threadId
                 )
                 computerUseController.updateAgentState(isActive: isActive, needsUser: false)
             } else {
-                computerUseController.stop()
+                if computerUseController.owningThreadID == mobileChat.threadId {
+                    computerUseController.markEndedIfActive()
+                } else {
+                    computerUseController.stop()
+                }
             }
             return
         }
@@ -762,7 +767,8 @@ final class ChatViewModel: ObservableObject {
             // may already be complete when app relaunches or user reopens the thread.
             computerUseController.start(
                 url: viewerURL,
-                sessionID: liveSession.sessionId
+                sessionID: liveSession.sessionId,
+                threadID: mobileChat.threadId
             )
             computerUseController.updateAgentState(
                 isActive: ownerIsActive,
@@ -770,22 +776,29 @@ final class ChatViewModel: ObservableObject {
             )
             return
         }
-        guard let result = openTool.computerResult else { return }
         let sessionIsActive = owningMessage.map {
             ($0.status == "pending" || $0.status == "streaming") && !isTerminal($0.response?.phase)
         } ?? isActive
-
-        if let viewerURL = result.validatedNativeViewerURL {
-            computerUseController.start(
-                url: viewerURL,
-                sessionID: openTool.id
-            )
-            computerUseController.updateAgentState(
-                isActive: sessionIsActive,
-                needsUser: result.hasHandoff
+        if openTool.status == .pending || openTool.status == .running {
+            if computerUseController.owningThreadID != mobileChat.threadId {
+                computerUseController.stop()
+            }
+            computerUseController.showStarting(sessionID: openTool.id, threadID: mobileChat.threadId)
+            computerUseController.updateAgentState(isActive: sessionIsActive, needsUser: false)
+        } else if openTool.status == .failed || openTool.computerResult?.ok == false {
+            computerUseController.showFailure(
+                "Computer could not start. Try again from the conversation.",
+                sessionID: openTool.id,
+                threadID: mobileChat.threadId
             )
         } else {
-            computerUseController.stop()
+            if computerUseController.owningThreadID == mobileChat.threadId {
+                computerUseController.markEndedIfActive(
+                    message: "This computer session is no longer available. Start a new computer session to continue."
+                )
+            } else {
+                computerUseController.stop()
+            }
         }
     }
 
