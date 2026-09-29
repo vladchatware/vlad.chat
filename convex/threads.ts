@@ -816,9 +816,9 @@ export const runAgentStep = internalAction({
     let streamIdRecorded = false;
     let activeStreamStepOrder: number | undefined;
     const stopMonitor = (async () => {
-      while (monitorActive && !toolExecutionMayStart && !streamIdRecorded) {
+      while (monitorActive && !toolExecutionMayStart) {
         await new Promise((resolve) => setTimeout(resolve, 500));
-        if (!monitorActive || toolExecutionMayStart || streamIdRecorded) return;
+        if (!monitorActive || toolExecutionMayStart) return;
         const currentRun = await ctx.runQuery(
           internal.threads.getAgentRunInternal,
           { runId },

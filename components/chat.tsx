@@ -32,7 +32,7 @@ import { Fragment, useEffect, useMemo, useRef, useState, useCallback, type Compo
 import { AnimatePresence, motion } from 'motion/react';
 import { useUIMessages } from '@convex-dev/agent/react';
 import { Response } from '@/components/ai-elements/response';
-import { AlertCircleIcon, BarChart3Icon, CopyIcon, KeyRoundIcon, MessageCircleIcon, RefreshCcwIcon } from 'lucide-react';
+import { AlertCircleIcon, BarChart3Icon, CopyIcon, KeyRoundIcon, MessageCircleIcon, PlayIcon, RefreshCcwIcon, SquareIcon } from 'lucide-react';
 import { SiNotion } from '@icons-pack/react-simple-icons';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
@@ -300,16 +300,22 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
     paginationStatus,
   })
   const handleSubmit = async (message: PromptInputMessage) => {
+    const text = message.text ?? ''
+    if (!text.trim()) {
+      if (agentRunState?.status === 'running') {
+        await handleStop()
+      } else if (agentRunState?.status === 'paused') {
+        await handleResume()
+      }
+      return
+    }
+
     if (submitState === 'submitted') {
       return
     }
 
-    if (!message.text) {
-      return;
-    }
-
     setInput('');
-    await sendPrompt(message.text)
+    await sendPrompt(text)
   };
 
   const handleStop = async () => {
@@ -396,6 +402,34 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
       console.error('Subscribe error:', error);
     }
   }
+
+  const hasDraft = Boolean(input.trim())
+  const runStatus = agentRunState?.status
+  const runAction = !hasDraft && runStatus === 'running'
+    ? 'stop'
+    : !hasDraft && runStatus === 'paused'
+      ? 'resume'
+      : 'send'
+  const isStopping = runStatus === 'stopRequested'
+  const isQueued = !hasDraft && runStatus === 'queued'
+  const runActionLabel = isStopping
+    ? 'Stopping'
+    : isQueued
+      ? 'Run queued'
+      : runAction === 'stop'
+        ? 'Stop run'
+        : runAction === 'resume'
+          ? 'Resume run'
+          : 'Send'
+  const runActionTitle = isStopping
+    ? 'Stopping this run'
+    : isQueued
+      ? 'This run is queued'
+      : runAction === 'stop'
+        ? 'Stop this run and keep its checkpoint for resume'
+        : runAction === 'resume'
+          ? 'Resume this run from its last checkpoint'
+          : 'Send message'
 
   return (
     <>
@@ -840,35 +874,6 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
               </button>
             </PromptInputTools>
             <div className="flex items-center gap-1">
-              {agentRunState?.status === 'running' && (
-                <button
-                  type="button"
-                  onClick={() => void handleStop()}
-                  className="h-9 rounded-full border px-3 text-sm font-medium transition-colors hover:bg-muted"
-                  title="Stop this run and keep its checkpoint for resume"
-                >
-                  Stop
-                </button>
-              )}
-              {agentRunState?.status === 'stopRequested' && (
-                <button
-                  type="button"
-                  disabled
-                  className="h-9 rounded-full border px-3 text-sm font-medium opacity-50"
-                >
-                  Stopping…
-                </button>
-              )}
-              {agentRunState?.status === 'paused' && (
-                <button
-                  type="button"
-                  onClick={() => void handleResume()}
-                  className="h-9 rounded-full border px-3 text-sm font-medium transition-colors hover:bg-muted"
-                  title="Resume this run from its last checkpoint"
-                >
-                  Resume
-                </button>
-              )}
               {input.trim() && agentRunState?.runId &&
                 ['running', 'stopRequested', 'paused'].includes(agentRunState.status) && (
                   <button
@@ -882,9 +887,18 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                   </button>
                 )}
               <PromptInputSubmit
-                disabled={!input.trim() || submitState === 'submitted'}
-                status={submitState}
-              />
+                type="submit"
+                disabled={isStopping || isQueued || (runAction === 'send' && (!hasDraft || submitState === 'submitted'))}
+                status={isStopping || isQueued ? 'submitted' : submitState}
+                aria-label={runActionLabel}
+                title={runActionTitle}
+              >
+                {runAction === 'stop'
+                  ? <SquareIcon className="size-4" />
+                  : runAction === 'resume'
+                    ? <PlayIcon className="size-4" />
+                    : undefined}
+              </PromptInputSubmit>
             </div>
           </PromptInputToolbar>
         </PromptInput>
