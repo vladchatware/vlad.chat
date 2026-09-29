@@ -142,6 +142,7 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
   const defaultThreadId = useQuery(api.threads.getDefaultThreadId)
   const generateReply = useAction(api.threads.generateReply)
   const stopAgentRun = useMutation(api.threads.stopThread)
+  const resumeAgentRun = useMutation(api.threads.resumeThread)
   const steerAgentRun = useMutation(api.threads.steerThread)
   const { signIn } = useAuthActions()
   const notionConn = useQuery(api.notion.getConnection)
@@ -320,6 +321,17 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
       await stopAgentRun({ threadId: activeThreadId })
     } catch (error) {
       console.error('Failed to stop generation', error)
+    }
+  }
+
+  const handleResume = async () => {
+    if (!activeThreadId) return
+
+    try {
+      setSubmitError(null)
+      await resumeAgentRun({ threadId: activeThreadId })
+    } catch (error) {
+      setSubmitError({ message: getUserFacingErrorMessage(error) })
     }
   }
 
@@ -828,6 +840,16 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
               </button>
             </PromptInputTools>
             <div className="flex items-center gap-1">
+              {agentRunState?.status === 'paused' && (
+                <button
+                  type="button"
+                  onClick={() => void handleResume()}
+                  className="h-9 rounded-full border px-3 text-sm font-medium transition-colors hover:bg-muted"
+                  title="Resume this run from its last checkpoint"
+                >
+                  Resume
+                </button>
+              )}
               {input.trim() && agentRunState?.runId &&
                 ['running', 'stopRequested', 'paused'].includes(agentRunState.status) && (
                   <button
