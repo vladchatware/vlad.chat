@@ -791,6 +791,19 @@ final class ChatViewModel: ObservableObject {
                 sessionID: openTool.id,
                 threadID: mobileChat.threadId
             )
+        } else if sessionIsActive,
+                  let viewerURL = openTool.computerResult?.validatedNativeViewerURL {
+            // The open result can arrive before the thread query publishes its live
+            // session record. Keep the preview visible while that response is active.
+            computerUseController.start(
+                url: viewerURL,
+                sessionID: openTool.id,
+                threadID: mobileChat.threadId
+            )
+            computerUseController.updateAgentState(
+                isActive: sessionIsActive,
+                needsUser: openTool.computerResult?.hasHandoff == true
+            )
         } else {
             if computerUseController.owningThreadID == mobileChat.threadId {
                 computerUseController.markEndedIfActive(

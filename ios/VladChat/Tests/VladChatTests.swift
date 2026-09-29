@@ -311,6 +311,50 @@ struct VladChatTests {
     }
 
     @MainActor
+    @Test func activeComputerOpenResultShowsPreviewBeforeLiveSessionPublication() {
+        let viewerURL = "https://sb-example.vercel.run/vladchat.html"
+        let openTool = ResponseTool(
+            id: "open-call-published-late",
+            name: "computer_open",
+            status: .completed,
+            output: #"{"ok":true,"op":"open","nativeViewerUrl":"https://sb-example.vercel.run/vladchat.html"}"#,
+            title: nil,
+            inputSummary: nil,
+            outputTruncated: nil,
+            errorText: nil
+        )
+        let message = ChatMessage(
+            id: "active-open-message",
+            role: "assistant",
+            text: "The computer is open.",
+            status: "streaming",
+            order: 1,
+            createdAt: 1,
+            response: ResponseActivity(phase: .tool, tools: [openTool]),
+            errorText: nil,
+            attachments: []
+        )
+        let viewModel = ChatViewModel()
+        defer { viewModel.computerUseController.stop() }
+
+        let mobileChat = MobileChat(
+            threadId: "thread-live-open",
+            title: "Live open thread",
+            threads: nil,
+            messages: [message],
+            account: nil,
+            remainingMessages: nil,
+            computerViewer: nil
+        )
+
+        viewModel.updateComputerUseSession(from: mobileChat, isActive: true)
+
+        #expect(viewModel.computerUseController.state == .connecting)
+        #expect(viewModel.computerUseController.presentation == .floating)
+        #expect(viewModel.computerUseController.owningThreadID == "thread-live-open")
+    }
+
+    @MainActor
     @Test func runningComputerOpenShowsStartingPreviewBeforeSessionPublication() {
         let openTool = ResponseTool(
             id: "open-call-starting",
