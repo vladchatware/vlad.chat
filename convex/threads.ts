@@ -344,7 +344,7 @@ async function getValidNotionToken(
 }
 
 const MAX_AGENT_STEPS = 8;
-const MAX_PENDING_STEERING = 20;
+const MAX_STEERING_PER_RUN = 20;
 
 export const getAgentRunInternal = internalQuery({
   args: { runId: v.id("agentRuns") },
@@ -460,7 +460,7 @@ export const claimAgentRunStep = internalMutation({
       .query("agentRunSteering")
       .withIndex("byRun", (q) => q.eq("runId", runId))
       .order("asc")
-      .take(MAX_PENDING_STEERING);
+      .take(MAX_STEERING_PER_RUN);
     await ctx.db.patch(runId, {
       inFlightStep: stepNumber,
       attemptCount: run.attemptCount + 1,
@@ -1216,7 +1216,7 @@ export const getAgentRunState = query({
           .query("agentRunSteering")
           .withIndex("byRun", (q) => q.eq("runId", run._id))
           .order("asc")
-          .take(MAX_PENDING_STEERING)
+          .take(MAX_STEERING_PER_RUN)
       : [];
     return {
       runId: run?._id ?? null,
@@ -1298,8 +1298,8 @@ export const steerThread = mutation({
     const steering = await ctx.db
       .query("agentRunSteering")
       .withIndex("byRun", (q) => q.eq("runId", run._id))
-      .take(MAX_PENDING_STEERING);
-    if (steering.length >= MAX_PENDING_STEERING) {
+      .take(MAX_STEERING_PER_RUN);
+    if (steering.length >= MAX_STEERING_PER_RUN) {
       throw new ConvexError("This run has reached its 20 direction limit. Send the direction as a new message.");
     }
     const now = Date.now();
