@@ -12,7 +12,7 @@ import {
   query,
   QueryCtx,
 } from "./_generated/server.js";
-import { paginationOptsValidator } from "convex/server";
+import { paginationOptsValidator, type FunctionReturnType } from "convex/server";
 import {
   abortStream,
   getThreadMetadata,
@@ -344,6 +344,7 @@ async function getValidNotionToken(
 }
 
 const MAX_AGENT_STEPS = 8;
+const MAX_AGENT_STEP_ATTEMPTS = 3;
 const MAX_STEERING_PER_RUN = 20;
 
 export const getAgentRunInternal = internalQuery({
@@ -464,7 +465,7 @@ export const claimAgentRunStep = internalMutation({
     await ctx.db.patch(runId, {
       inFlightStep: stepNumber,
       attemptCount: run.attemptCount + 1,
-      inFlightAttempt: run.attemptCount + 1,
+      inFlightAttempt: 1,
       inFlightPhase: "model",
       inFlightStreamId: undefined,
       inFlightStepOrder: undefined,
@@ -472,6 +473,50 @@ export const claimAgentRunStep = internalMutation({
       updatedAt: Date.now(),
     });
     return true;
+  },
+});
+
+export const advanceAgentRunStepAttempt = internalMutation({
+  args: {
+    runId: v.id("agentRuns"),
+    stepNumber: v.number(),
+    expectedAttempt: v.number(),
+  },
+  returns: v.union(v.number(), v.null()),
+  handler: async (ctx, { runId, stepNumber, expectedAttempt }) => {
+    const run = await ctx.db.get(runId);
+    if (
+      !run ||
+      run.status !== "running" ||
+      run.inFlightStep !== stepNumber ||
+      run.inFlightPhase !== "model"
+    ) {
+      return null;
+    }
+    if (run.inFlightAttempt !== expectedAttempt) {
+      return run.inFlightAttempt !== undefined &&
+          run.inFlightAttempt > expectedAttempt
+        ? run.inFlightAttempt
+        : null;
+    }
+    if (expectedAttempt >= MAX_AGENT_STEP_ATTEMPTS) return null;
+    if (run.inFlightStreamId) {
+      await abortStream(ctx, components.agent, {
+        streamId: run.inFlightStreamId,
+        reason: "Interrupted model attempt is being retried.",
+      }).catch((error) => {
+        console.error("Could not abort interrupted agent stream", error);
+      });
+    }
+    const nextAttempt = expectedAttempt + 1;
+    await ctx.db.patch(runId, {
+      attemptCount: run.attemptCount + 1,
+      inFlightAttempt: nextAttempt,
+      inFlightStreamId: undefined,
+      inFlightStepOrder: undefined,
+      updatedAt: Date.now(),
+    });
+    return nextAttempt;
   },
 });
 
@@ -602,6 +647,24 @@ export const agentRunWorkflow = workflow.define({
       workflowId: step.workflowId,
     });
 
+    const pauseForRequestedStop = async () => {
+      const currentRun = await step.runQuery(
+        internal.threads.getAgentRunInternal,
+        { runId },
+      );
+      if (currentRun?.status !== "stopRequested") return false;
+      await step.runMutation(internal.threads.setAgentRunStatus, {
+        runId,
+        status: "paused",
+      });
+      await step.awaitEvent({ name: "resume" });
+      await step.runMutation(internal.threads.setAgentRunStatus, {
+        runId,
+        status: "running",
+      });
+      return true;
+    };
+
     for (let stepNumber = 1; stepNumber <= MAX_AGENT_STEPS; stepNumber += 1) {
       let claimed = false;
       while (!claimed) {
@@ -628,34 +691,76 @@ export const agentRunWorkflow = workflow.define({
         });
       }
 
-      const result = await step.runAction(
-        internal.threads.runAgentStep,
-        { runId, stepNumber },
-        { retry: false },
+      const claimedRun = await step.runQuery(
+        internal.threads.getAgentRunInternal,
+        { runId },
       );
+      let attempt = claimedRun?.inFlightStep === stepNumber
+        ? claimedRun.inFlightAttempt ?? 1
+        : 1;
+      let result: FunctionReturnType<typeof internal.threads.runAgentStep> | undefined;
+      while (result === undefined) {
+        try {
+          result = await step.runAction(
+            internal.threads.runAgentStep,
+            { runId, stepNumber },
+            {
+              retry: false,
+              name: `agent-step-${stepNumber}-attempt-${attempt}`,
+            },
+          );
+        } catch (error) {
+          let currentRun = await step.runQuery(
+            internal.threads.getAgentRunInternal,
+            { runId },
+          );
+          if (
+            currentRun?.status === "stopRequested" &&
+            currentRun.inFlightPhase === "model"
+          ) {
+            await pauseForRequestedStop();
+            currentRun = await step.runQuery(
+              internal.threads.getAgentRunInternal,
+              { runId },
+            );
+          }
+          if (
+            currentRun?.status !== "running" ||
+            currentRun.inFlightStep !== stepNumber ||
+            currentRun.inFlightPhase !== "model" ||
+            attempt >= MAX_AGENT_STEP_ATTEMPTS
+          ) {
+            throw error;
+          }
+          let nextAttempt = await step.runMutation(
+            internal.threads.advanceAgentRunStepAttempt,
+            { runId, stepNumber, expectedAttempt: attempt },
+          );
+          if (nextAttempt === null) {
+            currentRun = await step.runQuery(
+              internal.threads.getAgentRunInternal,
+              { runId },
+            );
+            if (
+              currentRun?.status === "stopRequested" &&
+              currentRun.inFlightPhase === "model"
+            ) {
+              await pauseForRequestedStop();
+              nextAttempt = await step.runMutation(
+                internal.threads.advanceAgentRunStepAttempt,
+                { runId, stepNumber, expectedAttempt: attempt },
+              );
+            }
+          }
+          if (nextAttempt === null) throw error;
+          attempt = nextAttempt;
+        }
+      }
       await step.runMutation(internal.users.settleAgentRunStep, {
         runId,
         stepNumber,
         ...result,
       });
-
-      const pauseForRequestedStop = async () => {
-        const currentRun = await step.runQuery(
-          internal.threads.getAgentRunInternal,
-          { runId },
-        );
-        if (currentRun?.status !== "stopRequested") return false;
-        await step.runMutation(internal.threads.setAgentRunStatus, {
-          runId,
-          status: "paused",
-        });
-        await step.awaitEvent({ name: "resume" });
-        await step.runMutation(internal.threads.setAgentRunStatus, {
-          runId,
-          status: "running",
-        });
-        return true;
-      };
 
       const stopped = await pauseForRequestedStop();
       if (stopped) {

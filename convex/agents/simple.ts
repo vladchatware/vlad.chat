@@ -87,7 +87,7 @@ export const agent = new Agent(components.agent, {
   name: 'Vlad',
   instructions: chatSystemInstructions,
   languageModel: gateway.languageModel(DEFAULT_GATEWAY_MODEL),
-  textEmbeddingModel: gateway.embeddingModel(DEFAULT_EMBEDDING_MODEL),
+  embeddingModel: gateway.embeddingModel(DEFAULT_EMBEDDING_MODEL),
   contextOptions: {
     recentMessages: 100,
     searchOptions: {
