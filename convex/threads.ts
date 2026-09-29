@@ -537,6 +537,15 @@ export const setAgentRunStatus = internalMutation({
   handler: async (ctx, { runId, status, error }) => {
     const run = await ctx.db.get(runId);
     if (!run) return null;
+    if (run.status === "completed" || run.status === "failed") return null;
+    if (status === "paused" && run.status !== "stopRequested") return null;
+    if (
+      status === "running" &&
+      run.status !== "paused" &&
+      run.status !== "running"
+    ) {
+      return null;
+    }
     const now = Date.now();
     await ctx.db.patch(runId, {
       status,
