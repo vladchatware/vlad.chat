@@ -53,6 +53,31 @@ final class VladChatUITests: XCTestCase {
         }
     }
 
+    func testComputerScreenshotToolResultsRenderInlineCarousel() {
+        launchGallery()
+
+        let gallery = app.scrollViews.firstMatch
+        let fixtureTitle = app.staticTexts["Computer screenshot carousel"]
+        for _ in 0..<16 where !fixtureTitle.isHittable {
+            gallery.swipeUp()
+        }
+        XCTAssertTrue(fixtureTitle.isHittable, "Screenshot carousel fixture never became visible")
+
+        let pagers = app.collectionViews.matching(identifier: "computerScreenshotPager")
+        for _ in 0..<6 where pagers.count < 2 {
+            gallery.swipeUp()
+        }
+        XCTAssertEqual(pagers.count, 2, "Expected the existing single screenshot plus the three-page fixture")
+        let pager = pagers.element(boundBy: 1)
+        XCTAssertTrue(pager.waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["computerScreenshotPageIndicator"].label, "1 / 3")
+
+        pager.swipeLeft()
+
+        XCTAssertEqual(app.staticTexts["computerScreenshotPageIndicator"].label, "2 / 3")
+        XCTAssertTrue(app.descendants(matching: .any)["computerScreenshotPage-2"].exists)
+    }
+
     func testStreamingRevealAdvancesWithoutReplacingTheWholeResponse() {
         launchGallery()
         let advance = app.buttons["streamingRevealAdvance"]

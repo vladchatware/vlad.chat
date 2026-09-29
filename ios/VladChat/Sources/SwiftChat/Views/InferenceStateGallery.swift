@@ -699,6 +699,7 @@ private struct InferenceStateFixture: Identifiable {
             ),
             isStreaming: false
         ),
+        screenshotCarouselFixture(),
         InferenceStateFixture(
             id: "computer-handoff",
             title: "Computer handoff",
@@ -747,12 +748,52 @@ private struct InferenceStateFixture: Identifiable {
     ]
 
 
-    private static func computerScreenshotTool() -> ResponseTool {
+    private static func screenshotCarouselFixture() -> InferenceStateFixture {
+        let screenshots = [
+            computerScreenshotTool(
+                id: "call-computer-shot-1",
+                title: "Wikipedia",
+                pageURL: "https://www.wikipedia.org/",
+                screenshotURL: "https://picsum.photos/seed/vladchat-shot-1/1280/720"
+            ),
+            computerScreenshotTool(
+                id: "call-computer-shot-2",
+                title: "Search results",
+                pageURL: "https://www.wikipedia.org/wiki/Main_Page",
+                screenshotURL: "https://picsum.photos/seed/vladchat-shot-2/1280/720"
+            ),
+            computerScreenshotTool(
+                id: "call-computer-shot-3",
+                title: "Article page",
+                pageURL: "https://www.wikipedia.org/wiki/Computer",
+                screenshotURL: "https://picsum.photos/seed/vladchat-shot-3/1280/720"
+            ),
+        ]
+
+        return InferenceStateFixture(
+            id: "computer-screenshot-carousel",
+            title: "Computer screenshot carousel",
+            description: "Screenshot tool images stay inline in a swipeable, stacked chat carousel.",
+            activity: ResponseActivity(
+                phase: .tool,
+                tools: screenshots,
+                parts: screenshots.map { toolPart($0) }
+            ),
+            isStreaming: false
+        )
+    }
+
+    private static func computerScreenshotTool(
+        id: String = "call-computer-shot",
+        title: String = "Example Docs",
+        pageURL: String = "https://example.com/docs",
+        screenshotURL: String = "https://picsum.photos/seed/vladchat-v85/1280/720"
+    ) -> ResponseTool {
         let output = """
-        {"ok":true,"op":"screenshot","url":"https://example.com/docs","title":"Example Docs","screenshotUrl":"https://picsum.photos/seed/vladchat-v85/1280/720","screenshotId":"shot_demo","mimeType":"image/png","width":1280,"height":720,"budget":{"stepsUsed":3,"stepsRemaining":17,"maxSteps":20,"ttlMs":480000,"elapsedMs":12000,"note":"demo"}}
+        {"ok":true,"op":"screenshot","url":"\(pageURL)","title":"\(title)","screenshotUrl":"\(screenshotURL)","screenshotId":"shot_demo","mimeType":"image/png","width":1280,"height":720,"budget":{"stepsUsed":3,"stepsRemaining":17,"maxSteps":20,"ttlMs":480000,"elapsedMs":12000,"note":"demo"}}
         """
         return ResponseTool(
-            id: "call-computer-shot",
+            id: id,
             name: "computer_screenshot",
             status: .completed,
             output: output,

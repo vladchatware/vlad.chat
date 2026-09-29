@@ -47,6 +47,10 @@ struct ComputerUseToolCard: View {
             }
 
             if let result {
+                if let screenshot = ComputerScreenshotFrame(toolID: tool.id, result: result) {
+                    ComputerScreenshotCarousel(screenshots: [screenshot], isDarkMode: isDarkMode)
+                }
+
                 if let handoff = result.handoff {
                     ComputerHandoffBanner(handoff: handoff, isDarkMode: isDarkMode)
                 }
@@ -87,7 +91,7 @@ struct ComputerUseToolCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .activityCard(isDarkMode: isDarkMode, emphasized: displayStatus.needsAttention)
         .contentShape(Rectangle())
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel(op.displayTitle)
         .accessibilityValue(accessibilityStatus)
         .accessibilityIdentifier("computerUseToolCard")
@@ -175,8 +179,11 @@ struct ComputerUseSessionCard: View {
         tools.compactMap(\.computerResult)
     }
 
-    private var screenshots: [ComputerToolResult] {
-        results.filter(\.hasScreenshot)
+    private var screenshots: [ComputerScreenshotFrame] {
+        tools.compactMap { tool in
+            guard let result = tool.computerResult else { return nil }
+            return ComputerScreenshotFrame(toolID: tool.id, result: result)
+        }
     }
 
     private var latestResult: ComputerToolResult? {
@@ -235,12 +242,16 @@ struct ComputerUseSessionCard: View {
                     .font(Theme.Typography.caption)
                     .foregroundColor(isDarkMode ? .white.opacity(0.55) : .black.opacity(0.5))
             }
+            if !screenshots.isEmpty {
+                ComputerScreenshotCarousel(screenshots: screenshots, isDarkMode: isDarkMode)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .activityCard(isDarkMode: isDarkMode, emphasized: displayStatus.needsAttention)
         .accessibilityLabel("Computer use")
         .accessibilityValue(accessibilityStatus)
         .accessibilityIdentifier("computerUseSessionCard")
+        .accessibilityElement(children: .contain)
     }
 
     private var accessibilityStatus: String {
@@ -251,6 +262,167 @@ struct ComputerUseSessionCard: View {
         }
         if let budget { parts.append(budget.displaySummary) }
         return parts.joined(separator: ". ")
+    }
+}
+
+private struct ComputerScreenshotFrame: Identifiable {
+    let id: String
+    let url: URL
+    let title: String
+
+    init?(toolID: String, result: ComputerToolResult) {
+        guard let rawURL = result.screenshotUrl,
+              let url = URL(string: rawURL),
+              url.scheme?.lowercased() == "https" else {
+            return nil
+        }
+
+        self.id = toolID
+        self.url = url
+        let resultTitle = result.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let pageURL = result.url?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        self.title = !resultTitle.isEmpty ? resultTitle : (!pageURL.isEmpty ? pageURL : result.op.displayTitle)
+    }
+}
+
+private struct ComputerScreenshotCarousel: View {
+    let screenshots: [ComputerScreenshotFrame]
+    let isDarkMode: Bool
+
+    @State private var selectedIndex = 0
+
+    private var pageBackground: Color {
+        isDarkMode ? Color.white.opacity(0.08) : Color.black.opacity(0.06)
+    }
+
+    var body: some View {
+        VStack(spacing: 8) {
+            ZStack(alignment: .top) {
+                if screenshots.count > 1 {
+                    ForEach(1...min(screenshots.count - 1, 2), id: \.self) { depth in
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(pageBackground)
+                            .padding(.horizontal, CGFloat(depth) * 7)
+                            .offset(y: CGFloat(depth) * 6)
+                    }
+                }
+
+                TabView(selection: $selectedIndex) {
+                    ForEach(Array(screenshots.enumerated()), id: \.element.id) { index, screenshot in
+                        ComputerScreenshotPage(
+                            screenshot: screenshot,
+                            page: index + 1,
+                            pageCount: screenshots.count,
+                            isDarkMode: isDarkMode
+                        )
+                        .tag(index)
+                    }
+                }
+                .tabViewStyle(.page(indexDisplayMode: .never))
+                .frame(height: 196)
+                .accessibilityIdentifier("computerScreenshotPager")
+            }
+            .padding(.bottom, screenshots.count > 1 ? 10 : 0)
+
+            if screenshots.count > 1 {
+                HStack(spacing: 8) {
+                    HStack(spacing: 4) {
+                        ForEach(screenshots.indices, id: \.self) { index in
+                            Capsule()
+                                .fill(index == selectedIndex
+                                    ? (isDarkMode ? Color.white.opacity(0.88) : Color.black.opacity(0.72))
+                                    : (isDarkMode ? Color.white.opacity(0.24) : Color.black.opacity(0.18)))
+                                .frame(width: index == selectedIndex ? 14 : 5, height: 5)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                    Text("\(selectedIndex + 1) / \(screenshots.count)")
+                        .font(Theme.Typography.caption)
+                        .foregroundColor(isDarkMode ? .white.opacity(0.58) : .black.opacity(0.52))
+                        .accessibilityIdentifier("computerScreenshotPageIndicator")
+                }
+            }
+        }
+        .onChange(of: screenshots.count) { _, count in
+            selectedIndex = min(selectedIndex, max(count - 1, 0))
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Screenshots")
+        .accessibilityValue("\(min(selectedIndex + 1, screenshots.count)) of \(screenshots.count)")
+        .accessibilityIdentifier("computerScreenshotCarousel")
+    }
+}
+
+private struct ComputerScreenshotPage: View {
+    let screenshot: ComputerScreenshotFrame
+    let page: Int
+    let pageCount: Int
+    let isDarkMode: Bool
+
+    var body: some View {
+        ZStack(alignment: .bottomLeading) {
+            AsyncImage(url: screenshot.url) { phase in
+                switch phase {
+                case .success(let image):
+                    image
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                case .failure:
+                    unavailable
+                case .empty:
+                    ProgressView()
+                        .tint(.white.opacity(0.8))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                @unknown default:
+                    unavailable
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.black.opacity(0.92))
+
+            LinearGradient(
+                colors: [.clear, .black.opacity(0.72)],
+                startPoint: .center,
+                endPoint: .bottom
+            )
+            .allowsHitTesting(false)
+
+            Text(screenshot.title)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(.white.opacity(0.92))
+                .lineLimit(1)
+                .padding(.horizontal, 10)
+                .padding(.bottom, 9)
+
+            Text("\(page) / \(pageCount)")
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundColor(.white.opacity(0.88))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(.black.opacity(0.44), in: Capsule())
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                .padding(8)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(isDarkMode ? Color.white.opacity(0.10) : Color.black.opacity(0.08), lineWidth: 1)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Screenshot \(page) of \(pageCount): \(screenshot.title)")
+        .accessibilityIdentifier("computerScreenshotPage-\(page)")
+    }
+
+    private var unavailable: some View {
+        VStack(spacing: 6) {
+            Image(systemName: "photo")
+                .font(.system(size: 20, weight: .medium))
+            Text("Screenshot unavailable")
+                .font(Theme.Typography.caption)
+        }
+        .foregroundColor(.white.opacity(0.7))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 

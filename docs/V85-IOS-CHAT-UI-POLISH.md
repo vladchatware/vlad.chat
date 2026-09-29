@@ -13,7 +13,7 @@ Related: V-83 protocol / PR #43 (`lib/computer-use/types.ts`), V-84 live VNC (ou
 | Tool cards | Flat 10pt fill, traffic-light green check | Shared `activityCard` chrome (14pt continuous + hairline stroke); calm completed tint |
 | Search / URL rows | Bare text rows | Same activity-card surface as tools |
 | Composer | Hardcoded 26pt radius; “What’s on your mind?” | Theme composer radius; “Ask anything” empty-state placeholder |
-| Computer-use (V-83) | Generic tool JSON dump | `ComputerUseToolCard`: screenshot thumbnail, handoff banner, budget / error-code chips; detail sheet structured — **no VNC** (V-84) |
+| Computer-use (V-83) | Generic tool JSON dump | Inline screenshot stack/carousel across adjacent computer-tool results, handoff banner, budget / error-code chips; **no VNC** (V-84) |
 
 ## Protocol parity (V-83)
 
@@ -22,7 +22,7 @@ Swift `ComputerUseModels` mirrors backend `ComputerToolResult` (clients render o
 | Field | Notes |
 | --- | --- |
 | `ok`, `op` | `op`: `open` \| `screenshot` \| `act` \| `handoff` \| `end` (unknown → `.unknown`) |
-| `screenshotUrl` / `screenshotId` | AsyncImage thumbnail; never VNC |
+| `screenshotUrl` / `screenshotId` | Inline `AsyncImage` carousel; adjacent computer-tool screenshots group in one swipeable stack; never VNC |
 | `handoff` | `{type:"computer_handoff", reason, message, requiresUser}` — amber banner |
 | `budget` | `stepsUsed` / `maxSteps` chip + detail meta |
 | `error` / `code` | `code`: `budget_exceeded`, `ttl_exceeded`, `step_limit`, `disabled`, `auth_missing`, `runtime` |
@@ -42,12 +42,13 @@ When parse succeeds, the tool trail / detail sheet **do not** fall back to a raw
 
 ## Simulator
 
-This Linux agent host cannot run iOS Simulator. Verify on a Mac with Xcode:
+Verified on iPhone 17 Pro Simulator (iOS 26.3.1): `VladChatUITests/testComputerScreenshotToolResultsRenderInlineCarousel` passes; it renders three stacked screenshots and swipes to page 2.
+
+Remaining iOS checks:
 
 1. `VladChatTests` — esp. computer-use decode (plain / MCP wrapper / array / budget codes)
 2. DEBUG Inference State Gallery → **Computer screenshot / handoff / running**
 3. Dark + light appearance for composer + user bubbles
-4. Open a completed `computer_*` tool sheet → AsyncImage + handoff banner (no ugly JSON when parse works)
 
 ## Out of scope (unchanged)
 

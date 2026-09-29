@@ -1154,10 +1154,45 @@ struct OrderedResponsePartsView: View {
     let onSelectTool: (ResponseTool) -> Void
     let onShowThoughts: () -> Void
 
+    private var renderedParts: [OrderedResponseRenderItem] {
+        var items: [OrderedResponseRenderItem] = []
+        var pendingComputerTools: [ResponseTool] = []
+
+        func flushComputerTools() {
+            guard let firstTool = pendingComputerTools.first else { return }
+            items.append(OrderedResponseRenderItem(
+                id: "computer-tools-\(firstTool.id)",
+                part: nil,
+                computerTools: pendingComputerTools
+            ))
+            pendingComputerTools.removeAll(keepingCapacity: true)
+        }
+
+        for part in activity.parts {
+            if part.type == .tool,
+               let tool = part.tool,
+               tool.isComputerUseTool {
+                pendingComputerTools.append(tool)
+            } else {
+                flushComputerTools()
+                items.append(OrderedResponseRenderItem(id: part.id, part: part, computerTools: []))
+            }
+        }
+        flushComputerTools()
+        return items
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Dimensions.responseSectionSpacing) {
-            ForEach(activity.parts) { part in
-                partView(part)
+            ForEach(renderedParts) { item in
+                if !item.computerTools.isEmpty {
+                    ComputerUseSessionCard(
+                        tools: item.computerTools,
+                        isDarkMode: isDarkMode
+                    )
+                } else if let part = item.part {
+                    partView(part)
+                }
             }
 
             if !hasTextPart && !fallbackContent.isEmpty {
@@ -1304,6 +1339,12 @@ struct OrderedResponsePartsView: View {
         text.split(whereSeparator: \.isNewline)
             .last.map(String.init) ?? text
     }
+}
+
+private struct OrderedResponseRenderItem: Identifiable {
+    let id: String
+    let part: ResponsePart?
+    let computerTools: [ResponseTool]
 }
 
 /// Keeps a response text part in stable markdown blocks while its content grows.
