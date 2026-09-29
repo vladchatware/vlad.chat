@@ -5,6 +5,7 @@ import { internal } from "./_generated/api";
 
 const modules = {
   "./threads.ts": () => import("./threads"),
+  "./users.ts": () => import("./users"),
   "./_generated/server.ts": () => import("./_generated/server"),
 };
 
@@ -101,5 +102,70 @@ describe("agent run model-step retries", () => {
         }),
       ),
     ).resolves.toBeNull();
+  });
+
+  it("persists continuation intent only after visible interrupted output", async () => {
+    const t = convexTest(schema, modules);
+    const now = Date.now();
+    const userId = await t.run((ctx) =>
+      ctx.db.insert("users", { isAnonymous: true, trialMessages: 1 }),
+    );
+    const runId = await t.run((ctx) =>
+      ctx.db.insert("agentRuns", {
+        threadId: "thread-resume-partial",
+        userId,
+        model: "test-model",
+        searchEnabled: false,
+        status: "paused",
+        stepCount: 0,
+        attemptCount: 1,
+        inFlightStep: 1,
+        inFlightAttempt: 1,
+        inFlightPhase: "model",
+        createdAt: now,
+        updatedAt: now,
+      }),
+    );
+
+    await t.run((ctx) =>
+      ctx.runMutation(internal.users.settleAgentRunStep, {
+        runId,
+        stepNumber: 1,
+        model: "test-model",
+        provider: "AI Gateway",
+        order: 1,
+        stepOrder: 1,
+        hasOutput: true,
+        hasToolCalls: false,
+        wasInterrupted: true,
+        toolCallIds: [],
+        steeringIds: [],
+        usage: {},
+      }),
+    );
+
+    await expect(
+      t.run((ctx) => ctx.db.get(runId)),
+    ).resolves.toMatchObject({ stepCount: 1, continueAfterStop: true });
+
+    await t.run((ctx) =>
+      ctx.runMutation(internal.users.settleAgentRunStep, {
+        runId,
+        stepNumber: 2,
+        model: "test-model",
+        provider: "AI Gateway",
+        order: 1,
+        stepOrder: 2,
+        hasOutput: true,
+        hasToolCalls: false,
+        toolCallIds: [],
+        steeringIds: [],
+        usage: {},
+      }),
+    );
+
+    await expect(
+      t.run((ctx) => ctx.db.get(runId)),
+    ).resolves.toMatchObject({ stepCount: 2, continueAfterStop: false });
   });
 });

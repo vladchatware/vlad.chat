@@ -170,6 +170,7 @@ export default defineSchema({
     inFlightStreamId: v.optional(v.string()),
     inFlightStepOrder: v.optional(v.number()),
     inFlightSteeringIds: v.optional(v.array(v.id("agentRunSteering"))),
+    continueAfterStop: v.optional(v.boolean()),
     anonymousMessageBilled: v.optional(v.boolean()),
     lastError: v.optional(v.string()),
     createdAt: v.number(),

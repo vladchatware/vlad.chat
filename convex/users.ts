@@ -484,6 +484,7 @@ export const settleAgentRunStep = internalMutation({
     stepOrder: v.number(),
     hasOutput: v.boolean(),
     hasToolCalls: v.boolean(),
+    wasInterrupted: v.optional(v.boolean()),
     toolCallIds: v.array(v.string()),
     steeringIds: v.array(v.id("agentRunSteering")),
     usage: usageValidator,
@@ -549,6 +550,7 @@ export const settleAgentRunStep = internalMutation({
       inFlightStreamId: undefined,
       inFlightStepOrder: undefined,
       inFlightSteeringIds: undefined,
+      continueAfterStop: args.wasInterrupted ?? false,
       updatedAt: Date.now(),
     });
     await Promise.all(args.steeringIds.map((steeringId) =>

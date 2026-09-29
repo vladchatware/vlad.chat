@@ -908,7 +908,10 @@ export const runAgentStep = internalAction({
     const steeringInstruction = steering.length > 0
       ? `\n\nPersistent user steering for this run. Apply these directions from this model step onward:\n${steering.map((note) => `- ${note.text}`).join("\n")}`
       : "";
-    const extraInstructions = `${notionInstruction}${computerInstruction}${steeringInstruction}`;
+    const resumeInstruction = run.continueAfterStop
+      ? "\n\nThe previous assistant message was interrupted by the user and its visible partial text is already in the conversation. Continue that same response from its final visible words. Do not repeat or summarize text already shown."
+      : "";
+    const extraInstructions = `${notionInstruction}${computerInstruction}${steeringInstruction}${resumeInstruction}`;
 
     const { thread } = await agent.continueThread(ctx, {
       threadId: run.threadId,
@@ -1084,6 +1087,7 @@ export const runAgentStep = internalAction({
         stepOrder: stepOrder ?? stepNumber,
         hasOutput,
         hasToolCalls: false,
+        wasInterrupted: hasOutput || run.continueAfterStop === true,
         toolCallIds: [],
         steeringIds: run.inFlightSteeringIds ?? [],
         usage: toUsageObject(undefined),
