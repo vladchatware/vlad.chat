@@ -3,6 +3,7 @@ export const NATIVE_VIEWER_HTML = String.raw`<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+    <meta name="referrer" content="no-referrer" />
     <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
     <style>
       html, body, #screen { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #111; }
@@ -18,6 +19,9 @@ export const NATIVE_VIEWER_HTML = String.raw`<!doctype html>
       const screen = document.querySelector("#screen");
       const socketURL = new URL("websockify", location.href);
       socketURL.protocol = location.protocol === "https:" ? "wss:" : "ws:";
+      const token = new URLSearchParams(location.hash.slice(1)).get("token");
+      if (!token) throw new Error("Missing authenticated computer-use viewer token.");
+      socketURL.searchParams.set("token", token);
       const rfb = new RFB(screen, socketURL.href, { shared: true });
       rfb.scaleViewport = true;
       rfb.showDotCursor = true;

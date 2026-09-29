@@ -9,14 +9,18 @@ import {
 
 const MAX_SCREENSHOT_BYTES = 1024 * 1024;
 const SCREENSHOT_TTL_MS = 30 * 60 * 1000;
+const COMPUTER_USE_SESSION_TTL_MS = 30 * 60 * 1000;
 const ARTIFACT_ID = /^cu_[a-z0-9_]{8,80}$/i;
 const CONTENT_TYPES = new Set(["image/jpeg", "image/png"]);
 const LIVE_SESSION_ID = /^[a-f0-9]{32}$/;
+const VIEWER_TOKEN = /^[a-f0-9]{64}$/;
+const COMPUTER_USE_MAX_STEPS = 20;
 
 export function getActiveLiveSessionForThread(
   session: {
     sessionId: string;
     threadId?: string;
+    status?: "starting" | "running" | "stopped" | "expired" | "failed";
     viewerUrl?: string;
     nativeViewerUrl?: string;
     expiresAt: number;
@@ -24,7 +28,12 @@ export function getActiveLiveSessionForThread(
   threadId: string,
   now = Date.now(),
 ) {
-  if (!session || session.threadId !== threadId || session.expiresAt <= now) {
+  if (
+    !session ||
+    (session.status !== undefined && session.status !== "running") ||
+    session.threadId !== threadId ||
+    session.expiresAt <= now
+  ) {
     return null;
   }
   return {
@@ -101,9 +110,23 @@ export const upsertLiveSession = internalMutation({
   args: {
     sessionKey: v.string(),
     sessionId: v.string(),
+    provider: v.optional(v.literal("vercel")),
+    status: v.optional(v.union(
+      v.literal("starting"),
+      v.literal("running"),
+      v.literal("stopped"),
+      v.literal("expired"),
+      v.literal("failed"),
+    )),
+    sandboxName: v.optional(v.string()),
+    viewerToken: v.optional(v.string()),
     threadId: v.optional(v.string()),
     viewerUrl: v.optional(v.string()),
     nativeViewerUrl: v.optional(v.string()),
+    videoUrl: v.optional(v.string()),
+    createdAt: v.optional(v.number()),
+    lastUsedAt: v.optional(v.number()),
+    stepCount: v.optional(v.number()),
     updatedAt: v.number(),
     expiresAt: v.number(),
   },
@@ -113,8 +136,21 @@ export const upsertLiveSession = internalMutation({
       .query("computerUseSessions")
       .withIndex("bySessionKey", (q) => q.eq("sessionKey", args.sessionKey))
       .unique();
-    if (existing) await ctx.db.delete(existing._id);
-    await ctx.db.insert("computerUseSessions", args);
+    if (existing?.sessionId === args.sessionId) {
+      const lastUsedAt = Math.max(existing.lastUsedAt ?? 0, args.lastUsedAt ?? 0);
+      await ctx.db.patch(existing._id, {
+        ...args,
+        ...(existing.status === "running" && args.status === "starting"
+          ? { status: "running" as const }
+          : {}),
+        updatedAt: Math.max(existing.updatedAt, args.updatedAt),
+        ...(lastUsedAt > 0 ? { lastUsedAt } : {}),
+        stepCount: Math.max(existing.stepCount ?? 0, args.stepCount ?? 0),
+      });
+    } else {
+      if (existing) await ctx.db.delete(existing._id);
+      await ctx.db.insert("computerUseSessions", args);
+    }
     return null;
   },
 });
@@ -127,10 +163,23 @@ export const liveSessionByKey = internalQuery({
       _creationTime: v.number(),
       sessionKey: v.string(),
       sessionId: v.string(),
+      provider: v.optional(v.literal("vercel")),
+      status: v.optional(v.union(
+        v.literal("starting"),
+        v.literal("running"),
+        v.literal("stopped"),
+        v.literal("expired"),
+        v.literal("failed"),
+      )),
+      sandboxName: v.optional(v.string()),
+      viewerToken: v.optional(v.string()),
       threadId: v.optional(v.string()),
       viewerUrl: v.optional(v.string()),
       nativeViewerUrl: v.optional(v.string()),
       videoUrl: v.optional(v.string()),
+      createdAt: v.optional(v.number()),
+      lastUsedAt: v.optional(v.number()),
+      stepCount: v.optional(v.number()),
       updatedAt: v.number(),
       expiresAt: v.number(),
     }),
@@ -141,6 +190,69 @@ export const liveSessionByKey = internalQuery({
       .query("computerUseSessions")
       .withIndex("bySessionKey", (q) => q.eq("sessionKey", sessionKey))
       .unique(),
+});
+
+export const sessionsForCleanup = internalQuery({
+  args: {},
+  returns: v.array(v.object({
+    _id: v.id("computerUseSessions"),
+    _creationTime: v.number(),
+    sessionKey: v.string(),
+    sessionId: v.string(),
+    provider: v.optional(v.literal("vercel")),
+    status: v.optional(v.union(
+      v.literal("starting"),
+      v.literal("running"),
+      v.literal("stopped"),
+      v.literal("expired"),
+      v.literal("failed"),
+    )),
+    sandboxName: v.optional(v.string()),
+    viewerToken: v.optional(v.string()),
+    threadId: v.optional(v.string()),
+    viewerUrl: v.optional(v.string()),
+    nativeViewerUrl: v.optional(v.string()),
+    videoUrl: v.optional(v.string()),
+    createdAt: v.optional(v.number()),
+    lastUsedAt: v.optional(v.number()),
+    stepCount: v.optional(v.number()),
+    updatedAt: v.number(),
+    expiresAt: v.number(),
+  })),
+  handler: async (ctx) => ctx.db.query("computerUseSessions").take(500),
+});
+
+export const recordSessionActivity = internalMutation({
+  args: {
+    sessionKey: v.string(),
+    sessionId: v.string(),
+    now: v.number(),
+    expiresAt: v.number(),
+  },
+  returns: v.object({ stepCount: v.number(), lastUsedAt: v.number() }),
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("computerUseSessions")
+      .withIndex("bySessionKey", (q) => q.eq("sessionKey", args.sessionKey))
+      .unique();
+    if (!existing || existing.sessionId !== args.sessionId || existing.status !== "running") {
+      throw new Error("Computer-use session is not active.");
+    }
+    const absoluteExpiry = (existing.createdAt ?? args.now) + COMPUTER_USE_SESSION_TTL_MS;
+    if (absoluteExpiry <= args.now || args.expiresAt <= args.now) {
+      throw new Error("Computer-use session expired.");
+    }
+    const stepCount = existing.stepCount ?? 0;
+    if (stepCount >= COMPUTER_USE_MAX_STEPS) {
+      throw new Error(`Computer-use step limit (${COMPUTER_USE_MAX_STEPS}) reached for this session.`);
+    }
+    await ctx.db.patch(existing._id, {
+      lastUsedAt: args.now,
+      stepCount: stepCount + 1,
+      updatedAt: args.now,
+    });
+    return { stepCount: stepCount + 1, lastUsedAt: args.now };
+  },
 });
 
 export const cleanupExpiredLiveSessions = internalMutation({
@@ -166,6 +278,24 @@ export const cleanupExpiredLiveSessions = internalMutation({
 export const publish = httpAction(async (ctx, request) => {
   if (!isAuthorized(request)) return json({ error: "Unauthorized" }, 401);
 
+  if (request.method === "GET") {
+    const sessionKey = new URL(request.url).searchParams.get("sessionKey");
+    if (sessionKey) {
+      const session = await ctx.runQuery(internal.computerUseScreenshots.liveSessionByKey, {
+        sessionKey,
+      });
+      return json({ session });
+    }
+    if (new URL(request.url).searchParams.get("cleanup") === "1") {
+      const sessions = await ctx.runQuery(
+        internal.computerUseScreenshots.sessionsForCleanup,
+        {},
+      );
+      return json({ sessions });
+    }
+    return json({ error: "A sessionKey or cleanup=1 is required" }, 400);
+  }
+
   const body: unknown = await request.json().catch(() => null);
   if (!body || typeof body !== "object") {
     return json({ error: "Invalid live session payload" }, 400);
@@ -180,9 +310,34 @@ export const publish = httpAction(async (ctx, request) => {
     !LIVE_SESSION_ID.test(sessionId) ||
     (payload.threadId !== undefined &&
       (typeof payload.threadId !== "string" || payload.threadId.length > 128)) ||
-    (status !== "active" && status !== "ended")
+    (status !== "active" && status !== "ended" && status !== "starting" && status !== "running" && status !== "stopped" && status !== "expired" && status !== "failed")
   ) {
     return json({ error: "Invalid live session metadata" }, 400);
+  }
+
+  if (payload.event === "activity") {
+    if (typeof payload.expiresAt !== "number" || !Number.isFinite(payload.expiresAt)) {
+      return json({ error: "Invalid activity metadata" }, 400);
+    }
+    try {
+      const activity = await ctx.runMutation(
+        internal.computerUseScreenshots.recordSessionActivity,
+        { sessionKey, sessionId, now: Date.now(), expiresAt: payload.expiresAt },
+      );
+      return json({ ok: true, ...activity });
+    } catch (error) {
+      return json({ error: error instanceof Error ? error.message : "Session activity failed" }, 409);
+    }
+  }
+
+  if (status === "stopped" || status === "expired" || status === "failed" || status === "running") {
+    await ctx.runMutation(internal.computerUseScreenshots.updateSessionStatus, {
+      sessionKey,
+      sessionId,
+      status,
+      now: Date.now(),
+    });
+    return json({ ok: true });
   }
 
   if (status === "ended") {
@@ -211,15 +366,39 @@ export const publish = httpAction(async (ctx, request) => {
     return json({ error: "Invalid native viewer URL" }, 400);
   }
 
+  const provider = payload.provider;
+  const sandboxName = payload.sandboxName;
+  const viewerToken = payload.viewerToken;
+  const createdAt = payload.createdAt;
+  const lastUsedAt = payload.lastUsedAt;
+  const stepCount = payload.stepCount;
+  if (
+    (provider !== undefined && provider !== "vercel") ||
+    (sandboxName !== undefined && (typeof sandboxName !== "string" || !/^vlad-cu-[a-zA-Z0-9_-]{1,54}$/.test(sandboxName))) ||
+    (viewerToken !== undefined && (typeof viewerToken !== "string" || !VIEWER_TOKEN.test(viewerToken))) ||
+    (createdAt !== undefined && (typeof createdAt !== "number" || !Number.isFinite(createdAt))) ||
+    (lastUsedAt !== undefined && (typeof lastUsedAt !== "number" || !Number.isFinite(lastUsedAt))) ||
+    (stepCount !== undefined && (typeof stepCount !== "number" || !Number.isInteger(stepCount) || stepCount < 0))
+  ) {
+    return json({ error: "Invalid sandbox lifecycle metadata" }, 400);
+  }
+
   const now = Date.now();
   await ctx.runMutation(internal.computerUseScreenshots.upsertLiveSession, {
     sessionKey,
     sessionId,
+    provider: "vercel",
+    status: status === "active" ? "running" : status,
+    ...(typeof sandboxName === "string" ? { sandboxName } : {}),
+    ...(typeof viewerToken === "string" ? { viewerToken } : {}),
     ...(typeof payload.threadId === "string" ? { threadId: payload.threadId } : {}),
     ...(typeof viewerUrl === "string" ? { viewerUrl } : {}),
     ...(typeof nativeViewerUrl === "string" ? { nativeViewerUrl } : {}),
+    ...(typeof createdAt === "number" ? { createdAt } : {}),
+    ...(typeof lastUsedAt === "number" ? { lastUsedAt } : {}),
+    ...(typeof stepCount === "number" ? { stepCount } : {}),
     updatedAt: now,
-    expiresAt: now + SCREENSHOT_TTL_MS,
+    expiresAt: (typeof createdAt === "number" ? createdAt : now) + COMPUTER_USE_SESSION_TTL_MS,
   });
   return json({ ok: true });
 });
@@ -237,11 +416,39 @@ export const cleanupSessionByKey = internalMutation({
   },
 });
 
+export const updateSessionStatus = internalMutation({
+  args: {
+    sessionKey: v.string(),
+    sessionId: v.string(),
+    status: v.union(
+      v.literal("starting"),
+      v.literal("running"),
+      v.literal("stopped"),
+      v.literal("expired"),
+      v.literal("failed"),
+    ),
+    now: v.number(),
+  },
+  returns: v.null(),
+  handler: async (ctx, { sessionKey, sessionId, status, now }) => {
+    const existing = await ctx.db
+      .query("computerUseSessions")
+      .withIndex("bySessionKey", (q) => q.eq("sessionKey", sessionKey))
+      .unique();
+    if (existing?.sessionId === sessionId) {
+      await ctx.db.patch(existing._id, { status, updatedAt: now });
+    }
+    return null;
+  },
+});
+
 function isValidSandboxUrl(value: string, pathPattern: RegExp): boolean {
   try {
     const url = new URL(value);
     return url.protocol === "https:" &&
       url.hostname.endsWith(".vercel.run") &&
+      !url.username &&
+      !url.password &&
       pathPattern.test(url.pathname);
   } catch {
     return false;

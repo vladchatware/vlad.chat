@@ -1,5 +1,5 @@
 import { Sandbox } from "@vercel/sandbox";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import type { ComputerSession } from "./types";
 import {
   INSTALL_PLAYWRIGHT_SH,
@@ -12,7 +12,11 @@ import {
 } from "./playwright-scripts";
 import { NATIVE_VIEWER_HTML } from "./native-viewer-script";
 import { CUA_BRIDGE_CJS } from "./cua-bridge-script";
-import { publishLiveComputerSession } from "./artifacts";
+import {
+  getStoredComputerSession,
+  publishLiveComputerSession,
+  recordComputerSessionActivity,
+} from "./artifacts";
 import { resolveSandboxCredentials } from "./credentials";
 import { COMPUTER_USE_MAX_TTL_MS } from "./limits";
 
@@ -21,7 +25,7 @@ export { COMPUTER_USE_MAX_TTL_MS } from "./limits";
 /** Session operational limits — tune here; fail closed when hit. */
 export const COMPUTER_USE_MAX_STEPS = 20; // per session
 export const COMPUTER_USE_MAX_CONCURRENT = 1; // per user/session key
-export const COMPUTER_USE_IDLE_MS = COMPUTER_USE_MAX_TTL_MS; // keep passive floating preview alive
+export { COMPUTER_USE_IDLE_MS } from "./limits";
 /** Sandbox create timeout must not exceed TTL. */
 const SANDBOX_CREATE_TIMEOUT_MS = COMPUTER_USE_MAX_TTL_MS;
 
@@ -49,7 +53,8 @@ function createParams(): Record<string, unknown> {
   const base: Record<string, unknown> = {
     timeout: SANDBOX_CREATE_TIMEOUT_MS,
     resources: { vcpus: 8 }, // 2GB/vCPU → 16GB; open skips shot to avoid 137
-    persistent: false,
+    persistent: true,
+    keepLastSnapshots: { count: 1 },
     // noVNC websockify listens on 6080 inside the sandbox.
     ports: [6080],
   };
@@ -92,7 +97,9 @@ export async function getOrCreateSessionSandbox(
   sandbox: Sandbox;
   session: ComputerSession;
 }> {
-  const existing = sessions.get(sessionKey);
+  const inMemory = sessions.get(sessionKey);
+  const stored = await getStoredComputerSession(sessionKey);
+  const existing = stored ?? inMemory;
   const configuredSnapshot = process.env.COMPUTER_USE_SNAPSHOT_ID;
   const name =
     existing?.sandboxName ||
@@ -101,26 +108,38 @@ export async function getOrCreateSessionSandbox(
       : sandboxNameFor(sessionKey));
   const params = { ...createParams(), name };
 
+  const now = Date.now();
+  const storedUpdatedAt = existing && "updatedAt" in existing ? existing.updatedAt : undefined;
+  const restoredAt = existing?.createdAt ?? storedUpdatedAt ?? now;
+  const session: ComputerSession = {
+    sessionKey,
+    sessionId:
+      existing?.sessionId ??
+      createHash("sha256")
+        .update(`${sessionKey}:${name}:${restoredAt}`)
+        .digest("hex")
+        .slice(0, 32),
+    provider: "vercel",
+    status: "starting",
+    threadId: threadId ?? existing?.threadId,
+    sandboxName: name,
+    viewerToken: existing?.viewerToken ?? randomBytes(32).toString("hex"),
+    createdAt: restoredAt,
+    lastUsedAt: existing?.lastUsedAt ?? restoredAt,
+    stepCount: existing?.stepCount ?? 0,
+    viewerUrl: existing?.viewerUrl,
+    nativeViewerUrl: existing?.nativeViewerUrl,
+    deskReady: Boolean(inMemory?.deskReady),
+  };
+  sessions.set(sessionKey, session);
+  await publishLiveComputerSession(sessionKey, session.sessionId, session, "starting");
+
   // A named sandbox can outlive the snapshot it was created from. `getOrCreate`
   // handles Vercel's `snapshot_not_found` response by deleting that stale sandbox
   // and creating a fresh one; a create/get fallback leaves it stuck forever.
   const sandbox = await Sandbox.getOrCreate(
     params as Parameters<typeof Sandbox.getOrCreate>[0],
   );
-
-  const session: ComputerSession = {
-    sessionKey,
-    sessionId: existing?.sessionId ?? createHash("sha256").update(name).digest("hex").slice(0, 32),
-    threadId: threadId ?? existing?.threadId,
-    sandboxName: name,
-    createdAt: existing?.createdAt ?? Date.now(),
-    lastUsedAt: Date.now(),
-    stepCount: existing?.stepCount ?? 0,
-    viewerUrl: existing?.viewerUrl,
-    nativeViewerUrl: existing?.nativeViewerUrl,
-    deskReady: existing?.deskReady,
-  };
-  sessions.set(sessionKey, session);
 
   const setupCheck = await sandbox.runCommand({
     cmd: "bash",
@@ -193,7 +212,7 @@ export async function getOrCreateSessionSandbox(
     }
   }
 
-  // Live desk: Xvfb + x11vnc + noVNC + headed Chromium (CDP :9222) so humans can VNC-control.
+  // Live desk: Xvfb + authenticated noVNC/WebSocket + headed Chromium (CDP :9222).
   // Re-run START when in-memory deskReady but CDP died (warm lambda / crashed chrome).
   let deskOk = Boolean(session.deskReady && session.viewerUrl && session.nativeViewerUrl);
   if (deskOk) {
@@ -213,6 +232,11 @@ export async function getOrCreateSessionSandbox(
       { path: "/tmp/cu/shooter.cjs", content: Buffer.from(SHOOTER_CJS) },
       { path: "/tmp/cu/cua-bridge.cjs", content: Buffer.from(CUA_BRIDGE_CJS) },
       { path: "/tmp/cu/native-viewer.html", content: Buffer.from(NATIVE_VIEWER_HTML) },
+      {
+        path: "/tmp/cu/websockify-tokens",
+        content: Buffer.from(`${session.viewerToken}: 127.0.0.1:5900\n`),
+        mode: 0o600,
+      },
     ]);
     const deskStart = await sandbox.runCommand({
       cmd: "bash",
@@ -244,8 +268,9 @@ export async function getOrCreateSessionSandbox(
       } catch {
         /* default vnc.html */
       }
-      viewerUrl = `${root}/${entry}?autoconnect=1&resize=scale`;
-      nativeViewerUrl = `${root}/vladchat.html`;
+      const websocketPath = encodeURIComponent(`websockify?token=${session.viewerToken}`);
+      viewerUrl = `${root}/${entry}?autoconnect=1&resize=scale#path=${websocketPath}`;
+      nativeViewerUrl = `${root}/vladchat.html#token=${session.viewerToken}`;
     } catch (err) {
       throw new Error(
         `Sandbox port 6080 not routed for noVNC: ${err instanceof Error ? err.message : String(err)}`,
@@ -263,22 +288,10 @@ export async function getOrCreateSessionSandbox(
     { path: "/tmp/cu/cua-bridge.cjs", content: Buffer.from(CUA_BRIDGE_CJS) },
   ]);
 
-  session.sessionId = createHash("sha256")
-    .update(`${sessionKey}:${session.sandboxName}:${session.createdAt}`)
-    .digest("hex")
-    .slice(0, 32);
+  session.status = "running";
+  session.lastUsedAt = Date.now();
   sessions.set(sessionKey, session);
-  try {
-    await publishLiveComputerSession(sessionKey, session.sessionId, {
-      viewerUrl: session.viewerUrl,
-      nativeViewerUrl: session.nativeViewerUrl,
-      ...(session.threadId === undefined ? {} : { threadId: session.threadId }),
-    });
-  } catch (error) {
-    console.warn(
-      `Could not publish live computer session: ${error instanceof Error ? error.message : String(error)}`,
-    );
-  }
+  await publishLiveComputerSession(sessionKey, session.sessionId, session, "active");
 
   return { sandbox, session };
 }
@@ -295,34 +308,24 @@ export function budgetStatus(session: ComputerSession) {
   };
 }
 
-function assertSessionCaps(sessionKey: string, session: ComputerSession | undefined) {
-  // Concurrent: Map is keyed by sessionKey; enforce one active sandbox per user key.
-  // (Map size for this key is always 0|1; also reject if another key shares same user prefix — kept simple: 1 entry per sessionKey.)
-  void COMPUTER_USE_MAX_CONCURRENT;
-
+function assertSessionCaps(
+  session: { createdAt?: number; stepCount?: number } | undefined,
+) {
   if (!session) return;
 
   const now = Date.now();
-  if (now - session.createdAt > COMPUTER_USE_MAX_TTL_MS) {
+  if (session.createdAt !== undefined && now - session.createdAt >= COMPUTER_USE_MAX_TTL_MS) {
     throw new ComputerUseCapError(
       "ttl_exceeded",
       `Computer-use session exceeded ${COMPUTER_USE_MAX_TTL_MS / 60000} min TTL. Call computer_open to start a fresh session.`,
     );
   }
-  if (session.stepCount >= COMPUTER_USE_MAX_STEPS) {
+  if ((session.stepCount ?? 0) >= COMPUTER_USE_MAX_STEPS) {
     throw new ComputerUseCapError(
       "step_limit",
       `Computer-use step limit (${COMPUTER_USE_MAX_STEPS}) reached for this session.`,
     );
   }
-}
-
-export async function reclaimIfIdle(sessionKey: string): Promise<boolean> {
-  const existing = sessions.get(sessionKey);
-  if (!existing) return false;
-  if (Date.now() - existing.lastUsedAt <= COMPUTER_USE_IDLE_MS) return false;
-  await endComputerSession(sessionKey);
-  return true;
 }
 
 export async function runComputerOp(
@@ -337,10 +340,14 @@ export async function runComputerOp(
   nativeViewerUrl?: string;
   budget: ReturnType<typeof budgetStatus>;
 }> {
-  const prior = sessions.get(sessionKey);
+  const prior = (await getStoredComputerSession(sessionKey)) ?? sessions.get(sessionKey);
   if (prior) {
     try {
-      assertSessionCaps(sessionKey, prior);
+      assertSessionCaps({
+        createdAt:
+          prior.createdAt ?? ("updatedAt" in prior ? prior.updatedAt : undefined),
+        stepCount: prior.stepCount,
+      });
     } catch (error) {
       if (cmd.op !== "open" || !(error instanceof ComputerUseCapError)) throw error;
       // A requested open is the recovery path after expiry or a spent step cap.
@@ -350,7 +357,12 @@ export async function runComputerOp(
   }
 
   const { sandbox, session } = await getOrCreateSessionSandbox(sessionKey, threadId);
-  assertSessionCaps(sessionKey, session);
+  assertSessionCaps(session);
+  const activity = await recordComputerSessionActivity(session);
+  session.lastUsedAt = activity.lastUsedAt;
+  session.stepCount = activity.stepCount;
+  session.status = "running";
+  sessions.set(sessionKey, session);
 
   async function readShotMeta(): Promise<{
     meta: Record<string, unknown>;
@@ -434,9 +446,6 @@ export async function runComputerOp(
       throw new Error(`${base}${viewer}`);
     }
     const { meta, png } = await readShotMeta();
-    session.lastUsedAt = Date.now();
-    session.stepCount += 1;
-    sessions.set(sessionKey, session);
     return {
       meta,
       png,
@@ -499,9 +508,6 @@ export async function runComputerOp(
       png = null;
     }
 
-    session.lastUsedAt = Date.now();
-    session.stepCount += 1;
-    sessions.set(sessionKey, session);
     return {
       meta,
       png,
@@ -533,9 +539,6 @@ export async function runComputerOp(
     // Keep desktop viewing available while reporting page navigation failure truthfully.
     if (cmd.op === "open" && session.viewerUrl && session.nativeViewerUrl) {
       await runCua("refresh-target").catch(() => undefined);
-      session.lastUsedAt = Date.now();
-      session.stepCount += 1;
-      sessions.set(sessionKey, session);
       return {
         meta: {
           ok: false,
@@ -562,9 +565,6 @@ export async function runComputerOp(
     // successful Playwright navigation into a failed computer_open result.
     await runCua("refresh-target").catch(() => undefined);
   }
-  session.lastUsedAt = Date.now();
-  session.stepCount += 1;
-  sessions.set(sessionKey, session);
   return {
     meta: runMeta.meta,
     png: null,
@@ -576,30 +576,25 @@ export async function runComputerOp(
 }
 
 export async function endComputerSession(sessionKey: string): Promise<void> {
-  const existing = sessions.get(sessionKey);
+  const existing = (await getStoredComputerSession(sessionKey)) ?? sessions.get(sessionKey);
   if (!existing) return;
   try {
-    try {
-      await publishLiveComputerSession(sessionKey, existing.sessionId, null);
-    } catch (error) {
-      console.warn(
-        `Could not clear live computer session: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
     const params = createParams();
     const sandbox = await Sandbox.get({
       name: existing.sandboxName,
       ...credFields(params),
     } as Parameters<typeof Sandbox.get>[0]).catch(() => null);
-    if (!sandbox) return;
-    try {
-      await sandbox.stop();
-    } catch {
-      /* already stopped */
+    if (sandbox) {
+      try {
+        await sandbox.stop();
+      } catch {
+        /* already stopped */
+      }
+      if (typeof sandbox.delete === "function") {
+        await sandbox.delete({ deleteOrphanSnapshots: true });
+      }
     }
-    if (typeof sandbox.delete === "function") {
-      await sandbox.delete().catch(() => undefined);
-    }
+    await publishLiveComputerSession(sessionKey, existing.sessionId, null);
   } finally {
     sessions.delete(sessionKey);
   }

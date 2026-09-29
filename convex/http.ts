@@ -35,6 +35,12 @@ http.route({
 });
 
 http.route({
+  path: "/computer-use/sessions",
+  method: "GET",
+  handler: publishComputerUseSession,
+});
+
+http.route({
   pathPrefix: "/computer-use/screenshots/",
   method: "GET",
   handler: downloadComputerUseScreenshot,

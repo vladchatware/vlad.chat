@@ -69,8 +69,12 @@ export type ComputerToolResult = {
 export type ComputerSession = {
   sessionKey: string;
   sessionId: string;
+  provider: "vercel";
+  status: "starting" | "running" | "stopped" | "expired" | "failed";
   threadId?: string;
   sandboxName: string;
+  /** High-entropy capability required by the sandbox WebSocket proxy. */
+  viewerToken: string;
   createdAt: number;
   lastUsedAt: number;
   stepCount: number;

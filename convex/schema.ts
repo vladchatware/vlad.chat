@@ -122,10 +122,23 @@ export default defineSchema({
   computerUseSessions: defineTable({
     sessionKey: v.string(),
     sessionId: v.string(),
+    provider: v.optional(v.literal("vercel")),
+    status: v.optional(v.union(
+      v.literal("starting"),
+      v.literal("running"),
+      v.literal("stopped"),
+      v.literal("expired"),
+      v.literal("failed"),
+    )),
+    sandboxName: v.optional(v.string()),
+    viewerToken: v.optional(v.string()),
     threadId: v.optional(v.string()),
     viewerUrl: v.optional(v.string()),
     nativeViewerUrl: v.optional(v.string()),
     videoUrl: v.optional(v.string()),
+    createdAt: v.optional(v.number()),
+    lastUsedAt: v.optional(v.number()),
+    stepCount: v.optional(v.number()),
     updatedAt: v.number(),
     expiresAt: v.number(),
   })
