@@ -391,6 +391,7 @@ export const createAgentRunWithPrompt = internalMutation({
       searchEnabled: args.searchEnabled,
       status: "running",
       stepCount: 0,
+      attemptCount: 0,
       createdAt: now,
       updatedAt: now,
     });
@@ -430,6 +431,58 @@ export const claimAgentRunStep = internalMutation({
     }
     await ctx.db.patch(runId, {
       inFlightStep: stepNumber,
+      attemptCount: run.attemptCount + 1,
+      inFlightAttempt: run.attemptCount + 1,
+      inFlightPhase: "model",
+      inFlightStreamId: undefined,
+      inFlightStepOrder: undefined,
+      updatedAt: Date.now(),
+    });
+    return true;
+  },
+});
+
+export const setAgentRunStepPhase = internalMutation({
+  args: {
+    runId: v.id("agentRuns"),
+    stepNumber: v.number(),
+    phase: v.literal("tool"),
+  },
+  returns: v.boolean(),
+  handler: async (ctx, { runId, stepNumber, phase }) => {
+    const run = await ctx.db.get(runId);
+    if (
+      !run ||
+      run.status !== "running" ||
+      run.inFlightStep !== stepNumber
+    ) {
+      return false;
+    }
+    await ctx.db.patch(runId, { inFlightPhase: phase, updatedAt: Date.now() });
+    return true;
+  },
+});
+
+export const setAgentRunStream = internalMutation({
+  args: {
+    runId: v.id("agentRuns"),
+    stepNumber: v.number(),
+    streamId: v.string(),
+    stepOrder: v.number(),
+  },
+  returns: v.boolean(),
+  handler: async (ctx, { runId, stepNumber, streamId, stepOrder }) => {
+    const run = await ctx.db.get(runId);
+    if (
+      !run ||
+      run.status !== "running" ||
+      run.inFlightStep !== stepNumber
+    ) {
+      return false;
+    }
+    await ctx.db.patch(runId, {
+      inFlightStreamId: streamId,
+      inFlightStepOrder: stepOrder,
       updatedAt: Date.now(),
     });
     return true;
@@ -608,28 +661,181 @@ export const runAgentStep = internalAction({
       threadId: run.threadId,
       userId: run.userId,
     });
-    const result = await thread.streamText(
-      {
-        model: gateway.languageModel(run.model),
-        promptMessageId: run.promptMessageId,
-        instructions: extraInstructions
-          ? `${chatSystemInstructions}${extraInstructions}`
-          : undefined,
-        tools,
-        stopWhen: isStepCount(1),
-        onError: async () => {
-          await failPendingMessages(
-            ctx,
-            run.threadId,
-            "The AI provider failed before returning a response.",
-          );
+    const abortController = new AbortController();
+    let monitorActive = true;
+    let toolExecutionMayStart = false;
+    let toolStepStarted = false;
+    let streamIdRecorded = false;
+    let activeStreamStepOrder: number | undefined;
+    const stopMonitor = (async () => {
+      while (monitorActive && !toolExecutionMayStart && !streamIdRecorded) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        if (!monitorActive || toolExecutionMayStart || streamIdRecorded) return;
+        const currentRun = await ctx.runQuery(
+          internal.threads.getAgentRunInternal,
+          { runId },
+        );
+        if (currentRun?.status === "stopRequested") {
+          abortController.abort(new Error("User requested Stop."));
+          return;
+        }
+        if (!currentRun || currentRun.status !== "running") return;
+      }
+    })().catch((error) => {
+      console.error("Agent run stop monitor failed", error);
+    });
+
+    let streamFailed = false;
+    let streamError: unknown;
+    let result: Awaited<ReturnType<typeof thread.streamText>> | undefined;
+    try {
+      result = await thread.streamText(
+        {
+          model: gateway.languageModel(run.model),
+          promptMessageId: run.promptMessageId,
+          instructions: extraInstructions
+            ? `${chatSystemInstructions}${extraInstructions}`
+            : undefined,
+          tools,
+          stopWhen: isStepCount(1),
+          abortSignal: abortController.signal,
+          onChunk: async () => {
+            if (streamIdRecorded) return;
+            const activeStreams = await syncStreams(ctx, components.agent, {
+              threadId: run.threadId,
+              streamArgs: { kind: "list" },
+            });
+            const activeStream = activeStreams?.kind === "list"
+              ? activeStreams.messages.find(
+                  (message) =>
+                    message.order === run.order &&
+                    message.status === "streaming",
+                )
+              : undefined;
+            if (!activeStream) return;
+            activeStreamStepOrder = activeStream.stepOrder;
+            streamIdRecorded = await ctx.runMutation(
+              internal.threads.setAgentRunStream,
+              {
+                runId,
+                stepNumber,
+                streamId: activeStream.streamId,
+                stepOrder: activeStream.stepOrder,
+              },
+            );
+            if (!streamIdRecorded) {
+              abortController.abort(new Error("User requested Stop."));
+            }
+          },
+          onToolExecutionStart: async () => {
+            toolExecutionMayStart = true;
+            const canStartTool = await ctx.runMutation(
+              internal.threads.setAgentRunStepPhase,
+              { runId, stepNumber, phase: "tool" },
+            );
+            if (!canStartTool) {
+              throw new Error("Agent run stopped before tool execution.");
+            }
+            toolStepStarted = true;
+          },
+          onError: async () => {
+            const currentRun = await ctx.runQuery(
+              internal.threads.getAgentRunInternal,
+              { runId },
+            );
+            if (currentRun?.status !== "stopRequested") {
+              await failPendingMessages(
+                ctx,
+                run.threadId,
+                "The AI provider failed before returning a response.",
+              );
+            }
+          },
         },
-      },
-      {
-        saveStreamDeltas: { chunking: "word", throttleMs: 0 },
-        storageOptions: { saveMessages: "all" },
-      },
-    );
+        {
+          saveStreamDeltas: { chunking: "word", throttleMs: 0 },
+          storageOptions: { saveMessages: "all" },
+        },
+      );
+    } catch (error) {
+      streamFailed = true;
+      streamError = error;
+    } finally {
+      monitorActive = false;
+      await stopMonitor;
+    }
+
+    if (streamFailed) {
+      const currentRun = await ctx.runQuery(
+        internal.threads.getAgentRunInternal,
+        { runId },
+      );
+      if (currentRun?.status !== "stopRequested" || toolStepStarted) {
+        throw streamError;
+      }
+
+      const stepOrder = currentRun.inFlightStepOrder ?? activeStreamStepOrder;
+      const savedMessages = stepOrder === undefined
+        ? []
+        : (await ctx.runQuery(
+            components.agent.messages.listMessagesByThreadId,
+            {
+              threadId: run.threadId,
+              paginationOpts: { cursor: null, numItems: 100 },
+              order: "desc",
+              statuses: ["success", "failed", "pending"],
+            },
+          )).page.filter(
+            (message) =>
+              message.order === run.order &&
+              message.stepOrder === stepOrder &&
+              message.message?.role === "assistant",
+          );
+      const partialAssistant = savedMessages[0];
+      let hasOutput = false;
+      if (partialAssistant?.message?.role === "assistant") {
+        const assistantMessage = partialAssistant.message;
+        const content = typeof assistantMessage.content === "string"
+          ? assistantMessage.content
+          : assistantMessage.content.filter(
+              (part) =>
+                part.type === "text" ||
+                part.type === "reasoning" ||
+                part.type === "file",
+            );
+        hasOutput = typeof content === "string"
+          ? content.trim().length > 0
+          : content.some(
+              (part) => part.type === "text" && part.text.trim().length > 0,
+            );
+        if (hasOutput) {
+          await ctx.runMutation(components.agent.messages.updateMessage, {
+            messageId: partialAssistant._id,
+            patch: {
+              message: { ...assistantMessage, content },
+              status: "success",
+              error: undefined,
+            },
+          });
+        } else {
+          await ctx.runMutation(components.agent.messages.deleteByIds, {
+            messageIds: [partialAssistant._id],
+          });
+        }
+      }
+
+      return {
+        model: run.model,
+        provider: "AI Gateway",
+        order: run.order,
+        stepOrder: stepOrder ?? stepNumber,
+        hasOutput,
+        hasToolCalls: false,
+        toolCallIds: [],
+        usage: toUsageObject(undefined),
+      };
+    }
+    if (!result) throw new ConvexError("Agent stream ended without a result.");
 
     const [outputText, usage, finalStep, steps] = await Promise.all([
       result.text,
@@ -712,6 +918,10 @@ export const getAgentRunState = query({
       runId: run._id,
       status: run.status,
       stepCount: run.stepCount,
+      attemptCount: run.attemptCount,
+      inFlightAttempt: run.inFlightAttempt,
+      inFlightStep: run.inFlightStep,
+      inFlightPhase: run.inFlightPhase,
       updatedAt: run.updatedAt,
       lastError: run.lastError,
     };
@@ -731,6 +941,14 @@ export const stopThread = mutation({
         status: "stopRequested",
         updatedAt: Date.now(),
       });
+      if (run.inFlightPhase === "model" && run.inFlightStreamId) {
+        await abortStream(ctx, components.agent, {
+          streamId: run.inFlightStreamId,
+          reason: "User stopped generation",
+        }).catch((error) => {
+          console.error("Could not abort persisted agent stream", error);
+        });
+      }
       return { status: "stopRequested" as const };
     }
     return { status: run.status };
@@ -742,7 +960,16 @@ export const resumeThread = mutation({
   handler: async (ctx, { threadId }) => {
     await authorizeThreadAccess(ctx, threadId, true);
     const run = await findActiveAgentRun(ctx, threadId);
-    if (!run || run.status !== "paused" || !run.workflowId) {
+    if (!run) {
+      throw new ConvexError("No paused agent run is ready to resume.");
+    }
+    if (run.status === "running") {
+      return { status: "running" as const, runId: run._id };
+    }
+    if (run.status === "stopRequested") {
+      return { status: "stopRequested" as const, runId: run._id };
+    }
+    if (run.status !== "paused" || !run.workflowId) {
       throw new ConvexError("No paused agent run is ready to resume.");
     }
     await sendEvent(ctx, components.workflow, {

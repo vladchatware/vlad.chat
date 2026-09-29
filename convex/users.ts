@@ -527,7 +527,11 @@ export const settleAgentRunStep = internalMutation({
     });
     await ctx.db.patch(run._id, {
       stepCount: args.stepNumber,
+      inFlightAttempt: undefined,
       inFlightStep: undefined,
+      inFlightPhase: undefined,
+      inFlightStreamId: undefined,
+      inFlightStepOrder: undefined,
       updatedAt: Date.now(),
     });
     return null;
