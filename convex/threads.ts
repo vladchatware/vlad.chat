@@ -537,6 +537,22 @@ export const setAgentRunStatus = internalMutation({
   },
 });
 
+export const completeAgentRunIfRunning = internalMutation({
+  args: { runId: v.id("agentRuns") },
+  returns: v.boolean(),
+  handler: async (ctx, { runId }) => {
+    const run = await ctx.db.get(runId);
+    if (!run || run.status !== "running") return false;
+    const now = Date.now();
+    await ctx.db.patch(runId, {
+      status: "completed",
+      updatedAt: now,
+      completedAt: now,
+    });
+    return true;
+  },
+});
+
 export const agentRunWorkflow = workflow.define({
   args: { runId: v.id("agentRuns") },
   returns: v.null(),
@@ -583,11 +599,52 @@ export const agentRunWorkflow = workflow.define({
         ...result,
       });
 
-      if (!result.hasToolCalls || stepNumber === MAX_AGENT_STEPS) {
+      const pauseForRequestedStop = async () => {
+        const currentRun = await step.runQuery(
+          internal.threads.getAgentRunInternal,
+          { runId },
+        );
+        if (currentRun?.status !== "stopRequested") return false;
         await step.runMutation(internal.threads.setAgentRunStatus, {
           runId,
-          status: "completed",
+          status: "paused",
         });
+        await step.awaitEvent({ name: "resume" });
+        await step.runMutation(internal.threads.setAgentRunStatus, {
+          runId,
+          status: "running",
+        });
+        return true;
+      };
+
+      const stopped = await pauseForRequestedStop();
+      if (stopped) {
+        if (stepNumber === MAX_AGENT_STEPS) {
+          await step.runMutation(
+            internal.threads.completeAgentRunIfRunning,
+            { runId },
+          );
+          return null;
+        }
+        continue;
+      }
+
+      if (!result.hasToolCalls || stepNumber === MAX_AGENT_STEPS) {
+        const completed = await step.runMutation(
+          internal.threads.completeAgentRunIfRunning,
+          { runId },
+        );
+        if (completed) return null;
+
+        // Stop may commit between the status read and completion. Re-read it
+        // before exiting so a user stop cannot be overwritten as completion.
+        if (await pauseForRequestedStop()) {
+          if (stepNumber < MAX_AGENT_STEPS) continue;
+          await step.runMutation(
+            internal.threads.completeAgentRunIfRunning,
+            { runId },
+          );
+        }
         return null;
       }
     }
