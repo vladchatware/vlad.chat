@@ -152,6 +152,9 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
     api.threads.getAgentRunState,
     activeThreadId ? { threadId: activeThreadId } : 'skip',
   )
+  const queuedRuns = agentRunState?.queuedRuns ?? []
+  const steeringNotes = agentRunState?.steeringNotes ?? []
+  const failedQueuedRuns = agentRunState?.failedQueuedRuns ?? []
   const [showSuggestions, setShowSuggestions] = useState(true)
   const [input, setInput] = useState('');
   const [model, setModel] = useState<string>(models[0].value);
@@ -613,7 +616,7 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                   )
                 })}
               </AnimatePresence>
-              {agentRunState?.queuedRuns.map((queued) => (
+              {queuedRuns.map((queued) => (
                 <Message key={queued.runId} from="user">
                   <MessageContent>
                     <Response>
@@ -626,7 +629,7 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                   </MessageContent>
                 </Message>
               ))}
-              {agentRunState?.steeringNotes.map((note) => (
+              {steeringNotes.map((note) => (
                 <Message key={note.id} from="user">
                   <MessageContent>
                     <Response>{note.text}</Response>
@@ -638,7 +641,7 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                   </MessageContent>
                 </Message>
               ))}
-              {agentRunState?.failedQueuedRuns.map((failed) => (
+              {failedQueuedRuns.map((failed) => (
                 <Message key={failed.runId} from="user">
                   <MessageContent>
                     <Response>
@@ -653,7 +656,7 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
               ))}
               {agentRunState?.status === 'failed' &&
                 agentRunState.runId &&
-                !agentRunState.failedQueuedRuns.some(
+                !failedQueuedRuns.some(
                   (failed) => failed.runId === agentRunState.runId,
                 ) && (
                   <Message from="assistant">
