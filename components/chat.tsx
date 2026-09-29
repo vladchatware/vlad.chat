@@ -147,6 +147,10 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
   const disconnectNotion = useMutation(api.notion.removeConnection)
 
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null)
+  const agentRunState = useQuery(
+    api.threads.getAgentRunState,
+    activeThreadId ? { threadId: activeThreadId } : 'skip',
+  )
   const [showSuggestions, setShowSuggestions] = useState(true)
   const [input, setInput] = useState('');
   const [model, setModel] = useState<string>(models[0].value);
@@ -221,6 +225,7 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
         prompt,
         model,
         searchEnabled,
+        threadId: activeThreadId ?? undefined,
       })
       setActiveThreadId(result.threadId)
     } catch (error) {
@@ -231,7 +236,7 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
     } finally {
       setSubmitState('ready')
     }
-  }, [generateReply, model, searchEnabled])
+  }, [activeThreadId, generateReply, model, searchEnabled])
 
   // Auto-send message when page is ready and autoMessage is provided
   useEffect(() => {
@@ -301,7 +306,7 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
     paginationStatus,
   })
   const handleSubmit = async (message: PromptInputMessage) => {
-    if (submitStatus === 'streaming') {
+    if (submitState === 'submitted') {
       return
     }
 
@@ -601,6 +606,43 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                   )
                 })}
               </AnimatePresence>
+              {agentRunState?.queuedRuns.map((queued) => (
+                <Message key={queued.runId} from="user">
+                  <MessageContent>
+                    <Response>
+                      {queued.text ||
+                        `${queued.attachmentCount} ${queued.attachmentCount === 1 ? 'attachment' : 'attachments'}`}
+                    </Response>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      Queued — sends after current response
+                    </div>
+                  </MessageContent>
+                </Message>
+              ))}
+              {agentRunState?.failedQueuedRuns.map((failed) => (
+                <Message key={failed.runId} from="user">
+                  <MessageContent>
+                    <Response>
+                      {failed.text ||
+                        `${failed.attachmentCount} ${failed.attachmentCount === 1 ? 'attachment' : 'attachments'}`}
+                    </Response>
+                    <div className="mt-1 text-xs text-destructive">
+                      Could not send: {failed.lastError}
+                    </div>
+                  </MessageContent>
+                </Message>
+              ))}
+              {agentRunState?.status === 'failed' &&
+                agentRunState.runId &&
+                !agentRunState.failedQueuedRuns.some(
+                  (failed) => failed.runId === agentRunState.runId,
+                ) && (
+                  <Message from="assistant">
+                    <MessageContent className="text-sm text-destructive">
+                      This response could not continue: {agentRunState.lastError}
+                    </MessageContent>
+                  </Message>
+                )}
               {showBottomLoader && (
                 <div className="pb-52 flex justify-center text-muted-foreground">
                   <Shimmer as="span" duration={1.5} spread={1.3} className="text-sm">
@@ -668,6 +710,12 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
         <PromptInput onSubmit={handleSubmit} className="mt-2">
           <PromptInputBody>
             <PromptInputTextarea
+              placeholder={
+                agentRunState &&
+                ['running', 'stopRequested', 'paused', 'queued'].includes(agentRunState.status)
+                  ? 'Type a message to queue it'
+                  : undefined
+              }
               onChange={(e) => {
                 setInput(e.target.value)
                 if (submitError) {
@@ -760,16 +808,16 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
             <div className="flex items-center gap-1">
               <PromptInputSubmit
                 onClick={(event) => {
-                  if (submitStatus === 'streaming') {
+                  if (submitStatus === 'streaming' && !input.trim()) {
                     event.preventDefault()
                     void handleStop()
                   }
                 }}
                 disabled={
                   (submitStatus === 'ready' && !input)
-                  || submitStatus === 'submitted'
+                  || submitState === 'submitted'
                 }
-                status={submitStatus}
+                status={streamActive && input.trim() ? 'ready' : submitStatus}
               />
             </div>
           </PromptInputToolbar>

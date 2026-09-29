@@ -360,36 +360,55 @@ export const createAgentRunWithPrompt = internalMutation({
     searchEnabled: v.boolean(),
   },
   handler: async (ctx, args) => {
-    const latestRun = await ctx.db
-      .query("agentRuns")
-      .withIndex("byThread", (q) => q.eq("threadId", args.threadId))
-      .order("desc")
-      .first();
-    if (
-      latestRun &&
-      ["running", "stopRequested", "paused"].includes(latestRun.status)
-    ) {
-      throw new ConvexError(
-        "This thread has an active or paused response. Resume it before sending another message.",
-      );
-    }
-
-    const savedPrompt = await agent.saveMessage(ctx, {
-      threadId: args.threadId,
-      userId: args.userId,
-      message: args.prompt,
-      metadata: args.fileIds ? { fileIds: args.fileIds } : undefined,
-      skipEmbeddings: true,
-    });
+    const [runningRun, stopRequestedRun, pausedRun, queuedRun] = await Promise.all([
+      ctx.db
+        .query("agentRuns")
+        .withIndex("byThreadAndStatus", (q) =>
+          q.eq("threadId", args.threadId).eq("status", "running"),
+        )
+        .first(),
+      ctx.db
+        .query("agentRuns")
+        .withIndex("byThreadAndStatus", (q) =>
+          q.eq("threadId", args.threadId).eq("status", "stopRequested"),
+        )
+        .first(),
+      ctx.db
+        .query("agentRuns")
+        .withIndex("byThreadAndStatus", (q) =>
+          q.eq("threadId", args.threadId).eq("status", "paused"),
+        )
+        .first(),
+      ctx.db
+        .query("agentRuns")
+        .withIndex("byThreadAndStatus", (q) =>
+          q.eq("threadId", args.threadId).eq("status", "queued"),
+        )
+        .first(),
+    ]);
+    const queued = Boolean(
+      runningRun || stopRequestedRun || pausedRun || queuedRun,
+    );
+    const savedPrompt = queued
+      ? undefined
+      : await agent.saveMessage(ctx, {
+          threadId: args.threadId,
+          userId: args.userId,
+          message: args.prompt,
+          metadata: args.fileIds ? { fileIds: args.fileIds } : undefined,
+          skipEmbeddings: true,
+        });
     const now = Date.now();
     const runId = await ctx.db.insert("agentRuns", {
       threadId: args.threadId,
       userId: args.userId,
-      promptMessageId: savedPrompt.messageId,
-      order: savedPrompt.message.order,
+      promptMessageId: savedPrompt?.messageId,
+      order: savedPrompt?.message.order,
+      queuedPrompt: queued ? args.prompt : undefined,
+      queuedFileIds: queued ? args.fileIds : undefined,
       model: args.model,
       searchEnabled: args.searchEnabled,
-      status: "running",
+      status: queued ? "queued" : "running",
       stepCount: 0,
       attemptCount: 0,
       createdAt: now,
@@ -397,8 +416,9 @@ export const createAgentRunWithPrompt = internalMutation({
     });
     return {
       runId,
-      promptMessageId: savedPrompt.messageId,
-      order: savedPrompt.message.order,
+      promptMessageId: savedPrompt?.messageId,
+      order: savedPrompt?.message.order,
+      queued,
     };
   },
 });
@@ -587,7 +607,12 @@ export const agentRunWorkflowCompleted = internalMutation({
     const run = await ctx.db.get(runId);
     if (!run) return null;
     if (result.kind === "success") {
-      await ctx.db.patch(runId, { status: "completed", updatedAt: Date.now() });
+      const now = Date.now();
+      await ctx.db.patch(runId, {
+        status: "completed",
+        updatedAt: now,
+        completedAt: now,
+      });
     } else {
       const error = result.kind === "failed" ? result.error : "Workflow canceled.";
       await ctx.db.patch(runId, {
@@ -614,6 +639,11 @@ export const agentRunWorkflowCompleted = internalMutation({
         ),
       );
     }
+    try {
+      await startNextQueuedAgentRunForThread(ctx, run.threadId);
+    } catch (error) {
+      console.error("Could not start the next queued agent run", error);
+    }
     return null;
   },
 });
@@ -629,6 +659,8 @@ export const runAgentStep = internalAction({
     });
     if (
       !run ||
+      !run.promptMessageId ||
+      run.order === undefined ||
       run.stepCount + 1 !== stepNumber ||
       run.inFlightStep !== stepNumber
     ) {
@@ -900,30 +932,202 @@ export const runAgentStep = internalAction({
   },
 });
 
-function findActiveAgentRun(ctx: MutationCtx | QueryCtx, threadId: string) {
-  return ctx.db
-    .query("agentRuns")
-    .withIndex("byThread", (q) => q.eq("threadId", threadId))
-    .order("desc")
-    .first();
+async function findActiveAgentRun(
+  ctx: MutationCtx | QueryCtx,
+  threadId: string,
+) {
+  const [runningRun, stopRequestedRun, pausedRun] = await Promise.all([
+    ctx.db
+      .query("agentRuns")
+      .withIndex("byThreadAndStatus", (q) =>
+        q.eq("threadId", threadId).eq("status", "running"),
+      )
+      .first(),
+    ctx.db
+      .query("agentRuns")
+      .withIndex("byThreadAndStatus", (q) =>
+        q.eq("threadId", threadId).eq("status", "stopRequested"),
+      )
+      .first(),
+    ctx.db
+      .query("agentRuns")
+      .withIndex("byThreadAndStatus", (q) =>
+        q.eq("threadId", threadId).eq("status", "paused"),
+      )
+      .first(),
+  ]);
+  return runningRun ?? stopRequestedRun ?? pausedRun;
 }
+
+async function startNextQueuedAgentRunForThread(
+  ctx: MutationCtx,
+  threadId: string,
+) {
+  if (await findActiveAgentRun(ctx, threadId)) return null;
+  const nextRun = await ctx.db
+    .query("agentRuns")
+    .withIndex("byThreadAndStatus", (q) =>
+      q.eq("threadId", threadId).eq("status", "queued"),
+    )
+    .order("asc")
+    .first();
+  if (!nextRun) return null;
+  if (!nextRun.queuedPrompt) {
+    await ctx.db.patch(nextRun._id, {
+      status: "failed",
+      lastError: "Queued prompt was missing.",
+      completedAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+    await ctx.scheduler.runAfter(
+      0,
+      internal.threads.startNextQueuedAgentRun,
+      { threadId },
+    );
+    return null;
+  }
+
+  try {
+    await ctx.runMutation(internal.users.usageGateForAgentRun, {
+      userId: nextRun.userId,
+      model: nextRun.model,
+    });
+  } catch (error) {
+    await ctx.db.patch(nextRun._id, {
+      status: "failed",
+      lastError: error instanceof Error
+        ? error.message
+        : "Usage limits blocked the queued agent run.",
+      completedAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+    await ctx.scheduler.runAfter(
+      0,
+      internal.threads.startNextQueuedAgentRun,
+      { threadId },
+    );
+    return null;
+  }
+
+  const savedPrompt = await agent.saveMessage(ctx, {
+    threadId,
+    userId: nextRun.userId,
+    message: nextRun.queuedPrompt,
+    metadata: nextRun.queuedFileIds
+      ? { fileIds: nextRun.queuedFileIds }
+      : undefined,
+    skipEmbeddings: true,
+  });
+  await ctx.db.patch(nextRun._id, {
+    promptMessageId: savedPrompt.messageId,
+    order: savedPrompt.message.order,
+    queuedPrompt: undefined,
+    queuedFileIds: undefined,
+    status: "running",
+    updatedAt: Date.now(),
+  });
+
+  try {
+    await start(
+      ctx,
+      internal.threads.agentRunWorkflow,
+      { runId: nextRun._id },
+      {
+        startAsync: true,
+        onComplete: internal.threads.agentRunWorkflowCompleted,
+        context: { runId: nextRun._id },
+      },
+    );
+  } catch (error) {
+    await ctx.db.patch(nextRun._id, {
+      status: "failed",
+      lastError: error instanceof Error
+        ? error.message
+        : "Could not start the queued agent run.",
+      completedAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+    await ctx.scheduler.runAfter(
+      0,
+      internal.threads.startNextQueuedAgentRun,
+      { threadId },
+    );
+  }
+  return nextRun._id;
+}
+
+export const startNextQueuedAgentRun = internalMutation({
+  args: { threadId: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { threadId }) => {
+    await startNextQueuedAgentRunForThread(ctx, threadId);
+    return null;
+  },
+});
 
 export const getAgentRunState = query({
   args: { threadId: v.string() },
   handler: async (ctx, { threadId }) => {
     await authorizeThreadAccess(ctx, threadId, true);
-    const run = await findActiveAgentRun(ctx, threadId);
-    if (!run) return null;
+    const [activeRun, latestRun, queuedRuns, failedQueuedRuns] = await Promise.all([
+      findActiveAgentRun(ctx, threadId),
+      ctx.db
+        .query("agentRuns")
+        .withIndex("byThread", (q) => q.eq("threadId", threadId))
+        .order("desc")
+        .first(),
+      ctx.db
+        .query("agentRuns")
+        .withIndex("byThreadAndStatus", (q) =>
+          q.eq("threadId", threadId).eq("status", "queued"),
+        )
+        .order("asc")
+        .take(20),
+      ctx.db
+        .query("agentRuns")
+        .withIndex("byThreadAndStatus", (q) =>
+          q.eq("threadId", threadId).eq("status", "failed"),
+        )
+        .order("desc")
+        .take(20),
+    ]);
+    const run = activeRun ?? latestRun;
+    if (!run && queuedRuns.length === 0) return null;
     return {
-      runId: run._id,
-      status: run.status,
-      stepCount: run.stepCount,
-      attemptCount: run.attemptCount,
-      inFlightAttempt: run.inFlightAttempt,
-      inFlightStep: run.inFlightStep,
-      inFlightPhase: run.inFlightPhase,
-      updatedAt: run.updatedAt,
-      lastError: run.lastError,
+      runId: run?._id ?? null,
+      status: run?.status ?? "idle",
+      stepCount: run?.stepCount ?? 0,
+      attemptCount: run?.attemptCount ?? 0,
+      inFlightAttempt: run?.inFlightAttempt,
+      inFlightStep: run?.inFlightStep,
+      inFlightPhase: run?.inFlightPhase,
+      updatedAt: run?.updatedAt ?? Date.now(),
+      lastError: run?.lastError,
+      queuedRuns: queuedRuns.map((queued) => ({
+        runId: queued._id,
+        text: typeof queued.queuedPrompt?.content === "string"
+          ? queued.queuedPrompt.content
+          : queued.queuedPrompt?.content
+              .filter((part) => part.type === "text")
+              .map((part) => part.text)
+              .join(""),
+        attachmentCount: queued.queuedFileIds?.length ?? 0,
+        createdAt: queued.createdAt,
+      })),
+      failedQueuedRuns: failedQueuedRuns
+        .filter((failed) => failed.queuedPrompt !== undefined)
+        .map((failed) => ({
+          runId: failed._id,
+          text: typeof failed.queuedPrompt?.content === "string"
+            ? failed.queuedPrompt.content
+            : failed.queuedPrompt?.content
+                .filter((part) => part.type === "text")
+                .map((part) => part.text)
+                .join(""),
+          attachmentCount: failed.queuedFileIds?.length ?? 0,
+          lastError: failed.lastError ?? "This queued message could not be sent.",
+          createdAt: failed.createdAt,
+        })),
     };
   },
 });
@@ -1390,10 +1594,6 @@ export const generateReply = action({
       throw new ConvexError("Please sign in to continue.");
     }
 
-    // Admission gate runs before the durable run is created. Each completed
-    // model step is settled at its checkpoint.
-    await ctx.runMutation(api.users.usageGate, { model });
-
     const text = prompt.trim();
     if (!text && attachments.length === 0) {
       throw new ConvexError("Your message is empty. Please type something first.");
@@ -1435,22 +1635,28 @@ export const generateReply = action({
       attachments.map(({ storageId }) => ctx.storage.delete(storageId)),
     );
 
-    await start(
-      ctx,
-      internal.threads.agentRunWorkflow,
-      { runId: prepared.runId },
-      {
-        startAsync: true,
-        onComplete: internal.threads.agentRunWorkflowCompleted,
-        context: { runId: prepared.runId },
-      },
-    );
+    if (!prepared.queued) {
+      // Queue admission must not depend on current usage. Recheck when the
+      // queued run reaches the front; immediate runs gate before starting.
+      await ctx.runMutation(api.users.usageGate, { model });
+      await start(
+        ctx,
+        internal.threads.agentRunWorkflow,
+        { runId: prepared.runId },
+        {
+          startAsync: true,
+          onComplete: internal.threads.agentRunWorkflowCompleted,
+          context: { runId: prepared.runId },
+        },
+      );
+    }
 
     return {
       threadId,
       order: prepared.order,
       promptMessageId: prepared.promptMessageId,
       runId: prepared.runId,
+      queued: prepared.queued,
     };
     } catch (error) {
       if (preparedRunId) {
@@ -1461,6 +1667,18 @@ export const generateReply = action({
         }).catch((statusError) => {
           console.error("Failed to mark agent run as failed", statusError);
         });
+        const failedRun = await ctx.runQuery(
+          internal.threads.getAgentRunInternal,
+          { runId: preparedRunId },
+        );
+        if (failedRun) {
+          await ctx.runMutation(
+            internal.threads.startNextQueuedAgentRun,
+            { threadId: failedRun.threadId },
+          ).catch((startError) => {
+            console.error("Could not start queued agent run", startError);
+          });
+        }
       }
       await Promise.allSettled(
         attachments.map(({ storageId }) => ctx.storage.delete(storageId)),

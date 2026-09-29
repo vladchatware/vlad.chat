@@ -1,7 +1,7 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values"
 import { authTables } from "@convex-dev/auth/server";
-import { vProviderMetadata } from "@convex-dev/agent";
+import { vMessage, vProviderMetadata } from "@convex-dev/agent";
 import { usageValidator } from "./validators";
 
 export default defineSchema({
@@ -147,12 +147,15 @@ export default defineSchema({
   agentRuns: defineTable({
     threadId: v.string(),
     userId: v.id("users"),
-    promptMessageId: v.string(),
-    order: v.number(),
+    promptMessageId: v.optional(v.string()),
+    order: v.optional(v.number()),
+    queuedPrompt: v.optional(vMessage),
+    queuedFileIds: v.optional(v.array(v.string())),
     model: v.string(),
     searchEnabled: v.boolean(),
     workflowId: v.optional(v.string()),
     status: v.union(
+      v.literal("queued"),
       v.literal("running"),
       v.literal("stopRequested"),
       v.literal("paused"),
@@ -173,6 +176,7 @@ export default defineSchema({
     completedAt: v.optional(v.number()),
   })
     .index("byThread", ["threadId", "createdAt"])
+    .index("byThreadAndStatus", ["threadId", "status", "createdAt"])
     .index("byUser", ["userId", "createdAt"]),
   agentRunSteps: defineTable({
     runId: v.id("agentRuns"),
