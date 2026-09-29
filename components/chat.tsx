@@ -142,6 +142,7 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
   const defaultThreadId = useQuery(api.threads.getDefaultThreadId)
   const generateReply = useAction(api.threads.generateReply)
   const stopAgentRun = useMutation(api.threads.stopThread)
+  const steerAgentRun = useMutation(api.threads.steerThread)
   const { signIn } = useAuthActions()
   const notionConn = useQuery(api.notion.getConnection)
   const disconnectNotion = useMutation(api.notion.removeConnection)
@@ -158,6 +159,7 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
   const [searchEnabled, setSearchEnabled] = useState(false);
   const [submitState, setSubmitState] = useState<'ready' | 'submitted'>('ready')
   const [submitError, setSubmitError] = useState<{ message: string } | null>(null)
+  const [isSteering, setIsSteering] = useState(false)
 
   const {
     results: messages,
@@ -315,6 +317,26 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
       await stopAgentRun({ threadId: activeThreadId })
     } catch (error) {
       console.error('Failed to stop generation', error)
+    }
+  }
+
+  const handleSteer = async () => {
+    const instruction = input.trim()
+    if (!activeThreadId || !instruction || isSteering) return
+
+    setIsSteering(true)
+    setSubmitError(null)
+    try {
+      await steerAgentRun({
+        threadId: activeThreadId,
+        requestId: crypto.randomUUID(),
+        instruction,
+      })
+      setInput('')
+    } catch (error) {
+      setSubmitError({ message: getUserFacingErrorMessage(error) })
+    } finally {
+      setIsSteering(false)
     }
   }
 
@@ -604,6 +626,18 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                   </MessageContent>
                 </Message>
               ))}
+              {agentRunState?.steeringNotes.map((note) => (
+                <Message key={note.id} from="user">
+                  <MessageContent>
+                    <Response>{note.text}</Response>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      {note.status === 'pending'
+                        ? 'Steering — applies from the next model step onward'
+                        : 'In effect for this run'}
+                    </div>
+                  </MessageContent>
+                </Message>
+              ))}
               {agentRunState?.failedQueuedRuns.map((failed) => (
                 <Message key={failed.runId} from="user">
                   <MessageContent>
@@ -698,7 +732,7 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
               placeholder={
                 agentRunState &&
                 ['running', 'stopRequested', 'paused', 'queued'].includes(agentRunState.status)
-                  ? 'Type a message to queue it'
+                  ? 'Type a message, then choose Steer or Send'
                   : undefined
               }
               onChange={(e) => {
@@ -791,6 +825,18 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
               </button>
             </PromptInputTools>
             <div className="flex items-center gap-1">
+              {input.trim() && agentRunState?.runId &&
+                ['running', 'stopRequested', 'paused'].includes(agentRunState.status) && (
+                  <button
+                    type="button"
+                    onClick={() => void handleSteer()}
+                    disabled={isSteering || submitState === 'submitted'}
+                    className="h-9 rounded-full border px-3 text-sm font-medium transition-colors hover:bg-muted disabled:opacity-50"
+                    title="Apply this direction to the active run at its next model step"
+                  >
+                    {isSteering ? 'Steering…' : 'Steer'}
+                  </button>
+                )}
               <PromptInputSubmit
                 onClick={(event) => {
                   if (submitStatus === 'streaming' && !input.trim()) {

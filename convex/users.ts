@@ -485,6 +485,7 @@ export const settleAgentRunStep = internalMutation({
     hasOutput: v.boolean(),
     hasToolCalls: v.boolean(),
     toolCallIds: v.array(v.string()),
+    steeringIds: v.array(v.id("agentRunSteering")),
     usage: usageValidator,
     providerMetadata: v.optional(vProviderMetadata),
   },
@@ -535,6 +536,7 @@ export const settleAgentRunStep = internalMutation({
       hasOutput: args.hasOutput,
       hasToolCalls: args.hasToolCalls,
       toolCallIds: args.toolCallIds,
+      steeringIds: args.steeringIds,
       usage: args.usage,
       providerMetadata: args.providerMetadata,
       createdAt: Date.now(),
@@ -546,8 +548,12 @@ export const settleAgentRunStep = internalMutation({
       inFlightPhase: undefined,
       inFlightStreamId: undefined,
       inFlightStepOrder: undefined,
+      inFlightSteeringIds: undefined,
       updatedAt: Date.now(),
     });
+    await Promise.all(args.steeringIds.map((steeringId) =>
+      ctx.db.patch(steeringId, { status: "applied", appliedAt: Date.now() }),
+    ));
     return null;
   },
 });

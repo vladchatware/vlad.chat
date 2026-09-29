@@ -169,6 +169,7 @@ export default defineSchema({
     inFlightPhase: v.optional(v.union(v.literal("model"), v.literal("tool"))),
     inFlightStreamId: v.optional(v.string()),
     inFlightStepOrder: v.optional(v.number()),
+    inFlightSteeringIds: v.optional(v.array(v.id("agentRunSteering"))),
     anonymousMessageBilled: v.optional(v.boolean()),
     lastError: v.optional(v.string()),
     createdAt: v.number(),
@@ -178,6 +179,17 @@ export default defineSchema({
     .index("byThread", ["threadId", "createdAt"])
     .index("byThreadAndStatus", ["threadId", "status", "createdAt"])
     .index("byUser", ["userId", "createdAt"]),
+  agentRunSteering: defineTable({
+    runId: v.id("agentRuns"),
+    requestId: v.string(),
+    text: v.string(),
+    status: v.union(v.literal("pending"), v.literal("applied")),
+    createdAt: v.number(),
+    appliedAt: v.optional(v.number()),
+  })
+    .index("byRun", ["runId", "createdAt"])
+    .index("byRunAndStatus", ["runId", "status", "createdAt"])
+    .index("byRunAndRequest", ["runId", "requestId"]),
   agentRunSteps: defineTable({
     runId: v.id("agentRuns"),
     stepNumber: v.number(),
@@ -188,6 +200,7 @@ export default defineSchema({
     hasOutput: v.boolean(),
     hasToolCalls: v.boolean(),
     toolCallIds: v.array(v.string()),
+    steeringIds: v.optional(v.array(v.id("agentRunSteering"))),
     usage: usageValidator,
     providerMetadata: v.optional(vProviderMetadata),
     createdAt: v.number(),

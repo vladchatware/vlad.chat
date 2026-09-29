@@ -344,10 +344,17 @@ async function getValidNotionToken(
 }
 
 const MAX_AGENT_STEPS = 8;
+const MAX_PENDING_STEERING = 20;
 
 export const getAgentRunInternal = internalQuery({
   args: { runId: v.id("agentRuns") },
   handler: async (ctx, { runId }) => ctx.db.get(runId),
+});
+
+export const getAgentRunSteeringForStep = internalQuery({
+  args: { steeringIds: v.array(v.id("agentRunSteering")) },
+  handler: async (ctx, { steeringIds }) =>
+    Promise.all(steeringIds.map((steeringId) => ctx.db.get(steeringId))),
 });
 
 export const createAgentRunWithPrompt = internalMutation({
@@ -449,6 +456,11 @@ export const claimAgentRunStep = internalMutation({
       }
       return true;
     }
+    const steering = await ctx.db
+      .query("agentRunSteering")
+      .withIndex("byRun", (q) => q.eq("runId", runId))
+      .order("asc")
+      .take(MAX_PENDING_STEERING);
     await ctx.db.patch(runId, {
       inFlightStep: stepNumber,
       attemptCount: run.attemptCount + 1,
@@ -456,6 +468,7 @@ export const claimAgentRunStep = internalMutation({
       inFlightPhase: "model",
       inFlightStreamId: undefined,
       inFlightStepOrder: undefined,
+      inFlightSteeringIds: steering.map((note) => note._id),
       updatedAt: Date.now(),
     });
     return true;
@@ -543,6 +556,24 @@ export const completeAgentRunIfRunning = internalMutation({
   handler: async (ctx, { runId }) => {
     const run = await ctx.db.get(runId);
     if (!run || run.status !== "running") return false;
+    const pendingSteering = await ctx.db
+      .query("agentRunSteering")
+      .withIndex("byRunAndStatus", (q) =>
+        q.eq("runId", runId).eq("status", "pending"),
+      )
+      .first();
+    if (pendingSteering) {
+      if (run.stepCount >= MAX_AGENT_STEPS) {
+        const now = Date.now();
+        await ctx.db.patch(runId, {
+          status: "failed",
+          lastError: "The run reached its step limit with unapplied steering. Send that direction as a new message.",
+          updatedAt: now,
+          completedAt: now,
+        });
+      }
+      return false;
+    }
     const now = Date.now();
     await ctx.db.patch(runId, {
       status: "completed",
@@ -645,6 +676,16 @@ export const agentRunWorkflow = workflow.define({
             { runId },
           );
         }
+        const currentRun = await step.runQuery(
+          internal.threads.getAgentRunInternal,
+          { runId },
+        );
+        if (
+          currentRun?.status === "running" &&
+          stepNumber < MAX_AGENT_STEPS
+        ) {
+          continue;
+        }
         return null;
       }
     }
@@ -664,12 +705,14 @@ export const agentRunWorkflowCompleted = internalMutation({
     const run = await ctx.db.get(runId);
     if (!run) return null;
     if (result.kind === "success") {
-      const now = Date.now();
-      await ctx.db.patch(runId, {
-        status: "completed",
-        updatedAt: now,
-        completedAt: now,
-      });
+      if (run.status !== "failed") {
+        const now = Date.now();
+        await ctx.db.patch(runId, {
+          status: "completed",
+          updatedAt: now,
+          completedAt: now,
+        });
+      }
     } else {
       const error = result.kind === "failed" ? result.error : "Workflow canceled.";
       await ctx.db.patch(runId, {
@@ -723,6 +766,10 @@ export const runAgentStep = internalAction({
     ) {
       throw new ConvexError("Agent run checkpoint is out of sequence.");
     }
+    const steering = (await ctx.runQuery(
+      internal.threads.getAgentRunSteeringForStep,
+      { steeringIds: run.inFlightSteeringIds ?? [] },
+    )).filter((note) => note !== null);
 
     const notionConn = await ctx.runQuery(internal.notion.getConnectionForUser, {
       userId: run.userId,
@@ -744,7 +791,10 @@ export const runAgentStep = internalAction({
     const computerInstruction = hasComputerUseTools(tools)
       ? computerUseInstruction()
       : "";
-    const extraInstructions = `${notionInstruction}${computerInstruction}`;
+    const steeringInstruction = steering.length > 0
+      ? `\n\nPersistent user steering for this run. Apply these directions from this model step onward:\n${steering.map((note) => `- ${note.text}`).join("\n")}`
+      : "";
+    const extraInstructions = `${notionInstruction}${computerInstruction}${steeringInstruction}`;
 
     const { thread } = await agent.continueThread(ctx, {
       threadId: run.threadId,
@@ -921,6 +971,7 @@ export const runAgentStep = internalAction({
         hasOutput,
         hasToolCalls: false,
         toolCallIds: [],
+        steeringIds: run.inFlightSteeringIds ?? [],
         usage: toUsageObject(undefined),
       };
     }
@@ -983,6 +1034,7 @@ export const runAgentStep = internalAction({
       hasOutput: outputText.length > 0,
       hasToolCalls: toolCalls.length > 0,
       toolCallIds: toolCalls.map((call) => call.toolCallId),
+      steeringIds: steering.map((note) => note._id),
       usage: usageObject,
       providerMetadata: finalStep.providerMetadata,
     };
@@ -1150,6 +1202,13 @@ export const getAgentRunState = query({
     ]);
     const run = activeRun ?? latestRun;
     if (!run && queuedRuns.length === 0) return null;
+    const steeringNotes = run
+      ? await ctx.db
+          .query("agentRunSteering")
+          .withIndex("byRun", (q) => q.eq("runId", run._id))
+          .order("asc")
+          .take(MAX_PENDING_STEERING)
+      : [];
     return {
       runId: run?._id ?? null,
       status: run?.status ?? "idle",
@@ -1160,6 +1219,13 @@ export const getAgentRunState = query({
       inFlightPhase: run?.inFlightPhase,
       updatedAt: run?.updatedAt ?? Date.now(),
       lastError: run?.lastError,
+      steeringNotes: steeringNotes
+        .map(({ _id, text, status, createdAt }) => ({
+          id: _id,
+          text,
+          status,
+          createdAt,
+        })),
       queuedRuns: queuedRuns.map((queued) => ({
         runId: queued._id,
         text: typeof queued.queuedPrompt?.content === "string"
@@ -1186,6 +1252,57 @@ export const getAgentRunState = query({
           createdAt: failed.createdAt,
         })),
     };
+  },
+});
+
+export const steerThread = mutation({
+  args: {
+    threadId: v.string(),
+    requestId: v.string(),
+    instruction: v.string(),
+  },
+  handler: async (ctx, { threadId, requestId, instruction }) => {
+    await authorizeThreadAccess(ctx, threadId, true);
+    const run = await findActiveAgentRun(ctx, threadId);
+    if (!run) {
+      throw new ConvexError("This run has ended. Send the direction as a new message.");
+    }
+    const existing = await ctx.db
+      .query("agentRunSteering")
+      .withIndex("byRunAndRequest", (q) =>
+        q.eq("runId", run._id).eq("requestId", requestId),
+      )
+      .unique();
+    if (existing) return { status: existing.status, runId: run._id };
+    const text = instruction.trim();
+    if (!text || text.length > 2_000) {
+      throw new ConvexError("Steering must be between 1 and 2,000 characters.");
+    }
+    if (
+      run.status === "completed" ||
+      run.status === "failed" ||
+      run.stepCount >= MAX_AGENT_STEPS ||
+      run.inFlightStep === MAX_AGENT_STEPS
+    ) {
+      throw new ConvexError("This run has reached its step limit. Send the direction as a new message.");
+    }
+    const steering = await ctx.db
+      .query("agentRunSteering")
+      .withIndex("byRun", (q) => q.eq("runId", run._id))
+      .take(MAX_PENDING_STEERING);
+    if (steering.length >= MAX_PENDING_STEERING) {
+      throw new ConvexError("This run has reached its 20 direction limit. Send the direction as a new message.");
+    }
+    const now = Date.now();
+    const steeringId = await ctx.db.insert("agentRunSteering", {
+      runId: run._id,
+      requestId,
+      text,
+      status: "pending",
+      createdAt: now,
+    });
+    await ctx.db.patch(run._id, { updatedAt: now });
+    return { status: "pending" as const, runId: run._id, steeringId };
   },
 });
 
