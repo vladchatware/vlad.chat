@@ -840,6 +840,25 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
               </button>
             </PromptInputTools>
             <div className="flex items-center gap-1">
+              {agentRunState?.status === 'running' && (
+                <button
+                  type="button"
+                  onClick={() => void handleStop()}
+                  className="h-9 rounded-full border px-3 text-sm font-medium transition-colors hover:bg-muted"
+                  title="Stop this run and keep its checkpoint for resume"
+                >
+                  Stop
+                </button>
+              )}
+              {agentRunState?.status === 'stopRequested' && (
+                <button
+                  type="button"
+                  disabled
+                  className="h-9 rounded-full border px-3 text-sm font-medium opacity-50"
+                >
+                  Stopping…
+                </button>
+              )}
               {agentRunState?.status === 'paused' && (
                 <button
                   type="button"
@@ -855,7 +874,7 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                   <button
                     type="button"
                     onClick={() => void handleSteer()}
-                    disabled={isSteering || submitState === 'submitted'}
+                    disabled={isSteering}
                     className="h-9 rounded-full border px-3 text-sm font-medium transition-colors hover:bg-muted disabled:opacity-50"
                     title="Apply this direction to the active run at its next model step"
                   >
@@ -863,17 +882,8 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                   </button>
                 )}
               <PromptInputSubmit
-                onClick={(event) => {
-                  if (submitStatus === 'streaming' && !input.trim()) {
-                    event.preventDefault()
-                    void handleStop()
-                  }
-                }}
-                disabled={
-                  (submitStatus === 'ready' && !input)
-                  || submitState === 'submitted'
-                }
-                status={streamActive && input.trim() ? 'ready' : submitStatus}
+                disabled={!input.trim() || submitState === 'submitted'}
+                status={submitState}
               />
             </div>
           </PromptInputToolbar>
