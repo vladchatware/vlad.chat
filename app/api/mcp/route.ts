@@ -632,7 +632,7 @@ For database queries, first use notion-get-database to discover available proper
 
 /**
  * Bind x-computer-session for sandbox isolation when Convex (or other clients)
- * pass the header. Tool arg sessionId still wins when provided.
+ * pass the header. Authenticated request identity wins over model tool input.
  */
 async function withComputerSession(req: Request): Promise<Response> {
   const session = computerSessionFromRequest(req)

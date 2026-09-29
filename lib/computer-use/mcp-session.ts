@@ -4,9 +4,9 @@ import { AsyncLocalStorage } from "node:async_hooks";
  * Request-scoped computer session for site MCP (`/api/mcp`).
  *
  * Resolution order for sandbox sessionKey:
- * 1. Optional `sessionId` tool argument (multi-agent isolation)
- * 2. `x-computer-session` / `x-computer-session-id` request header
+ * 1. `x-computer-session` / `x-computer-session-id` request header
  *    (Convex getMcpTools passes userId here)
+ * 2. Optional `sessionId` tool argument (standalone MCP isolation)
  * 3. Fallback `"mcp-default"` (shared — prefer passing sessionId/header)
  */
 export type ComputerMcpContext = {
@@ -24,11 +24,11 @@ export function sanitizeComputerSessionKey(raw: string): string {
 }
 
 export function resolveMcpComputerSessionKey(toolSessionId?: string): string {
+  const fromHeader = computerSessionAls.getStore()?.sessionKey;
+  if (fromHeader) return fromHeader;
   if (toolSessionId && toolSessionId.trim()) {
     return sanitizeComputerSessionKey(toolSessionId.trim());
   }
-  const fromHeader = computerSessionAls.getStore()?.sessionKey;
-  if (fromHeader) return fromHeader;
   return "mcp-default";
 }
 

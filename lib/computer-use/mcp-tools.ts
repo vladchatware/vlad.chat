@@ -25,7 +25,7 @@ const sessionIdField = z
   .string()
   .optional()
   .describe(
-    "Optional sandbox session id for isolation (prefer stable user/thread id). Falls back to x-computer-session header, then mcp-default.",
+    "Optional sandbox session id for standalone MCP isolation. Authenticated x-computer-session requests always use their user session.",
   );
 
 /**
