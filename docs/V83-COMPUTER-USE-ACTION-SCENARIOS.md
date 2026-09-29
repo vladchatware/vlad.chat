@@ -228,7 +228,7 @@ Result shape: `ComputerToolResult` in `lib/computer-use/types.ts` (`ok`, `op`, `
 |---|---|
 | **Name** | Agent continues after takeover |
 | **What user/agent sees** | User finishes in viewer; tells agent to continue; agent `computer_screenshot` / `computer_act` on **same** session |
-| **Tool / mechanism** | No `computer_resume` tool. Session keyed by user/chat until TTL (8 min), idle reclaim (90s), step limit (20), or `computer_end` |
+| **Tool / mechanism** | No `computer_resume` tool. Session keyed by user/chat until TTL (30 min), step limit (20), or `computer_end` |
 | **Status** | **partial** |
 | **Notes** | **Parity target:** Grok Bot “return control and tell the Bot to continue.” **Not yet implemented:** explicit resume/ack event, sticky “user still controlling” lock, or long-lived signed-in profile like Grok’s persistent cloud PC. After TTL/idle → `computer_open` again (**new** short session). |
 
@@ -262,7 +262,7 @@ Result shape: `ComputerToolResult` in `lib/computer-use/types.ts` (`ok`, `op`, `
 |---|---|
 | **Name** | Operational budgets |
 | **What user/agent sees** | `ok: false` + `code`: `step_limit` | `ttl_exceeded` | `budget_exceeded` (also `disabled` | `auth_missing` | `runtime`); `budget` on success |
-| **Tool / mechanism** | 8 min TTL, 20 steps/session, 1 concurrent/key, 90s idle reclaim (`sandbox.ts` constants) |
+| **Tool / mechanism** | 30 min TTL, 20 steps/session, 1 concurrent/key (`sandbox.ts` constants) |
 | **Status** | **implemented** |
 | **Notes** | **Observed in our stack.** Default **OFF** (`COMPUTER_USE_ENABLED`). |
 
@@ -326,7 +326,7 @@ Parity column grounded in public docs ([Use the computer and apps](https://docs.
 | Never silent pay/sign | Approvals + takeover | **implemented** (handoff + type heuristic) |
 | Persistent signed-in PC | Shared always-on computer | **planned** (ephemeral sandbox today) |
 | cua-driver primary path | Native desk driver | **partial** (prefer-bridge + CDP fallback) |
-| Step/TTL caps | Usage / session limits | **implemented** (8 min / 20 steps) |
+| Step/TTL caps | Usage / session limits | **implemented** (30 min / 20 steps) |
 | In-chat password form (non-desk) | Secure form / credential request | **Not yet implemented** in computer-use module (out of scope here) |
 
 ---

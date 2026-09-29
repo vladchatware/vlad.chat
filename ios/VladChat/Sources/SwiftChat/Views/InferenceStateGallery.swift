@@ -688,9 +688,156 @@ private struct InferenceStateFixture: Identifiable {
             ),
             isStreaming: false
         ),
+        InferenceStateFixture(
+            id: "computer-screenshot",
+            title: "Computer screenshot",
+            description: "Captured browser screen shown in the stacked session preview.",
+            activity: ResponseActivity(
+                phase: .tool,
+                tools: [computerScreenshotTool()],
+                parts: [toolPart(computerScreenshotTool())]
+            ),
+            isStreaming: false
+        ),
+        screenshotCarouselFixture(),
+        InferenceStateFixture(
+            id: "computer-handoff",
+            title: "Computer handoff",
+            description: "Structured computer_handoff banner for SSO / 2FA / captcha.",
+            activity: ResponseActivity(
+                phase: .tool,
+                tools: [computerHandoffTool()],
+                parts: [toolPart(computerHandoffTool())]
+            ),
+            isStreaming: false
+        ),
+        InferenceStateFixture(
+            id: "computer-budget",
+            title: "Computer budget exceeded",
+            description: "Structured budget_exceeded error — no raw JSON dump.",
+            activity: ResponseActivity(
+                phase: .failed,
+                tools: [computerBudgetTool()],
+                parts: [toolPart(computerBudgetTool())],
+                errorText: "Step budget exhausted."
+            ),
+            isStreaming: false
+        ),
+        InferenceStateFixture(
+            id: "computer-running",
+            title: "Computer running",
+            description: "In-progress browser action before screenshot returns.",
+            activity: ResponseActivity(
+                phase: .tool,
+                tools: [
+                    ResponseTool(
+                        id: "call-computer-running",
+                        name: "computer_act",
+                        status: .running,
+                        output: nil,
+                        title: "Browser action",
+                        inputSummary: "click (640, 360)",
+                        outputTruncated: nil,
+                        errorText: nil
+                    )
+                ],
+                parts: []
+            ),
+            isStreaming: true
+        ),
     ]
 
+
+    private static func screenshotCarouselFixture() -> InferenceStateFixture {
+        let screenshots = [
+            computerScreenshotTool(
+                id: "call-computer-shot-1",
+                title: "Wikipedia",
+                pageURL: "https://www.wikipedia.org/",
+                screenshotURL: "https://picsum.photos/seed/vladchat-shot-1/1280/720"
+            ),
+            computerScreenshotTool(
+                id: "call-computer-shot-2",
+                title: "Search results",
+                pageURL: "https://www.wikipedia.org/wiki/Main_Page",
+                screenshotURL: "https://picsum.photos/seed/vladchat-shot-2/1280/720"
+            ),
+            computerScreenshotTool(
+                id: "call-computer-shot-3",
+                title: "Article page",
+                pageURL: "https://www.wikipedia.org/wiki/Computer",
+                screenshotURL: "https://picsum.photos/seed/vladchat-shot-3/1280/720"
+            ),
+        ]
+
+        return InferenceStateFixture(
+            id: "computer-screenshot-carousel",
+            title: "Computer screenshot carousel",
+            description: "Screenshot tool images stay inline in a swipeable, stacked chat carousel.",
+            activity: ResponseActivity(
+                phase: .tool,
+                tools: screenshots,
+                parts: screenshots.map { toolPart($0) }
+            ),
+            isStreaming: false
+        )
+    }
+
+    private static func computerScreenshotTool(
+        id: String = "call-computer-shot",
+        title: String = "Example Docs",
+        pageURL: String = "https://example.com/docs",
+        screenshotURL: String = "https://picsum.photos/seed/vladchat-v85/1280/720"
+    ) -> ResponseTool {
+        let output = """
+        {"ok":true,"op":"screenshot","url":"\(pageURL)","title":"\(title)","screenshotUrl":"\(screenshotURL)","screenshotId":"shot_demo","mimeType":"image/png","width":1280,"height":720,"budget":{"stepsUsed":3,"stepsRemaining":17,"maxSteps":20,"ttlMs":480000,"elapsedMs":12000,"note":"demo"}}
+        """
+        return ResponseTool(
+            id: id,
+            name: "computer_screenshot",
+            status: .completed,
+            output: output,
+            title: "Screenshot",
+            inputSummary: nil,
+            outputTruncated: false,
+            errorText: nil
+        )
+    }
+
+    private static func computerHandoffTool() -> ResponseTool {
+        let output = """
+        {"ok":false,"op":"handoff","handoff":{"type":"computer_handoff","reason":"2fa","message":"Enter the verification code to continue.","requiresUser":true},"error":"Enter the verification code to continue."}
+        """
+        return ResponseTool(
+            id: "call-computer-handoff",
+            name: "computer_handoff",
+            status: .failed,
+            output: output,
+            title: "Needs you",
+            inputSummary: nil,
+            outputTruncated: false,
+            errorText: "Enter the verification code to continue."
+        )
+    }
+
+    private static func computerBudgetTool() -> ResponseTool {
+        let output = """
+        {"ok":false,"op":"act","code":"budget_exceeded","error":"Step budget exhausted.","budget":{"stepsUsed":20,"stepsRemaining":0,"maxSteps":20,"ttlMs":480000,"elapsedMs":60000,"note":"Computer-use session hit an operational limit (TTL, steps, or idle reclaim)."}}
+        """
+        return ResponseTool(
+            id: "call-computer-budget",
+            name: "computer_act",
+            status: .failed,
+            output: output,
+            title: "Browser action",
+            inputSummary: "click (100, 200)",
+            outputTruncated: false,
+            errorText: "Step budget exhausted."
+        )
+    }
+
     private static func searchTool(id: String = "call-search", status: ResponseTool.Status) -> ResponseTool {
+
         ResponseTool(
             id: id,
             name: "web_search",

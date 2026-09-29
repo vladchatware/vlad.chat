@@ -8,8 +8,6 @@ import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
-  COMPUTER_USE_SNAPSHOT_VERSION,
-  COMPUTER_USE_SNAPSHOT_MARKER,
   INSTALL_CUA_SH,
   INSTALL_DESK_SH,
   INSTALL_PLAYWRIGHT_SH,
@@ -115,9 +113,7 @@ async function main() {
     "&& { test -f /usr/share/novnc/vnc.html || test -f /usr/share/novnc/vnc_lite.html; } " +
     "&& export PATH=\"$HOME/.local/bin:$PATH\" " +
     "&& command -v cua-driver >/dev/null 2>&1";
-  const checkCommand =
-    `test "$(cat "$HOME/${COMPUTER_USE_SNAPSHOT_MARKER}" 2>/dev/null)" = "${COMPUTER_USE_SNAPSHOT_VERSION}" ` +
-    `&& ${dependencyCheckCommand}`;
+  const checkCommand = dependencyCheckCommand;
 
   let snapshotId = existingSnapshotId;
   let sourceCreated = false;
@@ -150,10 +146,9 @@ async function main() {
       }
       runSetup(
         sandboxName,
-        `mkdir -p /vercel/sandbox "$HOME/.local/share/vladchat" && printf '%s' '${COMPUTER_USE_SNAPSHOT_VERSION}' > "$HOME/${COMPUTER_USE_SNAPSHOT_MARKER}"`,
+        "mkdir -p /vercel/sandbox && printf '%s' 'computer-use-snapshot' > /vercel/sandbox/.computer-use-snapshot",
         "30s",
       );
-
       const snapshotOutput = sandboxCli(
         scoped(["snapshot", "--stop", "--expiration", "30d", sandboxName]),
       );

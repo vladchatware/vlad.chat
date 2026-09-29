@@ -23,55 +23,46 @@ struct ChatContainer: View {
     @State private var isAccountSheetPresented = false
     @State private var selectedThreadID: String?
     @State private var columnVisibility = NavigationSplitViewVisibility.automatic
+    @State private var computerViewerPresentation: ComputerViewerPresentation = .hidden
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             ChatSidebar(selection: $selectedThreadID, viewModel: viewModel)
                 .navigationSplitViewColumnWidth(min: 260, ideal: 300, max: 360)
         } detail: {
-            NavigationStack {
-                ChatListView(
+            GeometryReader { geometry in
+                let inspectorOpen = computerViewerPresentation == .inspector
+                let canvas = ChatCanvasColumn(
                     isDarkMode: colorScheme == .dark,
                     isLoading: viewModel.isLoading,
                     viewModel: viewModel,
                     messageText: $messageText,
-                    isAccountPromptPresented: $isAccountPromptPresented
+                    isAccountPromptPresented: $isAccountPromptPresented,
+                    onShowChats: showChats,
+                    onOpenAccount: { isAccountSheetPresented = true },
+                    returnToChats: showChats
                 )
-                .background(Color.chatBackground(isDarkMode: colorScheme == .dark))
-                .ignoresSafeArea(edges: .top)
-                .tint(colorScheme == .dark ? .white : .black)
-                .navigationBarTitleDisplayMode(.inline)
-                .navigationBarBackButtonHidden(true)
-                .applySystemGlassToolbarIfAvailable()
-                .toolbar {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button(action: showChats) {
-                            Image(systemName: "sidebar.left")
-                        }
-                        .accessibilityLabel("Chats")
-                        .accessibilityHint("Shows your chat list")
-                        .accessibilityIdentifier("showChats")
-                    }
 
-                    ToolbarItem(placement: .principal) {
-                        Button {
-                            isAccountSheetPresented = true
-                        } label: {
-                            VladIdentityHeader()
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(Text("Vlad account", comment: "Opens account settings when the user taps Vlad's name or picture in the chat header."))
-                        .accessibilityHint("Opens account settings")
-                        .accessibilityIdentifier("openAccount")
+                if inspectorOpen, horizontalSizeClass == .regular {
+                    HStack(spacing: 0) {
+                        canvas
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        ComputerUseInspectorScreen(controller: viewModel.computerUseController)
+                            .frame(width: min(410, geometry.size.width * 0.39))
                     }
+                } else {
+                    canvas
                 }
-                .simultaneousGesture(returnToChatsGesture)
             }
         }
         .navigationSplitViewStyle(.balanced)
         .onAppear {
             selectedThreadID = viewModel.currentChat?.id
+            computerViewerPresentation = viewModel.computerUseController.presentation
             setupNavigationBarAppearance()
+        }
+        .onReceive(viewModel.computerUseController.$presentation) { presentation in
+            computerViewerPresentation = presentation
         }
         .onChange(of: selectedThreadID) { _, threadID in
             guard let threadID,
@@ -97,6 +88,11 @@ struct ChatContainer: View {
                 onDismiss: { viewModel.showImageViewer = false }
             )
         }
+        .fullScreenCover(isPresented: computerInspectorPresented) {
+            NavigationStack {
+                ComputerUseInspectorScreen(controller: viewModel.computerUseController)
+            }
+        }
     }
 
     private func showChats() {
@@ -107,15 +103,17 @@ struct ChatContainer: View {
         }
     }
 
-    private var returnToChatsGesture: some Gesture {
-        DragGesture(minimumDistance: 12, coordinateSpace: .local)
-            .onEnded { value in
-                let horizontal = value.translation.width
-                guard value.startLocation.x <= 28,
-                      horizontal >= 56,
-                      horizontal > abs(value.translation.height) * 1.3 else { return }
-                selectedThreadID = nil
+    private var computerInspectorPresented: Binding<Bool> {
+        Binding(
+            get: {
+                horizontalSizeClass == .compact && computerViewerPresentation == .inspector
+            },
+            set: { isPresented in
+                if !isPresented, viewModel.computerUseController.presentation == .inspector {
+                    viewModel.computerUseController.collapse()
+                }
             }
+        )
     }
 
     /// Configure navigation bar appearance
@@ -150,6 +148,67 @@ struct ChatContainer: View {
         }
     }
 
+}
+
+private struct ChatCanvasColumn: View {
+    let isDarkMode: Bool
+    let isLoading: Bool
+    @ObservedObject var viewModel: ChatViewModel
+    @Binding var messageText: String
+    @Binding var isAccountPromptPresented: Bool
+    let onShowChats: () -> Void
+    let onOpenAccount: () -> Void
+    let returnToChats: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            ChatListView(
+                isDarkMode: isDarkMode,
+                isLoading: isLoading,
+                viewModel: viewModel,
+                messageText: $messageText,
+                isAccountPromptPresented: $isAccountPromptPresented
+            )
+            .background(Color.chatBackground(isDarkMode: isDarkMode))
+            .ignoresSafeArea(edges: .top)
+            .tint(isDarkMode ? .white : .black)
+            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarBackButtonHidden(true)
+            .applySystemGlassToolbarIfAvailable()
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button(action: onShowChats) {
+                        Image(systemName: "sidebar.left")
+                    }
+                    .accessibilityLabel("Chats")
+                    .accessibilityHint("Shows your chat list")
+                    .accessibilityIdentifier("showChats")
+                }
+
+                ToolbarItem(placement: .principal) {
+                    Button(action: onOpenAccount) {
+                        VladIdentityHeader()
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(Text("Vlad account", comment: "Opens account settings when the user taps Vlad's name or picture in the chat header."))
+                    .accessibilityHint("Opens account settings")
+                    .accessibilityIdentifier("openAccount")
+                }
+            }
+            .simultaneousGesture(returnToChatsGesture)
+        }
+    }
+
+    private var returnToChatsGesture: some Gesture {
+        DragGesture(minimumDistance: 12, coordinateSpace: .local)
+            .onEnded { value in
+                let horizontal = value.translation.width
+                guard value.startLocation.x <= 28,
+                      horizontal >= 56,
+                      horizontal > abs(value.translation.height) * 1.3 else { return }
+                returnToChats()
+            }
+    }
 }
 
 // MARK: - VladIdentityHeader
@@ -205,7 +264,7 @@ struct WelcomeView: View {
     let isDarkMode: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Theme.Dimensions.responseSectionSpacing) {
             Text("Hello, I am Vlad a software developer.")
 
             Text(.init("Check out my [shop](https://shop.vlad.chat/) or listen to some [music](https://music.vlad.chat/)."))
@@ -214,9 +273,9 @@ struct WelcomeView: View {
         .font(.body)
         .foregroundStyle(isDarkMode ? Color.white : Color.primary)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 16)
-        .padding(.top, 24)
-        .padding(.bottom, 4)
+        .padding(.horizontal, Theme.Dimensions.transcriptGutter)
+        .padding(.top, Theme.Dimensions.paddingExtraLarge)
+        .padding(.bottom, Theme.Dimensions.paddingExtraSmall)
     }
 }
 

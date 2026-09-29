@@ -82,7 +82,7 @@ export async function POST(req: Request) {
 
   const result = streamText({
     model: gateway.languageModel(model),
-    messages: await convertToModelMessages(messages),
+    messages: await convertToModelMessages(messages, { tools }),
     tools: tools as Parameters<typeof streamText>[0]['tools'],
     stopWhen: isStepCount(5),
     instructions,

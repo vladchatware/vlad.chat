@@ -109,6 +109,20 @@ struct ChatListView: View {
                 }
             }
             .animation(.easeInOut(duration: 0.22), value: shouldShowAccountPrompt)
+            .background {
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: ComputerComposerTopPreferenceKey.self,
+                        value: proxy.frame(in: .global).minY
+                    )
+                }
+            }
+        }
+        .overlayPreferenceValue(ComputerComposerTopPreferenceKey.self) { composerTop in
+            ComputerUseViewerOverlay(
+                controller: viewModel.computerUseController,
+                composerTop: composerTop
+            )
         }
         .onAppear {
             setupKeyboardObservers()

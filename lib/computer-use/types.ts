@@ -59,6 +59,8 @@ export type ComputerToolResult = {
   sandboxName?: string;
   /** Live noVNC desk (same display the agent drives). */
   viewerUrl?: string;
+  /** Minimal noVNC RFB page with the native iOS input bridge. */
+  nativeViewerUrl?: string;
   error?: string;
   code?: ComputerErrorCode;
   budget?: ComputerBudgetStatus;
@@ -66,11 +68,18 @@ export type ComputerToolResult = {
 
 export type ComputerSession = {
   sessionKey: string;
+  sessionId: string;
+  provider: "vercel";
+  status: "starting" | "running" | "stopped" | "expired" | "failed";
+  threadId?: string;
   sandboxName: string;
+  /** High-entropy capability required by the sandbox WebSocket proxy. */
+  viewerToken: string;
   createdAt: number;
   lastUsedAt: number;
   stepCount: number;
   /** Public noVNC URL for this sandbox (port 6080). */
   viewerUrl?: string;
+  nativeViewerUrl?: string;
   deskReady?: boolean;
 };

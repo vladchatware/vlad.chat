@@ -1,26 +1,31 @@
 import { z } from "zod";
-/** Minimal surface — avoid pulling full MCP Server generics into Next build. */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- MCP Server.tool generics are not usable at the route boundary
-type McpToolServer = { tool: (...args: any[]) => unknown };
 import {
   computerActionSchema,
   computerUseToolsAvailable,
   runComputerToolOp,
 } from "./tools";
-import { resolveMcpComputerSessionKey } from "./mcp-session";
-import type { ComputerAction, ComputerToolResult } from "./types";
+import {
+  resolveMcpComputerSessionKey,
+  resolveMcpComputerThreadId,
+} from "./mcp-session";
+import type { ComputerAction } from "./types";
+import { computerToolMcpResult } from "./vision";
 
-function mcpResult(result: ComputerToolResult) {
-  return {
-    content: [{ type: "text" as const, text: JSON.stringify(result) }],
-  };
-}
+/** Only the Zod 3 registration overload used here, with typed input and output. */
+type McpToolServer = {
+  tool<Shape extends z.ZodRawShape>(
+    name: string,
+    description: string,
+    parameters: Shape,
+    execute: (args: z.infer<z.ZodObject<Shape>>) => Promise<Awaited<ReturnType<typeof computerToolMcpResult>>>,
+  ): void;
+};
 
 const sessionIdField = z
   .string()
   .optional()
   .describe(
-    "Optional sandbox session id for isolation (prefer stable user/thread id). Falls back to x-computer-session header, then mcp-default.",
+    "Optional sandbox session id for standalone MCP isolation. Authenticated x-computer-session requests always use their user session.",
   );
 
 /**
@@ -34,26 +39,30 @@ export function registerComputerUseMcpTools(server: McpToolServer): void {
 
   server.tool(
     "computer_open",
-    "Open a public URL in the isolated computer-use browser (Vercel Sandbox + Playwright). Returns viewerUrl (live noVNC); screenshot is deferred to computer_screenshot. Sessions capped at 8 min / 20 steps.",
+    "Open a public URL in the isolated computer-use browser (Vercel Sandbox + Playwright). Returns viewerUrl for noVNC control and nativeViewerUrl for the in-app live viewer; screenshot is deferred to computer_screenshot. Reopens an expired session in a fresh sandbox. Sessions capped at 30 min / 20 steps.",
     {
       url: z.string().url().describe("https URL to open"),
       sessionId: sessionIdField,
     },
     async ({ url, sessionId }) => {
       const sessionKey = resolveMcpComputerSessionKey(sessionId);
-      return mcpResult(await runComputerToolOp(sessionKey, "open", { url }));
+      return computerToolMcpResult(
+        await runComputerToolOp(sessionKey, "open", { url }, resolveMcpComputerThreadId()),
+      );
     },
   );
 
   server.tool(
     "computer_screenshot",
-    "Capture a light JPEG clip of the computer-use viewport (separate from open). Returns screenshotUrl + viewerUrl.",
+    "Capture a light JPEG clip of the computer-use viewport (separate from open). Returns screenshotUrl, viewerUrl, and nativeViewerUrl.",
     {
       sessionId: sessionIdField,
     },
     async ({ sessionId }) => {
       const sessionKey = resolveMcpComputerSessionKey(sessionId);
-      return mcpResult(await runComputerToolOp(sessionKey, "screenshot"));
+      return computerToolMcpResult(
+        await runComputerToolOp(sessionKey, "screenshot", {}, resolveMcpComputerThreadId()),
+      );
     },
   );
 
@@ -66,10 +75,10 @@ export function registerComputerUseMcpTools(server: McpToolServer): void {
     },
     async ({ action, sessionId }) => {
       const sessionKey = resolveMcpComputerSessionKey(sessionId);
-      return mcpResult(
+      return computerToolMcpResult(
         await runComputerToolOp(sessionKey, "act", {
           action: action as ComputerAction,
-        }),
+        }, resolveMcpComputerThreadId()),
       );
     },
   );
@@ -84,21 +93,28 @@ export function registerComputerUseMcpTools(server: McpToolServer): void {
     },
     async ({ reason, message, sessionId }) => {
       const sessionKey = resolveMcpComputerSessionKey(sessionId);
-      return mcpResult(
-        await runComputerToolOp(sessionKey, "handoff", { reason, message }),
+      return computerToolMcpResult(
+        await runComputerToolOp(
+          sessionKey,
+          "handoff",
+          { reason, message },
+          resolveMcpComputerThreadId(),
+        ),
       );
     },
   );
 
   server.tool(
     "computer_end",
-    "Tear down the computer-use sandbox for this session when the browser task is finished. Always call this to release the sandbox.",
+    "Tear down the computer-use sandbox only when the user explicitly asks to close the live desk or the viewer has failed. Keep the live viewer open after the browser task is complete.",
     {
       sessionId: sessionIdField,
     },
     async ({ sessionId }) => {
       const sessionKey = resolveMcpComputerSessionKey(sessionId);
-      return mcpResult(await runComputerToolOp(sessionKey, "end"));
+      return computerToolMcpResult(
+        await runComputerToolOp(sessionKey, "end", {}, resolveMcpComputerThreadId()),
+      );
     },
   );
 }

@@ -29,6 +29,7 @@ import {
   computerUseInstruction,
   hasComputerUseTools,
 } from "@/lib/computer-use/skill";
+import { getActiveLiveSessionForThread } from "./computerUseScreenshots";
 import { isModelEnabled, isPremiumModel } from "@/lib/provider";
 import { z } from "zod/v3";
 import {
@@ -201,6 +202,7 @@ async function getMcpTools(
   userNotionToken?: string,
   /** Stable sandbox session for computer_* MCP tools (userId). */
   computerSessionKey?: string,
+  computerThreadId?: string,
 ): Promise<ToolSet> {
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
   if (!siteUrl) {
@@ -213,13 +215,16 @@ async function getMcpTools(
       transport: {
         type: "http",
         url: `${siteUrl}/api/mcp`,
-        ...(computerSessionKey
-          ? {
-              headers: {
-                "x-computer-session": computerSessionKey,
-              },
-            }
-          : {}),
+        headers: {
+          ...(process.env.VERCEL_AUTOMATION_BYPASS_SECRET
+            ? {
+                "x-vercel-protection-bypass":
+                  process.env.VERCEL_AUTOMATION_BYPASS_SECRET,
+              }
+            : {}),
+          ...(computerSessionKey ? { "x-computer-session": computerSessionKey } : {}),
+          ...(computerThreadId ? { "x-computer-thread": computerThreadId } : {}),
+        },
       },
     });
     // Site MCP includes Notion tools and, when enabled, computer_* (V-83).
@@ -492,6 +497,14 @@ export const getMobileChat = query({
     messages: v.array(mobileMessageValidator),
     account: v.union(mobileAccountValidator, v.null()),
     remainingMessages: v.union(v.number(), v.null()),
+    computerViewer: v.union(
+      v.object({
+        sessionId: v.string(),
+        viewerUrl: v.optional(v.string()),
+        nativeViewerUrl: v.optional(v.string()),
+      }),
+      v.null(),
+    ),
   }),
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
@@ -503,6 +516,7 @@ export const getMobileChat = query({
         messages: [],
         account: null,
         remainingMessages: null,
+        computerViewer: null,
       };
     }
 
@@ -527,6 +541,7 @@ export const getMobileChat = query({
         messages: [],
         account: user ? mobileAccount(user) : null,
         remainingMessages: user?.isAnonymous ? (user.trialMessages ?? 0) : null,
+        computerViewer: null,
       };
     }
     await authorizeThreadAccess(ctx, threadId, true);
@@ -537,6 +552,14 @@ export const getMobileChat = query({
       listMessages(ctx, components.agent, { threadId, paginationOpts }),
       getThreadMetadata(ctx, components.agent, { threadId }),
     ]);
+    const liveComputerSession = await ctx.db
+      .query("computerUseSessions")
+      .withIndex("bySessionKey", (q) => q.eq("sessionKey", String(userId)))
+      .unique();
+    const liveComputerSessionForThread = getActiveLiveSessionForThread(
+      liveComputerSession,
+      threadId,
+    );
     const errorsByMessageID = new Map<string, string>();
     for (const message of canonicalResult.page) {
       if (message.error) {
@@ -612,6 +635,7 @@ export const getMobileChat = query({
       ),
       account: user ? mobileAccount(user) : null,
       remainingMessages: user?.isAnonymous ? (user.trialMessages ?? 0) : null,
+      computerViewer: liveComputerSessionForThread,
     };
   },
 });
@@ -740,6 +764,10 @@ export const generateReply = action({
       );
     }
 
+    if (requestedThreadId) await authorizeThreadAccess(ctx, requestedThreadId, true);
+    const threadId =
+      requestedThreadId ?? (await getOrCreateDefaultThread(ctx, userId));
+
     const notionConn = await ctx.runQuery(internal.notion.getConnectionForUser, {
       userId,
     });
@@ -752,6 +780,7 @@ export const generateReply = action({
       searchEnabled,
       userNotionToken ?? undefined,
       String(userId),
+      threadId,
     );
 
     const notionInstruction = notionConn
@@ -763,9 +792,6 @@ export const generateReply = action({
       : "";
     const extraInstructions = `${notionInstruction}${computerInstruction}`;
 
-    if (requestedThreadId) await authorizeThreadAccess(ctx, requestedThreadId, true);
-    const threadId =
-      requestedThreadId ?? (await getOrCreateDefaultThread(ctx, userId));
     const { thread } = await agent.continueThread(ctx, { threadId, userId });
     const modelPrompt = await mobileModelPrompt(ctx, text, attachments);
     const promptMessageId = modelPrompt.kind === "attachments"

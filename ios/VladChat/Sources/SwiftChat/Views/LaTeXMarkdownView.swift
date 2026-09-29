@@ -13,6 +13,7 @@ import UIKit
 
 private enum SegmentKind: Sendable {
     case markdown(String)
+    case screenshot(URL)
     case latex(String, isDisplay: Bool)
     case table(ParsedTable)
 }
@@ -41,6 +42,27 @@ private struct SegmentView: View {
                 .textual.textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
                 .environment(\.colorScheme, isDarkMode ? .dark : .light)
+        case .screenshot(let url):
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .success(let image):
+                    image
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxWidth: 360, maxHeight: 440)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                case .failure:
+                    Label("Screenshot unavailable", systemImage: "photo")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                case .empty:
+                    ProgressView()
+                        .frame(width: 180, height: 120)
+                @unknown default:
+                    EmptyView()
+                }
+            }
+            .padding(.vertical, 4)
         case .latex(let latex, let isDisplay):
             LaTeXView(
                 latex: latex,
@@ -114,6 +136,10 @@ struct LaTeXMarkdownView: View, Equatable {
     private nonisolated static let inlineCodeRegex = try? NSRegularExpression(pattern: "`[^`]+`", options: [])
     private nonisolated static let displayLatexRegex = try? NSRegularExpression(pattern: "\\\\\\[(.+?)\\\\\\]", options: [.dotMatchesLineSeparators])
     private nonisolated static let inlineLatexRegex = try? NSRegularExpression(pattern: "\\\\\\((.+?)\\\\\\)", options: [])
+    private nonisolated static let screenshotLinkRegex = try? NSRegularExpression(
+        pattern: "(?:!?\\[[^\\]]*\\]\\(https://(?:www\\.)?vlad\\.chat/api/computer-use/screenshots/[A-Za-z0-9_-]+\\)|https://(?:www\\.)?vlad\\.chat/api/computer-use/screenshots/[A-Za-z0-9_-]+)",
+        options: [.caseInsensitive]
+    )
     static func == (lhs: LaTeXMarkdownView, rhs: LaTeXMarkdownView) -> Bool {
         lhs.content == rhs.content &&
         lhs.isDarkMode == rhs.isDarkMode &&
@@ -453,14 +479,68 @@ struct LaTeXMarkdownView: View, Equatable {
         }
 
         segments = segments.flatMap { segment -> [ContentSegment] in
-            guard case .markdown(let text) = segment.kind,
-                  text.count > Constants.Rendering.maxMarkdownSegmentCharacters else {
+            guard case .markdown(let text) = segment.kind else {
                 return [segment]
             }
-            return splitMarkdownSegment(text, baseId: segment.id)
+            let markdownSegments = text.count > Constants.Rendering.maxMarkdownSegmentCharacters
+                ? splitMarkdownSegment(text, baseId: segment.id)
+                : [segment]
+            return markdownSegments.flatMap { splitScreenshotLinks(in: $0) }
         }
 
         return segments
+    }
+
+    /// Turn first-party computer screenshot URLs into inline images.
+    /// Keep matching narrow: arbitrary URLs in messages remain ordinary Markdown links.
+    private nonisolated static func splitScreenshotLinks(in segment: ContentSegment) -> [ContentSegment] {
+        guard case .markdown(let text) = segment.kind,
+              let regex = screenshotLinkRegex else { return [segment] }
+
+        let nsText = text as NSString
+        let fullRange = NSRange(location: 0, length: nsText.length)
+        let codeBlockRanges = codeBlockRegex?.matches(in: text, range: fullRange).map(\.range) ?? []
+        let inlineCodeRanges = inlineCodeRegex?.matches(in: text, range: fullRange).map(\.range) ?? []
+        let codeRanges = codeBlockRanges + inlineCodeRanges
+        let matches = regex.matches(in: text, range: fullRange).filter { match in
+            !codeRanges.contains { NSIntersectionRange($0, match.range).length > 0 }
+        }
+        guard !matches.isEmpty else { return [segment] }
+
+        var result: [ContentSegment] = []
+        var cursor = 0
+        for (index, match) in matches.enumerated() {
+            let matchedText = nsText.substring(with: match.range)
+            guard let urlStart = matchedText.range(of: "https://", options: .caseInsensitive) else { continue }
+            let rawURL = matchedText[urlStart.lowerBound...]
+                .trimmingCharacters(in: CharacterSet(charactersIn: ")"))
+            guard let url = URL(string: rawURL) else {
+                if match.range.location > cursor {
+                    let markdown = nsText.substring(with: NSRange(location: cursor, length: match.range.location - cursor))
+                    result.append(ContentSegment(id: "\(segment.id)_text_\(index)", kind: .markdown(markdown)))
+                }
+                let markdown = nsText.substring(with: match.range)
+                result.append(ContentSegment(id: "\(segment.id)_invalid_\(index)", kind: .markdown(markdown)))
+                cursor = NSMaxRange(match.range)
+                continue
+            }
+            if match.range.location > cursor {
+                let markdown = nsText.substring(with: NSRange(location: cursor, length: match.range.location - cursor))
+                if !markdown.isEmpty {
+                    result.append(ContentSegment(id: "\(segment.id)_text_\(index)", kind: .markdown(markdown)))
+                }
+            }
+            result.append(ContentSegment(id: "\(segment.id)_screenshot_\(index)", kind: .screenshot(url)))
+            cursor = NSMaxRange(match.range)
+        }
+
+        if cursor < nsText.length {
+            let markdown = nsText.substring(from: cursor)
+            if !markdown.isEmpty {
+                result.append(ContentSegment(id: "\(segment.id)_text_end", kind: .markdown(markdown)))
+            }
+        }
+        return result
     }
 
     private nonisolated static func splitMarkdownSegment(_ text: String, baseId: String) -> [ContentSegment] {

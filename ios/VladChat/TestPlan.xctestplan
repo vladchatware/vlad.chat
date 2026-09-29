@@ -15,6 +15,13 @@
     {
       "target" : {
         "containerPath" : "container:VladChat.xcodeproj",
+        "identifier" : "5F4EFEE3BA068592B87D5F61",
+        "name" : "VladChatTests"
+      }
+    },
+    {
+      "target" : {
+        "containerPath" : "container:VladChat.xcodeproj",
         "identifier" : "698DF4F7CAAFF39E1943B9E5",
         "name" : "VladChatUITests"
       }

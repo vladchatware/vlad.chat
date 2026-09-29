@@ -20,7 +20,8 @@ metadata:
 Use this skill when driving the **vlad.chat sandbox computer**:
 
 - Tools: `computer_open`, `computer_screenshot`, `computer_act`, `computer_handoff`, `computer_end`
-- Live watch / human handoff: `viewerUrl` (noVNC desk)
+- Live watch: `nativeViewerUrl` (same noVNC/RFB desktop in the iOS floating viewer)
+- Human control / handoff: `viewerUrl` (interactive noVNC desk)
 - Desk driver: **cua-driver** first for screenshot and act; CDP/Playwright if the driver fails
 
 Prefer a dedicated connector or MCP when one already covers the site. Use the desk for visual / no-connector flows.
@@ -35,6 +36,8 @@ Always:
 4. **Screenshot verify** — after every act, re-shot before the next decision.
 
 Never chain multiple guessed acts from a stale frame. **After every act, always re-shot before the next decision.**
+
+Screenshot-bearing results include image content for your vision and compact JSON for the client. A screenshot URL alone is not a visible frame. If image delivery fails, call `computer_screenshot` and wait for an image before acting again.
 
 ## Coordinates and focus
 
@@ -55,18 +58,21 @@ Never chain multiple guessed acts from a stale frame. **After every act, always 
 
 ## viewerUrl vs tools
 
-- **`viewerUrl`**: for the human to watch live, take over, or finish a gated step. Share it when handoff or observation matters.
+- **`nativeViewerUrl`**: same live noVNC/RFB desktop. The iOS client embeds the RFB viewer; no video transcoding is used.
+- **`viewerUrl`**: interactive noVNC control surface. Use it for handoff or when the human must operate the browser.
 - **Tools**: for agent control (`computer_screenshot` / `computer_act`). Do not assume the human saw what you did unless they have `viewerUrl` or you describe the latest shot.
 
 ## Sessions
 
 - **Reuse** the open session for the same task.
 - Call **`computer_open` only** to navigate to a URL or start a new session after teardown / reclaim — do not open a second browser.
-- Call **`computer_end`** when the browser task is finished so the sandbox is released.
+- Keep the session alive after the task so the user can keep watching in the floating viewer or take over in the inspector.
+- Do **not** call `computer_end` just because the requested browser task is done. Call it only when the user asks to close the desk, or the viewer failed and must be discarded.
+- Sessions last up to 30 minutes / 20 actions. If an expired session needs a new URL, call `computer_open`; it recovers into a fresh sandbox.
 
 ## Caps and safety
 
-- Respect session **TTL** and **step budget** (fail closed when hit). Keep tasks short; end and reopen for a new short task if caps trip.
+- Respect session **TTL** and **step budget**. A new `computer_open` starts a fresh session after expiry or a spent step budget.
 - **Never pay, sign, approve allowances, submit checkout, or confirm purchases** unless the user **explicitly asked for that action in the same turn**.
 - Payment / signing-like text in `type` is refused by the tools — use `computer_handoff` instead of forcing through.
 - Do not paste secrets unless the user supplied them **this turn** for that purpose.
@@ -95,4 +101,4 @@ Full catalog (mouse, keyboard, session, takeover, safety, Grok Bot parity): [`do
 
 ## Done
 
-When the user goal is met (or blocked on handoff they will finish themselves), call `computer_end` unless they still need the live desk open.
+When the user goal is met (or blocked on handoff they will finish themselves), leave the desk open for iOS live viewing and control. Call `computer_end` only when the user explicitly asks to close it or the viewer must be discarded.

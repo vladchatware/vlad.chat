@@ -41,4 +41,11 @@ crons.interval(
   {},
 )
 
+crons.interval(
+  "Expire computer-use video sessions",
+  { minutes: 15 },
+  internal.computerUseScreenshots.cleanupExpiredLiveSessions,
+  {},
+)
+
 export default crons;

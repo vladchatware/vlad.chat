@@ -1,0 +1,130 @@
+<div id="computer-inspector-sketch" aria-label="Floating computer and inspector interaction sketch">
+  <style>
+    #computer-inspector-sketch { --surface:light-dark(#ffffff,#202020); --canvas:light-dark(#fafafa,#171717); --subtle:light-dark(#f0f0f0,#2c2c2c); --ink:light-dark(#202020,#ededed); --secondary:light-dark(#696969,#b0b0b0); --line:light-dark(#e4e4e4,#383838); --shadow:light-dark(#00000024,#00000065); color:var(--ink); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; font-size:14px; line-height:1.5; }
+    #computer-inspector-sketch * { box-sizing:border-box; }
+    #computer-inspector-sketch .app { position:relative; display:grid; grid-template-columns:150px minmax(0,1fr); min-height:520px; background:var(--canvas); border:1px solid var(--line); border-radius:20px; overflow:hidden; }
+    #computer-inspector-sketch .app.expanded { grid-template-columns:150px minmax(0,1fr) minmax(330px,42%); }
+    #computer-inspector-sketch button { border:0; border-radius:10px; min-height:44px; padding:8px 12px; background:var(--subtle); color:var(--ink); font:inherit; }
+    #computer-inspector-sketch button.icon { width:44px; padding:12px; display:inline-grid; place-items:center; background:transparent; }
+    #computer-inspector-sketch button:hover { background:var(--line); }
+    #computer-inspector-sketch button[aria-pressed="true"] { background:var(--ink); color:var(--surface); }
+    #computer-inspector-sketch .sidebar { padding:20px 12px; background:var(--surface); border-right:1px solid var(--line); }
+    #computer-inspector-sketch .brand { font-weight:600; margin-bottom:30px; padding:0 8px; }
+    #computer-inspector-sketch .navitem { margin:8px 0; padding:9px; border-radius:9px; color:var(--secondary); }
+    #computer-inspector-sketch .navitem.current { background:var(--subtle); color:var(--ink); }
+    #computer-inspector-sketch .chat { display:flex; flex-direction:column; padding:18px 22px; gap:22px; min-width:0; }
+    #computer-inspector-sketch .chathead { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+    #computer-inspector-sketch .conversation { display:flex; flex-direction:column; gap:22px; padding-top:34px; max-width:570px; margin:0 auto; width:100%; }
+    #computer-inspector-sketch .bubble { align-self:flex-end; padding:12px 16px; border-radius:22px; background:var(--subtle); max-width:90%; }
+    #computer-inspector-sketch .tool { color:var(--secondary); display:flex; align-items:center; gap:8px; }
+    #computer-inspector-sketch .composer { margin-top:auto; padding:16px; border:1px solid var(--line); border-radius:24px; background:var(--surface); color:var(--secondary); min-height:90px; }
+    #computer-inspector-sketch .composerfoot { display:flex; justify-content:space-between; align-items:center; margin-top:14px; }
+    #computer-inspector-sketch .viewer { min-width:0; background:var(--surface); display:flex; flex-direction:column; gap:0; }
+    #computer-inspector-sketch .app:not(.expanded) .viewer { position:absolute; right:16px; top:82px; width:260px; border:1px solid var(--line); border-radius:18px; overflow:hidden; box-shadow:0 12px 35px var(--shadow); }
+    #computer-inspector-sketch .app.expanded .viewer { border-left:1px solid var(--line); padding:12px; }
+    #computer-inspector-sketch .viewerhead { display:flex; align-items:center; gap:4px; padding:0 4px 0 12px; min-height:44px; }
+    #computer-inspector-sketch .viewerhead .label { margin-right:auto; font-size:12px; color:var(--secondary); }
+    #computer-inspector-sketch .desktop { position:relative; margin:0; background:var(--canvas); aspect-ratio:16/10; overflow:hidden; border-top:1px solid var(--line); touch-action:none; user-select:none; }
+    #computer-inspector-sketch .expanded .desktop { margin-top:10px; border:1px solid var(--line); border-radius:12px; }
+    #computer-inspector-sketch .browserbar { padding:7px 10px; border-bottom:1px solid var(--line); color:var(--secondary); font-size:11px; background:var(--subtle); }
+    #computer-inspector-sketch .page { padding:18px; }
+    #computer-inspector-sketch .pagetitle { font-size:17px; font-weight:500; margin-bottom:12px; }
+    #computer-inspector-sketch .search { padding:8px 10px; background:var(--surface); border:1px solid var(--line); border-radius:8px; min-height:37px; overflow-wrap:anywhere; }
+    #computer-inspector-sketch .skeleton { height:7px; margin-top:12px; border-radius:4px; background:var(--line); width:80%; }
+    #computer-inspector-sketch .skeleton.short { width:52%; }
+    #computer-inspector-sketch .cursor { position:absolute; left:58%; top:54%; pointer-events:none; color:var(--ink); filter:drop-shadow(1px 1px 1px var(--surface)); }
+    #computer-inspector-sketch .cursor svg { width:22px; height:22px; }
+    #computer-inspector-sketch .inspectoronly { display:none; }
+    #computer-inspector-sketch .expanded .inspectoronly { display:block; }
+    #computer-inspector-sketch .inputbar { display:flex; flex-wrap:wrap; align-items:center; gap:5px; padding:12px 0; }
+    #computer-inspector-sketch .inputbar button { flex:1; padding:8px; font-size:12px; }
+    #computer-inspector-sketch .controlrow { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:0 0 12px; color:var(--secondary); font-size:12px; }
+    #computer-inspector-sketch .keyboard { margin-top:auto; padding:10px 4px; border-radius:12px; background:var(--subtle); }
+    #computer-inspector-sketch .keyrow { display:flex; justify-content:center; gap:4px; margin:5px 0; }
+    #computer-inspector-sketch .keyrow button { min-width:0; padding:4px 0; min-height:36px; flex:1; border-radius:6px; background:var(--surface); box-shadow:0 1px 0 var(--line); font-size:12px; }
+    #computer-inspector-sketch .keyrow.accessory button { background:transparent; font-size:11px; }
+    #computer-inspector-sketch .keyrow .space { flex:4; }
+    #computer-inspector-sketch .sketchlabel { color:var(--secondary); padding:8px 0; font-size:12px; }
+    #computer-inspector-sketch .viewer[hidden], #computer-inspector-sketch .keyboard[hidden] { display:none; }
+    #computer-inspector-sketch .app:not(.expanded) .page { padding:12px; }
+    #computer-inspector-sketch .app:not(.expanded) .pagetitle { font-size:14px; }
+    #computer-inspector-sketch .app:not(.expanded) .search { font-size:11px; padding:5px; min-height:28px; }
+    @media(max-width:740px) {
+      #computer-inspector-sketch .app, #computer-inspector-sketch .app.expanded { grid-template-columns:minmax(0,1fr); }
+      #computer-inspector-sketch .sidebar { display:none; }
+      #computer-inspector-sketch .app.expanded .chat { display:none; }
+      #computer-inspector-sketch .app.expanded .viewer { border-left:0; }
+      #computer-inspector-sketch .app:not(.expanded) .viewer { width:208px; }
+      #computer-inspector-sketch .expanded .desktop { max-height:270px; width:100%; }
+      #computer-inspector-sketch .keyrow button { min-height:44px; }
+    }
+  </style>
+  <div class="app">
+    <aside class="sidebar"><div class="brand">Vlad</div><div class="navitem">New chat</div><div class="navitem current">Upwork research</div><div class="navitem">Recent chats</div></aside>
+    <main class="chat">
+      <div class="chathead"><span>Vlad</span><button type="button" class="open-computer cursor-interaction">Computer</button></div>
+      <div class="conversation"><div class="bubble">Open Upwork and look around.</div><div>I’ll open the browser and explore the page.</div><div class="tool"><i data-lucide="monitor" aria-hidden="true"></i><span>Computer · Working</span></div></div>
+      <div class="composer">Message<div class="composerfoot"><span>＋</span><span>Continue the conversation</span></div></div>
+    </main>
+    <section class="viewer" aria-label="Computer viewer">
+      <div class="viewerhead"><span class="label">Computer</span><button type="button" class="toggle-view icon cursor-interaction" aria-label="Expand computer into inspector"><i data-lucide="maximize-2" aria-hidden="true"></i></button><button type="button" class="hide-view icon cursor-interaction" aria-label="Hide computer"><i data-lucide="x" aria-hidden="true"></i></button></div>
+      <div class="desktop" role="img" aria-label="Illustrative remote desktop. In inspector, drag to move cursor relatively.">
+        <div class="browserbar">upwork.com · preview sketch</div>
+        <div class="page"><div class="pagetitle">Remote browser</div><div class="search">Search</div><div class="skeleton"></div><div class="skeleton short"></div><div class="skeleton"></div></div>
+        <span class="cursor"><i data-lucide="mouse-pointer-2" aria-hidden="true"></i></span>
+      </div>
+      <div class="inspectoronly">
+        <div class="inputbar"><button type="button" class="left-click cursor-interaction">Click</button><button type="button" class="right-click cursor-interaction">Right click</button><button type="button" class="keyboard-toggle cursor-interaction" aria-pressed="true">Keyboard</button></div>
+        <div class="controlrow"><span class="control-status" aria-live="polite">Trackpad · Agent working</span><button type="button" class="take-control cursor-interaction">Take control</button></div>
+      </div>
+      <div class="keyboard inspectoronly" aria-label="Illustration of keyboard and desktop accessory keys">
+        <div class="keyrow accessory"></div><div class="keyrow letters1"></div><div class="keyrow letters2"></div><div class="keyrow letters3"></div>
+        <div class="keyrow"><button type="button" data-key="Backspace" class="cursor-interaction">Delete</button><button type="button" data-key=" " class="space cursor-interaction">Space</button><button type="button" data-key="Enter" class="cursor-interaction">Return</button></div>
+      </div>
+    </section>
+  </div>
+  <div class="sketchlabel">Interaction sketch · Expand opens inspector · Swipe moves cursor relatively</div>
+  <script>
+    (() => {
+      const root = document.getElementById('computer-inspector-sketch');
+      const app = root.querySelector('.app');
+      const viewer = root.querySelector('.viewer');
+      const desktop = root.querySelector('.desktop');
+      const cursor = root.querySelector('.cursor');
+      const search = root.querySelector('.search');
+      const keyboard = root.querySelector('.keyboard');
+      const status = root.querySelector('.control-status');
+      const toggle = root.querySelector('.toggle-view');
+      const ownership = root.querySelector('.take-control');
+      let expanded = false, controlled = false, keyboardVisible = true, text = '', last = null, position = {x:0.58,y:0.54};
+      function icons() { if (globalThis.lucide) globalThis.lucide.createIcons(); }
+      function render() {
+        app.classList.toggle('expanded',expanded);
+        toggle.setAttribute('aria-label',expanded?'Collapse to floating preview':'Expand computer into inspector');
+        toggle.innerHTML = expanded?'<i data-lucide="minimize-2" aria-hidden="true"></i>':'<i data-lucide="maximize-2" aria-hidden="true"></i>';
+        keyboard.hidden = !keyboardVisible;
+        root.querySelector('.keyboard-toggle').setAttribute('aria-pressed',String(keyboardVisible));
+        ownership.textContent = controlled?'Resume agent':'Take control';
+        status.textContent = controlled?'Trackpad · You have control':'Trackpad · Agent working';
+        icons();
+      }
+      toggle.addEventListener('click',()=>{expanded=!expanded;render();});
+      root.querySelector('.open-computer').addEventListener('click',()=>{viewer.hidden=false;expanded=true;render();});
+      root.querySelector('.hide-view').addEventListener('click',()=>{viewer.hidden=true;expanded=false;render();});
+      root.querySelector('.keyboard-toggle').addEventListener('click',()=>{keyboardVisible=!keyboardVisible;render();});
+      ownership.addEventListener('click',()=>{controlled=!controlled;render();});
+      desktop.addEventListener('click',()=>{if(!expanded){expanded=true;render();}});
+      desktop.addEventListener('pointerdown',e=>{if(!expanded)return;if(!controlled){controlled=true;render();return;}last={x:e.clientX,y:e.clientY};desktop.setPointerCapture(e.pointerId);});
+      desktop.addEventListener('pointermove',e=>{if(!last)return;const rect=desktop.getBoundingClientRect();position.x=Math.max(0.02,Math.min(0.94,position.x+(e.clientX-last.x)/rect.width));position.y=Math.max(0.02,Math.min(0.9,position.y+(e.clientY-last.y)/rect.height));cursor.style.left=position.x*100+'%';cursor.style.top=position.y*100+'%';last={x:e.clientX,y:e.clientY};});
+      desktop.addEventListener('pointerup',()=>{last=null;});desktop.addEventListener('pointercancel',()=>{last=null;});
+      for(const [selector,keys] of [['.accessory',['Esc','Tab','Ctrl','Alt','←','↓','↑','→']],['.letters1','QWERTYUIOP'.split('')],['.letters2','ASDFGHJKL'.split('')],['.letters3','ZXCVBNM'.split('')]]) {
+        const row=root.querySelector(selector);for(const key of keys){const button=document.createElement('button');button.type='button';button.textContent=key;button.dataset.key=key;button.className='cursor-interaction';row.appendChild(button);}
+      }
+      keyboard.addEventListener('click',e=>{const key=e.target.closest('button')?.dataset.key;if(!key)return;if(!controlled){controlled=true;render();return;}if(key==='Backspace')text=text.slice(0,-1);else if(key.length===1&&!['←','↓','↑','→'].includes(key))text+=key.toLowerCase();search.textContent=text||'Search';});
+      for(const selector of ['.left-click','.right-click'])root.querySelector(selector).addEventListener('click',()=>{if(!controlled){controlled=true;render();}else status.textContent=selector==='.left-click'?'Primary click at cursor':'Secondary click at cursor';});
+      const design={radius:18};
+      if(globalThis.Tweak){const tweak=new globalThis.Tweak({container:viewer,onChange:()=>{viewer.style.borderRadius=expanded?'0':design.radius+'px';}});tweak.addSlider(design,'radius',{label:'Preview corner radius',min:12,max:24,unit:'px'});}
+      render();
+    })();
+  </script>
+</div>

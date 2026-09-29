@@ -22,6 +22,7 @@ final class ChatViewModel: ObservableObject {
     @Published var imageViewerImages: [Attachment] = []
     @Published var imageViewerIndex = 0
     @Published var showImageViewer = false
+    @Published var computerUseController = ComputerUseSessionController()
     @Published var editRequestedForMessageIndex: Int?
     @Published var currentModel: ModelType
     @Published var pendingAttachments: [Attachment] = []
@@ -559,6 +560,10 @@ final class ChatViewModel: ObservableObject {
         }
 
         let hasActiveServerResponse = hasActiveServerResponse(in: mobileChat)
+        updateComputerUseSession(
+            from: mobileChat,
+            isActive: hasActiveServerResponse || localGenerationActive
+        )
         if hasActiveServerResponse {
             isLoading = true
         } else if localGenerationActive {
@@ -685,6 +690,129 @@ final class ChatViewModel: ObservableObject {
         }
         currentChat = chats.first(where: { $0.id == selectedId })
         scrollToBottomTrigger = UUID()
+    }
+
+    func updateComputerUseSession(from mobileChat: MobileChat, isActive: Bool) {
+        let reportedTools = mobileChat.messages
+            .filter { !$0.isUser }
+            .sorted { $0.order < $1.order }
+            .flatMap { message in
+                (message.response?.tools ?? []) + (message.response?.parts.compactMap(\.tool) ?? [])
+            }
+            .filter(\.isComputerUseTool)
+        var tools: [ResponseTool] = []
+        var toolIndices: [String: Int] = [:]
+        var toolScores: [String: Int] = [:]
+        for tool in reportedTools {
+            let resultScore = tool.computerResult == nil ? 0 : 1_000
+            let statusScore: Int
+            switch tool.status {
+            case .pending: statusScore = 1
+            case .running: statusScore = 2
+            case .completed, .failed, .stopped: statusScore = 3
+            case .unknown: statusScore = 0
+            }
+            let score = resultScore + statusScore
+            if let index = toolIndices[tool.id] {
+                if score >= (toolScores[tool.id] ?? 0) {
+                    tools[index] = tool
+                    toolScores[tool.id] = score
+                }
+            } else {
+                toolIndices[tool.id] = tools.count
+                toolScores[tool.id] = score
+                tools.append(tool)
+            }
+        }
+        guard let openIndex = tools.lastIndex(where: {
+            $0.computerResult?.op == .open || $0.name.lowercased().contains("computer_open")
+        }) else {
+            if let liveSession = mobileChat.computerViewer,
+               let viewerURL = liveSession.validatedNativeViewerURL {
+                computerUseController.start(
+                    url: viewerURL,
+                    sessionID: liveSession.sessionId,
+                    threadID: mobileChat.threadId
+                )
+                computerUseController.updateAgentState(isActive: isActive, needsUser: false)
+            } else {
+                if computerUseController.owningThreadID == mobileChat.threadId {
+                    computerUseController.markEndedIfActive()
+                } else {
+                    computerUseController.stop()
+                }
+            }
+            return
+        }
+        let sessionTools = tools[openIndex...]
+        if sessionTools.contains(where: { $0.computerResult?.op == .end && $0.computerResult?.ok == true }) {
+            computerUseController.stop()
+            return
+        }
+        let latestResult = sessionTools.reversed().compactMap(\.computerResult).first
+        guard let openTool = sessionTools.first(where: {
+            $0.computerResult?.op == .open || $0.name.lowercased().contains("computer_open")
+        }) else { return }
+        let owningMessage = mobileChat.messages.first { message in
+            let responseTools = (message.response?.tools ?? [])
+                + (message.response?.parts.compactMap(\.tool) ?? [])
+            return responseTools.contains(where: { $0.id == openTool.id })
+        }
+        if let liveSession = mobileChat.computerViewer,
+           let viewerURL = liveSession.validatedNativeViewerURL {
+            let ownerIsActive = owningMessage.map {
+                ($0.status == "pending" || $0.status == "streaming") && !isTerminal($0.response?.phase)
+            } ?? isActive
+            // The active, thread-scoped server session is source of truth. Its owner message
+            // may already be complete when app relaunches or user reopens the thread.
+            computerUseController.start(
+                url: viewerURL,
+                sessionID: liveSession.sessionId,
+                threadID: mobileChat.threadId
+            )
+            computerUseController.updateAgentState(
+                isActive: ownerIsActive,
+                needsUser: latestResult?.hasHandoff == true
+            )
+            return
+        }
+        let sessionIsActive = owningMessage.map {
+            ($0.status == "pending" || $0.status == "streaming") && !isTerminal($0.response?.phase)
+        } ?? isActive
+        if openTool.status == .pending || openTool.status == .running {
+            if computerUseController.owningThreadID != mobileChat.threadId {
+                computerUseController.stop()
+            }
+            computerUseController.showStarting(sessionID: openTool.id, threadID: mobileChat.threadId)
+            computerUseController.updateAgentState(isActive: sessionIsActive, needsUser: false)
+        } else if openTool.status == .failed || openTool.computerResult?.ok == false {
+            computerUseController.showFailure(
+                "Computer could not start. Try again from the conversation.",
+                sessionID: openTool.id,
+                threadID: mobileChat.threadId
+            )
+        } else if sessionIsActive,
+                  let viewerURL = openTool.computerResult?.validatedNativeViewerURL {
+            // The open result can arrive before the thread query publishes its live
+            // session record. Keep the preview visible while that response is active.
+            computerUseController.start(
+                url: viewerURL,
+                sessionID: openTool.id,
+                threadID: mobileChat.threadId
+            )
+            computerUseController.updateAgentState(
+                isActive: sessionIsActive,
+                needsUser: openTool.computerResult?.hasHandoff == true
+            )
+        } else {
+            if computerUseController.owningThreadID == mobileChat.threadId {
+                computerUseController.markEndedIfActive(
+                    message: "This computer session is no longer available. Start a new computer session to continue."
+                )
+            } else {
+                computerUseController.stop()
+            }
+        }
     }
 
     private func hasActiveServerResponse(in mobileChat: MobileChat) -> Bool {

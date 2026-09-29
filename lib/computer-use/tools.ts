@@ -6,11 +6,12 @@ import {
   ComputerUseCapError,
   computerUseEnabled,
   endComputerSession,
-  resolveSandboxCredentials,
   runComputerOp,
 } from "./sandbox";
+import { resolveSandboxCredentials } from "./credentials";
 import { putScreenshot, screenshotPublicUrl } from "./artifacts";
 import { handoffMessage, looksLikePaymentOrSigning } from "./safety";
+import { computerToolModelOutput } from "./vision";
 import type {
   ComputerAction,
   ComputerBudgetStatus,
@@ -67,7 +68,7 @@ function failCap(op: ComputerToolResult["op"], err: unknown): ComputerToolResult
         maxSteps: COMPUTER_USE_MAX_STEPS,
         ttlMs: COMPUTER_USE_MAX_TTL_MS,
         elapsedMs: 0,
-        note: "Computer-use session hit an operational limit (TTL, steps, or idle reclaim).",
+        note: "Computer-use session hit an operational limit (TTL or step limit).",
       },
     };
   }
@@ -132,6 +133,7 @@ export async function runComputerToolOp(
   sessionKey: string,
   op: ComputerOpName,
   args: ComputerOpArgs = {},
+  threadId?: string,
 ): Promise<ComputerToolResult> {
   switch (op) {
     case "open": {
@@ -140,21 +142,26 @@ export async function runComputerToolOp(
         return { ok: false, op: "open", code: "runtime", error: "url is required" };
       }
       try {
-        const { meta, png, sandboxName, viewerUrl, budget } = await runComputerOp(
+        const { meta, png, sandboxName, viewerUrl, nativeViewerUrl, budget } = await runComputerOp(
           sessionKey,
           { op: "open", url },
+          threadId,
         );
         return attachShot(
           sessionKey,
           png,
           {
-            ok: true,
+            ok: meta.ok !== false,
             op: "open",
             url: String(meta.url || url),
             title: meta.title ? String(meta.title) : undefined,
             action: "open",
             sandboxName,
             viewerUrl,
+            nativeViewerUrl,
+            ...(meta.ok === false
+              ? { code: "runtime" as const, error: String(meta.error || "Browser navigation failed.") }
+              : {}),
           },
           mapBudget(budget),
         );
@@ -164,9 +171,10 @@ export async function runComputerToolOp(
     }
     case "screenshot": {
       try {
-        const { meta, png, sandboxName, viewerUrl, budget } = await runComputerOp(
+        const { meta, png, sandboxName, viewerUrl, nativeViewerUrl, budget } = await runComputerOp(
           sessionKey,
           { op: "screenshot" },
+          threadId,
         );
         return attachShot(
           sessionKey,
@@ -179,6 +187,7 @@ export async function runComputerToolOp(
             action: "screenshot",
             sandboxName,
             viewerUrl,
+            nativeViewerUrl,
           },
           mapBudget(budget),
         );
@@ -210,9 +219,10 @@ export async function runComputerToolOp(
         };
       }
       try {
-        const { meta, png, sandboxName, viewerUrl, budget } = await runComputerOp(
+        const { meta, png, sandboxName, viewerUrl, nativeViewerUrl, budget } = await runComputerOp(
           sessionKey,
           { op: "act", action },
+          threadId,
         );
         return attachShot(
           sessionKey,
@@ -225,6 +235,7 @@ export async function runComputerToolOp(
             action: action.type,
             sandboxName,
             viewerUrl,
+            nativeViewerUrl,
           },
           mapBudget(budget),
         );
@@ -245,9 +256,10 @@ export async function runComputerToolOp(
         },
       };
       try {
-        const { meta, png, sandboxName, viewerUrl, budget } = await runComputerOp(
+        const { meta, png, sandboxName, viewerUrl, nativeViewerUrl, budget } = await runComputerOp(
           sessionKey,
           { op: "screenshot" },
+          threadId,
         );
         shot = await attachShot(
           sessionKey,
@@ -258,6 +270,7 @@ export async function runComputerToolOp(
             title: meta.title ? String(meta.title) : undefined,
             sandboxName,
             viewerUrl,
+            nativeViewerUrl,
           },
           mapBudget(budget),
         );
@@ -297,20 +310,22 @@ export function createComputerUseTools(ctx: ComputerToolContext = {}) {
   return {
     computer_open: tool({
       description:
-        "Open a public URL in the isolated computer-use browser (Vercel Sandbox + Playwright). Returns viewerUrl (live noVNC); call computer_screenshot for a light JPEG. Sessions capped at 8 min / 20 steps.",
+        "Open a public URL in the isolated computer-use browser (Vercel Sandbox + Playwright). Returns viewerUrl for noVNC control and nativeViewerUrl for the in-app live viewer; call computer_screenshot for a light JPEG. Reopens an expired session in a fresh sandbox. Sessions capped at 30 min / 20 steps.",
       inputSchema: z.object({
         url: z.string().url().describe("https URL to open"),
       }),
       execute: async ({ url }): Promise<ComputerToolResult> =>
-        runComputerToolOp(sessionKey, "open", { url }),
+        runComputerToolOp(sessionKey, "open", { url }, ctx.chatId),
+      toModelOutput: ({ output }) => computerToolModelOutput(output),
     }),
 
     computer_screenshot: tool({
       description:
-        "Capture a light JPEG clip of the computer-use viewport (separate from open). Returns screenshotUrl + viewerUrl.",
+        "Capture a light JPEG clip of the computer-use viewport (separate from open). Returns screenshotUrl, viewerUrl, and nativeViewerUrl.",
       inputSchema: z.object({}),
       execute: async (): Promise<ComputerToolResult> =>
-        runComputerToolOp(sessionKey, "screenshot"),
+        runComputerToolOp(sessionKey, "screenshot", {}, ctx.chatId),
+      toModelOutput: ({ output }) => computerToolModelOutput(output),
     }),
 
     computer_act: tool({
@@ -320,7 +335,8 @@ export function createComputerUseTools(ctx: ComputerToolContext = {}) {
       execute: async ({ action }): Promise<ComputerToolResult> =>
         runComputerToolOp(sessionKey, "act", {
           action: action as ComputerAction,
-        }),
+        }, ctx.chatId),
+      toModelOutput: ({ output }) => computerToolModelOutput(output),
     }),
 
     computer_handoff: tool({
@@ -338,15 +354,17 @@ export function createComputerUseTools(ctx: ComputerToolContext = {}) {
         message: z.string().optional(),
       }),
       execute: async ({ reason, message }): Promise<ComputerToolResult> =>
-        runComputerToolOp(sessionKey, "handoff", { reason, message }),
+        runComputerToolOp(sessionKey, "handoff", { reason, message }, ctx.chatId),
+      toModelOutput: ({ output }) => computerToolModelOutput(output),
     }),
 
     computer_end: tool({
       description:
-        "Tear down the computer-use sandbox for this chat session when the browser task is finished. Always call this to release the sandbox.",
+        "Tear down the computer-use sandbox only when the user explicitly asks to close the live desk or the viewer has failed. Keep the live viewer open after the browser task is complete.",
       inputSchema: z.object({}),
       execute: async (): Promise<ComputerToolResult> =>
-        runComputerToolOp(sessionKey, "end"),
+        runComputerToolOp(sessionKey, "end", {}, ctx.chatId),
+      toModelOutput: ({ output }) => computerToolModelOutput(output),
     }),
   };
 }

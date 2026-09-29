@@ -4,12 +4,17 @@ import { AsyncLocalStorage } from "node:async_hooks";
  * Request-scoped computer session for site MCP (`/api/mcp`).
  *
  * Resolution order for sandbox sessionKey:
- * 1. Optional `sessionId` tool argument (multi-agent isolation)
- * 2. `x-computer-session` / `x-computer-session-id` request header
+ * 1. `x-computer-session` / `x-computer-session-id` request header
  *    (Convex getMcpTools passes userId here)
+ * 2. Optional `sessionId` tool argument (standalone MCP isolation)
  * 3. Fallback `"mcp-default"` (shared — prefer passing sessionId/header)
  */
-export const computerSessionAls = new AsyncLocalStorage<string>();
+export type ComputerMcpContext = {
+  sessionKey: string;
+  threadId?: string;
+};
+
+export const computerSessionAls = new AsyncLocalStorage<ComputerMcpContext>();
 
 const MAX_SESSION_LEN = 80;
 
@@ -19,12 +24,16 @@ export function sanitizeComputerSessionKey(raw: string): string {
 }
 
 export function resolveMcpComputerSessionKey(toolSessionId?: string): string {
+  const fromHeader = computerSessionAls.getStore()?.sessionKey;
+  if (fromHeader) return fromHeader;
   if (toolSessionId && toolSessionId.trim()) {
     return sanitizeComputerSessionKey(toolSessionId.trim());
   }
-  const fromHeader = computerSessionAls.getStore();
-  if (fromHeader) return fromHeader;
   return "mcp-default";
+}
+
+export function resolveMcpComputerThreadId(): string | undefined {
+  return computerSessionAls.getStore()?.threadId;
 }
 
 export function computerSessionFromRequest(req: Request): string | undefined {
@@ -33,4 +42,9 @@ export function computerSessionFromRequest(req: Request): string | undefined {
     req.headers.get("x-computer-session-id");
   if (!raw?.trim()) return undefined;
   return sanitizeComputerSessionKey(raw.trim());
+}
+
+export function computerThreadFromRequest(req: Request): string | undefined {
+  const threadId = req.headers.get("x-computer-thread")?.trim();
+  return threadId && threadId.length <= 128 ? threadId : undefined;
 }
