@@ -141,7 +141,7 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
   const user = useQuery(api.users.viewer)
   const defaultThreadId = useQuery(api.threads.getDefaultThreadId)
   const generateReply = useAction(api.threads.generateReply)
-  const abortReply = useMutation(api.threads.abortReply)
+  const stopAgentRun = useMutation(api.threads.stopThread)
   const { signIn } = useAuthActions()
   const notionConn = useQuery(api.notion.getConnection)
   const disconnectNotion = useMutation(api.notion.removeConnection)
@@ -287,18 +287,6 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
     () => (messages ?? []).some((message) => message.status === 'streaming' || message.status === 'pending'),
     [messages],
   )
-  const activeStreamOrder = useMemo(() => {
-    if (!messages) {
-      return null
-    }
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const message = messages[i]
-      if (message.status === 'streaming' || message.status === 'pending') {
-        return message.order
-      }
-    }
-    return null
-  }, [messages])
   const submitStatus = (streamActive ? 'streaming' : submitState) as 'ready' | 'submitted' | 'streaming'
   const showBottomLoader = shouldShowBottomLoader({
     defaultThreadId,
@@ -319,15 +307,12 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
   };
 
   const handleStop = async () => {
-    if (!activeThreadId || activeStreamOrder === null) {
+    if (!activeThreadId) {
       return
     }
 
     try {
-      await abortReply({
-        threadId: activeThreadId,
-        order: activeStreamOrder,
-      })
+      await stopAgentRun({ threadId: activeThreadId })
     } catch (error) {
       console.error('Failed to stop generation', error)
     }
