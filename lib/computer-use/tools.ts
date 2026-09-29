@@ -6,9 +6,9 @@ import {
   ComputerUseCapError,
   computerUseEnabled,
   endComputerSession,
-  resolveSandboxCredentials,
   runComputerOp,
 } from "./sandbox";
+import { resolveSandboxCredentials } from "./credentials";
 import { putScreenshot, screenshotPublicUrl } from "./artifacts";
 import { handoffMessage, looksLikePaymentOrSigning } from "./safety";
 import type {

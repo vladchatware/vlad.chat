@@ -13,9 +13,12 @@ import {
 import { NATIVE_VIEWER_HTML } from "./native-viewer-script";
 import { CUA_BRIDGE_CJS } from "./cua-bridge-script";
 import { publishLiveComputerSession } from "./artifacts";
+import { resolveSandboxCredentials } from "./credentials";
+import { COMPUTER_USE_MAX_TTL_MS } from "./limits";
+
+export { COMPUTER_USE_MAX_TTL_MS } from "./limits";
 
 /** Session operational limits — tune here; fail closed when hit. */
-export const COMPUTER_USE_MAX_TTL_MS = 30 * 60 * 1000; // 30 min for a user-visible live desk
 export const COMPUTER_USE_MAX_STEPS = 20; // per session
 export const COMPUTER_USE_MAX_CONCURRENT = 1; // per user/session key
 export const COMPUTER_USE_IDLE_MS = COMPUTER_USE_MAX_TTL_MS; // keep passive floating preview alive
@@ -38,22 +41,6 @@ export function computerUseEnabled(): boolean {
     process.env.COMPUTER_USE_ENABLED === "1" ||
     process.env.COMPUTER_USE_ENABLED === "true"
   );
-}
-
-export function resolveSandboxCredentials():
-  | { mode: "oidc" }
-  | { mode: "token"; token: string; teamId: string; projectId: string }
-  | { mode: "none" } {
-  const teamId = process.env.VERCEL_TEAM_ID || process.env.VERCEL_ORG_ID || "";
-  const projectId = process.env.VERCEL_PROJECT_ID || "";
-  const token = process.env.VERCEL_TOKEN || process.env.VERCEL_ACCESS_TOKEN || "";
-  if (token && teamId && projectId) {
-    return { mode: "token", token, teamId, projectId };
-  }
-  if (process.env.VERCEL_OIDC_TOKEN || process.env.VERCEL) {
-    return { mode: "oidc" };
-  }
-  return { mode: "none" };
 }
 
 function createParams(): Record<string, unknown> {

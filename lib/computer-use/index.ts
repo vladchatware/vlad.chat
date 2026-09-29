@@ -30,12 +30,12 @@ export {
 } from "./mcp-session";
 export {
   computerUseEnabled,
-  resolveSandboxCredentials,
   COMPUTER_USE_MAX_TTL_MS,
   COMPUTER_USE_MAX_STEPS,
   COMPUTER_USE_MAX_CONCURRENT,
   COMPUTER_USE_IDLE_MS,
 } from "./sandbox";
+export { resolveSandboxCredentials } from "./credentials";
 export type {
   ComputerToolResult,
   ComputerHandoffEvent,
