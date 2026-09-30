@@ -257,11 +257,13 @@ final class VladChatUITests: XCTestCase {
         let composer = app.descendants(matching: .any)["chatComposer"]
         let header = app.navigationBars.firstMatch
         let transcriptAnchor = app.staticTexts["transcriptScrollAnchor"]
+        let transcriptTail = app.staticTexts["Transcript row 30"]
         let sessionState = app.staticTexts["computerFixtureSessionState"]
         XCTAssertTrue(chatCanvas.exists)
         XCTAssertTrue(composer.exists)
         XCTAssertTrue(header.exists)
         XCTAssertTrue(transcriptAnchor.exists)
+        XCTAssertGreaterThan(transcriptTail.frame.maxY, app.frame.maxY, "The fixture transcript must extend beyond the viewport so drag scrolling can be detected")
         XCTAssertEqual(sessionState.label, "Session: live")
         let transcriptAnchorY = transcriptAnchor.frame.minY
         XCTAssertTrue(app.buttons["showChats"].exists)
