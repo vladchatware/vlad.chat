@@ -710,8 +710,8 @@ struct ComputerUseViewerOverlay: View {
             Group {
                 switch controller.presentation {
                 case .hidden: EmptyView()
-                case .floating: floatingViewer(geometry: geometry)
-                case .tucked: tuckedTab(geometry: geometry)
+                case .floating: floatingViewer(geometry: geometry).transition(.identity)
+                case .tucked: tuckedTab(geometry: geometry).transition(.identity)
                 case .inspector:
                     if controller.isExpanding && horizontalSizeClass == .compact {
                         floatingViewer(geometry: geometry)
@@ -719,7 +719,6 @@ struct ComputerUseViewerOverlay: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-            .animation(.easeInOut(duration: 0.24), value: controller.presentation)
         }
     }
 
@@ -797,7 +796,11 @@ struct ComputerUseViewerOverlay: View {
             .frame(width: Self.tuckedHandleVisibleWidth, height: Self.tuckedHandleHeight)
             .background(handleGradient, in: handleShape)
             .accessibilityHidden(true)
-        let button = Button { controller.restore() } label: {
+        let button = Button {
+            withAnimation(dockSettleAnimation) {
+                controller.restore()
+            }
+        } label: {
             HStack(spacing: 0) {
                 if tuckedSide == .trailing { Spacer(minLength: 0) }
                 handle
@@ -809,6 +812,10 @@ struct ComputerUseViewerOverlay: View {
         .buttonStyle(.plain)
         .accessibilityLabel("Restore computer preview")
         .accessibilityValue(tuckedSide == .leading ? "Left edge" : "Right edge")
+        .transition(.asymmetric(
+            insertion: .move(edge: tuckedSide == .trailing ? .trailing : .leading),
+            removal: .identity
+        ))
 
         return VStack(spacing: 0) {
             Color.clear.frame(height: clampedTop(tuckedTop, height: Self.tuckedHandleHeight, geometry: geometry))
