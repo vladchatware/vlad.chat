@@ -1,6 +1,35 @@
 import Foundation
 import Security
 
+#if targetEnvironment(simulator)
+// Locally signed Simulator builds have no keychain access group, so keep auth tokens in process.
+// Device builds continue to use the system Keychain below.
+private final class SimulatorKeychain: @unchecked Sendable {
+    static let shared = SimulatorKeychain()
+
+    private let lock = NSLock()
+    private var values: [String: Data] = [:]
+
+    func save(_ data: Data, key: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        values[key] = data
+    }
+
+    func load(key: String) -> Data? {
+        lock.lock()
+        defer { lock.unlock() }
+        return values[key]
+    }
+
+    func delete(key: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        values[key] = nil
+    }
+}
+#endif
+
 struct KeychainStore: Sendable {
     private let service: String
 
@@ -9,6 +38,9 @@ struct KeychainStore: Sendable {
     }
 
     func save(_ data: Data, account: String) throws {
+        #if targetEnvironment(simulator)
+        SimulatorKeychain.shared.save(data, key: storageKey(account: account))
+        #else
         let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: service,
@@ -28,9 +60,13 @@ struct KeychainStore: Sendable {
         } else if status != errSecSuccess {
             throw KeychainError(status: status)
         }
+        #endif
     }
 
     func load(account: String) throws -> Data? {
+        #if targetEnvironment(simulator)
+        return SimulatorKeychain.shared.load(key: storageKey(account: account))
+        #else
         let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: service,
@@ -45,9 +81,13 @@ struct KeychainStore: Sendable {
             throw KeychainError(status: status)
         }
         return data
+        #endif
     }
 
     func delete(account: String) throws {
+        #if targetEnvironment(simulator)
+        SimulatorKeychain.shared.delete(key: storageKey(account: account))
+        #else
         let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: service,
@@ -57,6 +97,11 @@ struct KeychainStore: Sendable {
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw KeychainError(status: status)
         }
+        #endif
+    }
+
+    private func storageKey(account: String) -> String {
+        "\(service):\(account)"
     }
 }
 
