@@ -187,6 +187,13 @@ function credFields(params: Record<string, unknown>) {
   return {};
 }
 
+function isMissingSandboxSnapshotError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    /Cannot resume sandbox: no snapshot available/i.test(error.message)
+  );
+}
+
 export async function getOrCreateSessionSandbox(
   sessionKey: string,
   threadId?: string,
@@ -231,14 +238,13 @@ export async function getOrCreateSessionSandbox(
   sessions.set(sessionKey, session);
   await publishLiveComputerSession(sessionKey, session.sessionId, session, "starting");
 
-  // A named sandbox can outlive the snapshot it was created from. `getOrCreate`
-  // handles Vercel's `snapshot_not_found` response by deleting that stale sandbox
-  // and creating a fresh one; a create/get fallback leaves it stuck forever.
-  const sandbox = await Sandbox.getOrCreate(
+  // `getOrCreate` handles a missing named sandbox snapshot, but a stale session
+  // can also survive the lookup and fail only when its first command resumes it.
+  let sandbox = await Sandbox.getOrCreate(
     params as Parameters<typeof Sandbox.getOrCreate>[0],
   );
 
-  const setupCheck = await sandbox.runCommand({
+  const setupCheckCommand = {
     cmd: "bash",
     args: [
       "-lc",
@@ -250,7 +256,18 @@ export async function getOrCreateSessionSandbox(
         + "&& command -v curl >/dev/null 2>&1 "
         + "&& { [ -f /usr/share/novnc/vnc.html ] || [ -f /usr/share/novnc/vnc_lite.html ]; }; then echo ready; else echo missing; fi",
     ],
-  });
+  };
+  let setupCheck: Awaited<ReturnType<Sandbox["runCommand"]>>;
+  try {
+    setupCheck = await sandbox.runCommand(setupCheckCommand);
+  } catch (error) {
+    if (!isMissingSandboxSnapshotError(error)) throw error;
+    await sandbox.delete({ deleteOrphanSnapshots: true });
+    sandbox = await Sandbox.create(
+      params as Parameters<typeof Sandbox.create>[0],
+    );
+    setupCheck = await sandbox.runCommand(setupCheckCommand);
+  }
   const setupReady = (await setupCheck.stdout()).trim().endsWith("ready");
   if (configuredSnapshot && !setupReady) {
     throw new Error(
