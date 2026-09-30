@@ -348,6 +348,8 @@ struct AccountPromptView: View {
 }
 
 private struct AccountLinkingButtons: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     @ObservedObject var viewModel: ChatViewModel
     var stacked = false
 
@@ -377,6 +379,7 @@ private struct AccountLinkingButtons: View {
         AppleOAuthButton(isEnabled: !viewModel.isLinkingAccount) {
             viewModel.linkAppleAccount()
         }
+        .id(colorScheme)
         .frame(maxWidth: .infinity)
         .frame(height: 44)
     }
@@ -418,7 +421,7 @@ private struct GoogleOAuthButton: View {
                     .accessibilityHidden(true)
 
                 Text("Continue with Google")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.body.weight(.medium))
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
                     .foregroundStyle(foregroundColor)
