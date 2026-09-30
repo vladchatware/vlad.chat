@@ -312,6 +312,20 @@ final class VladChatUITests: XCTestCase {
         XCTAssertEqual(preview.frame.width, foldWidth, accuracy: 1, "Unfolding should preserve preview size")
         preview.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(
             forDuration: 0.1,
+            thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 1.0, dy: 0.78))
+        )
+        let restoreRightPreview = app.buttons["Restore computer preview"]
+        XCTAssertTrue(restoreRightPreview.waitForExistence(timeout: 5))
+        XCTAssertGreaterThan(restoreRightPreview.frame.maxX, app.frame.maxX - 28, "A rightward fold should leave the restore handle on the trailing edge")
+        XCTAssertEqual(restoreRightPreview.frame.midY, foldY, accuracy: 30, "The trailing restore handle should remember the preview height")
+        XCTAssertTrue(app.buttons["chevron.left"].exists, "The trailing restore handle should point inward")
+        restoreRightPreview.tap()
+        XCTAssertTrue(preview.waitForExistence(timeout: 5))
+        XCTAssertGreaterThan(preview.frame.maxX, app.frame.maxX - 28)
+        XCTAssertEqual(preview.frame.midY, foldY, accuracy: 30, "Trailing restore should return to the remembered preview height")
+        XCTAssertEqual(preview.frame.width, foldWidth, accuracy: 1, "Trailing restore should preserve preview size")
+        preview.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(
+            forDuration: 0.1,
             thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.99)),
             withVelocity: .slow,
             thenHoldForDuration: 0.4
