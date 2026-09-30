@@ -791,7 +791,7 @@ struct ComputerUseViewerOverlay: View {
         let handle = TuckChevron(pointsRight: tuckedSide == .leading)
             .stroke(
                 colorScheme == .dark ? Color.black : Color.white,
-                style: StrokeStyle(lineWidth: 3.25, lineCap: .round, lineJoin: .round)
+                style: StrokeStyle(lineWidth: 3.5, lineCap: .round, lineJoin: .round)
             )
             .frame(width: 10, height: 26)
             .frame(width: Self.tuckedHandleVisibleWidth, height: Self.tuckedHandleHeight)
@@ -946,8 +946,8 @@ private struct TuckChevron: Shape {
     let pointsRight: Bool
 
     func path(in rect: CGRect) -> Path {
-        let outerX = rect.width * (pointsRight ? 0.24 : 0.76)
-        let inwardX = rect.width * (pointsRight ? 0.76 : 0.24)
+        let outerX = rect.width * (pointsRight ? 0.18 : 0.82)
+        let inwardX = rect.width * (pointsRight ? 0.82 : 0.18)
         var path = Path()
         path.move(to: CGPoint(x: outerX, y: rect.minY))
         path.addLine(to: CGPoint(x: inwardX, y: rect.midY))
