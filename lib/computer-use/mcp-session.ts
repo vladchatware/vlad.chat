@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import type { CodeModeGrant } from "./code-mode";
 
 /**
  * Request-scoped computer session for site MCP (`/api/mcp`).
@@ -12,6 +13,8 @@ import { AsyncLocalStorage } from "node:async_hooks";
 export type ComputerMcpContext = {
   sessionKey: string;
   threadId?: string;
+  codeModeGrant?: CodeModeGrant;
+  codeModeGrantToken?: string;
 };
 
 export const computerSessionAls = new AsyncLocalStorage<ComputerMcpContext>();
@@ -34,6 +37,14 @@ export function resolveMcpComputerSessionKey(toolSessionId?: string): string {
 
 export function resolveMcpComputerThreadId(): string | undefined {
   return computerSessionAls.getStore()?.threadId;
+}
+
+export function resolveCodeModeGrant(): CodeModeGrant | undefined {
+  return computerSessionAls.getStore()?.codeModeGrant;
+}
+
+export function resolveCodeModeGrantToken(): string | undefined {
+  return computerSessionAls.getStore()?.codeModeGrantToken;
 }
 
 export function computerSessionFromRequest(req: Request): string | undefined {

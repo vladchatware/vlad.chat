@@ -48,6 +48,7 @@ export async function authenticateProviderRequest(request: Request) {
   return {
     ok: true as const,
     digest,
+    userId: principal.userId,
     hasCredits: principal.hasCredits,
     premiumAllowed: principal.premiumAllowed,
   };

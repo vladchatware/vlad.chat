@@ -19,6 +19,7 @@ import {
 } from "./artifacts";
 import { resolveSandboxCredentials } from "./credentials";
 import { COMPUTER_USE_MAX_TTL_MS } from "./limits";
+import { COMPUTER_ACTION_SAFETY_SOURCE } from "./safety";
 
 export { COMPUTER_USE_MAX_TTL_MS } from "./limits";
 
@@ -36,6 +37,102 @@ export class ComputerUseCapError extends Error {
     this.code = code;
     this.name = "ComputerUseCapError";
   }
+}
+
+export type SandboxCodeRun = {
+  code: string;
+  description: string;
+  timeoutMs: number;
+  signal?: AbortSignal;
+};
+
+const CODE_MODE_SOURCE_LIMIT = 64 * 1024;
+const CODE_MODE_OUTPUT_LIMIT = 64 * 1024;
+
+function sandboxCodeSource(code: string, resultMarker: string): string {
+  return `import { createRequire } from "node:module";
+import { execFile as execFileCallback } from "node:child_process";
+import { promisify } from "node:util";
+import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { dirname } from "node:path";
+const require = createRequire(import.meta.url);
+const execFile = promisify(execFileCallback);
+const run = async (cmd, args, options = {}) => {
+  const result = await execFile(cmd, args, {
+    cwd: options.cwd ?? "/vercel/sandbox",
+    maxBuffer: 1024 * 1024,
+    timeout: options.timeoutMs ?? 30000,
+    env: process.env,
+  });
+  return { exitCode: 0, stdout: result.stdout, stderr: result.stderr };
+};
+const blockedComputerText = ${COMPUTER_ACTION_SAFETY_SOURCE};
+const tools = Object.freeze({
+  run_command: async ({ command, cwd, timeoutMs }) => {
+    try {
+      return await run("bash", ["-lc", command], { cwd, timeoutMs });
+    } catch (error) {
+      if (error && typeof error === "object" && "code" in error) {
+        return {
+          exitCode: typeof error.code === "number" ? error.code : null,
+          stdout: typeof error.stdout === "string" ? error.stdout : "",
+          stderr: typeof error.stderr === "string" ? error.stderr : String(error),
+        };
+      }
+      throw error;
+    }
+  },
+  read_file: async ({ path }) => readFile(path, "utf8"),
+  write_file: async ({ path, content }) => {
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, content, "utf8");
+    return { path, bytesWritten: Buffer.byteLength(content, "utf8") };
+  },
+  computer: Object.freeze({
+    screenshot: async () => {
+      await run("node", ["/tmp/cu/cua-bridge.cjs", "screenshot"]);
+      return JSON.parse(await readFile("/tmp/cu/meta.json", "utf8"));
+    },
+    act: async (action) => {
+      if (action.type === "type" && blockedComputerText(action.text)) {
+        throw new Error("Payment or signing text requires user handoff. Stop and call computer_handoff.");
+      }
+      await run("node", ["/tmp/cu/cua-bridge.cjs", "act", JSON.stringify(action)]);
+      await run("node", ["/tmp/cu/cua-bridge.cjs", "screenshot"]);
+      return JSON.parse(await readFile("/tmp/cu/meta.json", "utf8"));
+    },
+  }),
+});
+try {
+  const value = await (async () => {\n${code}\n})();
+  process.stdout.write(${JSON.stringify(resultMarker)} + JSON.stringify(value === undefined ? null : value));
+} catch (error) {
+  process.stderr.write(String(error instanceof Error ? error.stack ?? error.message : error));
+  process.exitCode = 1;
+}
+`;
+}
+
+function limitCodeOutput(value: string): { value: string; truncated: boolean } {
+  if (value.length <= CODE_MODE_OUTPUT_LIMIT) {
+    return { value, truncated: false };
+  }
+  return { value: value.slice(0, CODE_MODE_OUTPUT_LIMIT), truncated: true };
+}
+
+function limitCombinedCodeOutput(stdout: string, stderr: string) {
+  const stdoutLimit = limitCodeOutput(stdout);
+  const stderrLimit = limitCodeOutput(
+    stderr.slice(0, Math.max(0, CODE_MODE_OUTPUT_LIMIT - stdoutLimit.value.length)),
+  );
+  return {
+    stdout: stdoutLimit.value,
+    stderr: stderrLimit.value,
+    truncated:
+      stdoutLimit.truncated ||
+      stderrLimit.truncated ||
+      stdout.length + stderr.length > CODE_MODE_OUTPUT_LIMIT,
+  };
 }
 
 const sessions = new Map<string, ComputerSession>();
@@ -294,6 +391,269 @@ export async function getOrCreateSessionSandbox(
   await publishLiveComputerSession(sessionKey, session.sessionId, session, "active");
 
   return { sandbox, session };
+}
+
+export type SandboxCodeResult = {
+  runId: string;
+  status: "completed" | "failed" | "stopped" | "interrupted";
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+  outputTruncated: boolean;
+  valueJson?: string;
+  valueTruncated: boolean;
+  timedOut: boolean;
+  screenshot?: Buffer;
+};
+
+type CodeRunState = {
+  runId: string;
+  description: string;
+  code: string;
+  status: "running" | "completed" | "failed" | "stopped" | "interrupted";
+  stdout: string;
+  stderr: string;
+  outputTruncated: boolean;
+  returnValue?: string;
+  exitCode?: number;
+  errorText?: string;
+  startedAt: number;
+  finishedAt?: number;
+};
+
+function codeRunEndpoint(): string {
+  const configuredUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
+  if (!configuredUrl) throw new Error("Code run persistence requires NEXT_PUBLIC_CONVEX_URL.");
+  const url = new URL(configuredUrl);
+  if (url.hostname.endsWith(".convex.cloud")) {
+    url.hostname = url.hostname.replace(/\.convex\.cloud$/, ".convex.site");
+  }
+  if (!url.hostname.endsWith(".convex.site")) {
+    throw new Error("NEXT_PUBLIC_CONVEX_URL must use a Convex deployment hostname.");
+  }
+  url.pathname = "/computer-use/code-runs";
+  url.search = "";
+  url.hash = "";
+  return url.toString();
+}
+
+async function publishCodeRun(
+  token: string,
+  state: CodeRunState,
+  includeSource = false,
+): Promise<void> {
+  const progress: Omit<CodeRunState, "code" | "description"> = {
+    runId: state.runId,
+    status: state.status,
+    stdout: state.stdout,
+    stderr: state.stderr,
+    outputTruncated: state.outputTruncated,
+    ...(state.returnValue === undefined ? {} : { returnValue: state.returnValue }),
+    ...(state.exitCode === undefined ? {} : { exitCode: state.exitCode }),
+    ...(state.errorText === undefined ? {} : { errorText: state.errorText }),
+    startedAt: state.startedAt,
+    ...(state.finishedAt === undefined ? {} : { finishedAt: state.finishedAt }),
+  };
+  const response = await fetch(codeRunEndpoint(), {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(includeSource ? state : progress),
+    cache: "no-store",
+    signal: AbortSignal.timeout(5000),
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`Code run persistence failed (${response.status})${detail ? `: ${detail}` : ""}.`);
+  }
+}
+
+/** Execute one TypeScript program inside an already-running computer sandbox. */
+export async function runSandboxCode(
+  sessionKey: string,
+  threadId: string,
+  input: SandboxCodeRun,
+  grantToken: string | undefined,
+): Promise<SandboxCodeResult> {
+  if (!grantToken) throw new Error("Code execution requires a signed run grant.");
+  if (Buffer.byteLength(input.code, "utf8") > CODE_MODE_SOURCE_LIMIT) {
+    throw new Error("TypeScript program exceeds the 64 KiB source limit.");
+  }
+  const prior = (await getStoredComputerSession(sessionKey)) ?? sessions.get(sessionKey);
+  if (prior?.status !== "running" || (prior.threadId && prior.threadId !== threadId)) {
+    throw new Error("Open a live computer in this chat before running TypeScript.");
+  }
+  const sessionCreatedAt = prior.createdAt ??
+    ("updatedAt" in prior ? prior.updatedAt : Date.now());
+  const sessionAgeMs = Date.now() - sessionCreatedAt;
+  const remainingTtlMs = COMPUTER_USE_MAX_TTL_MS - sessionAgeMs;
+  if (remainingTtlMs < 1000) {
+    throw new Error("Computer session is too close to its expiry to start a code run.");
+  }
+
+  const { sandbox, session } = await getOrCreateSessionSandbox(sessionKey, threadId);
+  if (session.status !== "running" || (session.threadId && session.threadId !== threadId)) {
+    throw new Error("Computer session is no longer available to this chat.");
+  }
+  const activity = await recordComputerSessionActivity(session);
+  session.stepCount = activity.stepCount;
+  session.lastUsedAt = activity.lastUsedAt;
+
+  const runId = randomBytes(16).toString("hex");
+  const resultMarker = `\n__VLAD_CODE_RESULT_${runId}__`;
+  const startedAt = Date.now();
+  const runState: CodeRunState = {
+    runId,
+    description: input.description,
+    code: input.code,
+    status: "running",
+    stdout: "",
+    stderr: "",
+    outputTruncated: false,
+    startedAt,
+  };
+  await publishCodeRun(grantToken, runState, true);
+
+  const path = `/tmp/cu/code-${runId}.mts`;
+  let previousMeta: string | undefined;
+  try {
+    previousMeta = (await sandbox.readFileToBuffer({ path: "/tmp/cu/meta.json" }))?.toString("utf8");
+  } catch {
+    previousMeta = undefined;
+  }
+  try {
+    await sandbox.writeFiles([
+      { path, content: Buffer.from(sandboxCodeSource(input.code, resultMarker), "utf8"), mode: 0o600 },
+    ]);
+    const command = await sandbox.runCommand({
+      cmd: "node",
+      args: ["--experimental-strip-types", path],
+      cwd: "/vercel/sandbox",
+      timeoutMs: Math.min(input.timeoutMs, remainingTtlMs),
+      detached: true,
+    });
+    let lastPublishedAt = Date.now();
+    let pendingLogChars = 0;
+    const appendLog = (stream: "stdout" | "stderr", chunk: string) => {
+      const remaining = Math.max(
+        0,
+        CODE_MODE_OUTPUT_LIMIT - runState.stdout.length - runState.stderr.length,
+      );
+      runState[stream] += chunk.slice(0, remaining);
+      if (chunk.length > remaining) runState.outputTruncated = true;
+      pendingLogChars += chunk.length;
+    };
+    let logPersistenceError: string | undefined;
+    const logPump = (async () => {
+      for await (const line of command.logs({ signal: input.signal })) {
+        if (line.stream === "stdout" || line.stream === "stderr") {
+          appendLog(line.stream, line.data);
+        }
+        if (pendingLogChars >= 1024 || Date.now() - lastPublishedAt >= 500) {
+          try {
+            await publishCodeRun(grantToken, runState);
+            pendingLogChars = 0;
+            lastPublishedAt = Date.now();
+          } catch (error) {
+            logPersistenceError = error instanceof Error ? error.message : String(error);
+          }
+        }
+      }
+    })().catch((error: unknown) => {
+      logPersistenceError = error instanceof Error ? error.message : String(error);
+    });
+    let abortTimer: ReturnType<typeof setTimeout> | undefined;
+    const killOnAbort = () => {
+      void command.kill("SIGTERM").then(() => {
+        abortTimer = setTimeout(() => void command.kill("SIGKILL").catch(() => undefined), 2000);
+      }).catch(() => undefined);
+    };
+    input.signal?.addEventListener("abort", killOnAbort, { once: true });
+    if (input.signal?.aborted) killOnAbort();
+    let finished: Awaited<ReturnType<typeof command.wait>>;
+    try {
+      finished = await command.wait();
+    } finally {
+      input.signal?.removeEventListener("abort", killOnAbort);
+      if (abortTimer) clearTimeout(abortTimer);
+    }
+    await logPump;
+    const [rawStdout, rawStderr] = await Promise.all([
+      finished.stdout(),
+      finished.stderr(),
+    ]);
+    const markerIndex = rawStdout.lastIndexOf(resultMarker);
+    const rawValue = markerIndex < 0
+      ? undefined
+      : rawStdout.slice(markerIndex + resultMarker.length).trim();
+    const stdout = markerIndex < 0 ? rawStdout : rawStdout.slice(0, markerIndex);
+    const capped = limitCombinedCodeOutput(stdout, rawStderr);
+    const valueTruncated = rawValue !== undefined && Buffer.byteLength(rawValue, "utf8") > 16 * 1024;
+    let screenshot: Buffer | undefined;
+    try {
+      const latestMeta = (await sandbox.readFileToBuffer({ path: "/tmp/cu/meta.json" }))?.toString("utf8");
+      if (latestMeta && latestMeta !== previousMeta) {
+        screenshot = (await sandbox.readFileToBuffer({ path: "/tmp/cu/shot.jpg" })) ?? undefined;
+      }
+    } catch {
+      screenshot = undefined;
+    }
+    const status = input.signal?.aborted
+      ? "stopped"
+      : finished.exitCode === null
+        ? "interrupted"
+        : finished.exitCode === 0 ? "completed" : "failed";
+    Object.assign(runState, {
+      status,
+      stdout: capped.stdout,
+      stderr: capped.stderr,
+      outputTruncated: runState.outputTruncated || capped.truncated,
+      ...(rawValue === undefined
+        ? {}
+        : { returnValue: valueTruncated ? JSON.stringify("Return value exceeds 16 KiB.") : rawValue }),
+      exitCode: finished.exitCode ?? undefined,
+      ...(logPersistenceError ? { errorText: `Some live log updates failed: ${logPersistenceError}` } : {}),
+      finishedAt: Date.now(),
+    });
+    await publishCodeRun(grantToken, runState);
+    return {
+      runId,
+      status,
+      exitCode: finished.exitCode,
+      stdout: capped.stdout,
+      stderr: capped.stderr,
+      outputTruncated: runState.outputTruncated || capped.truncated,
+      ...(rawValue === undefined
+        ? {}
+        : {
+            valueJson: valueTruncated
+              ? JSON.stringify("Return value exceeds 16 KiB.")
+              : rawValue,
+          }),
+      valueTruncated,
+      timedOut: finished.exitCode === null && !input.signal?.aborted,
+      ...(screenshot ? { screenshot } : {}),
+    };
+  } catch (error) {
+    const stopped = input.signal?.aborted ?? false;
+    const message = error instanceof Error ? error.message : String(error);
+    Object.assign(runState, {
+      status: stopped ? "stopped" : "failed",
+      errorText: message,
+      finishedAt: Date.now(),
+    });
+    await publishCodeRun(grantToken, runState);
+    throw error;
+  } finally {
+    await sandbox.runCommand({
+      cmd: "rm",
+      args: ["-f", path],
+      cwd: "/vercel/sandbox",
+      timeoutMs: 5000,
+    }).catch(() => undefined);
+  }
 }
 
 export function budgetStatus(session: ComputerSession) {

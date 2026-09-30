@@ -144,6 +144,34 @@ export default defineSchema({
   })
     .index("bySessionKey", ["sessionKey"])
     .index("byExpiresAt", ["expiresAt"]),
+  computerCodeRuns: defineTable({
+    runId: v.string(),
+    userId: v.id("users"),
+    sessionKey: v.string(),
+    threadId: v.string(),
+    description: v.string(),
+    code: v.string(),
+    status: v.union(
+      v.literal("running"),
+      v.literal("completed"),
+      v.literal("failed"),
+      v.literal("stopped"),
+      v.literal("interrupted"),
+    ),
+    stdout: v.string(),
+    stderr: v.string(),
+    outputTruncated: v.boolean(),
+    returnValue: v.optional(v.string()),
+    exitCode: v.optional(v.number()),
+    errorText: v.optional(v.string()),
+    startedAt: v.number(),
+    updatedAt: v.number(),
+    finishedAt: v.optional(v.number()),
+    expiresAt: v.number(),
+  })
+    .index("byRunId", ["runId"])
+    .index("byUserThreadUpdatedAt", ["userId", "threadId", "updatedAt"])
+    .index("byExpiresAt", ["expiresAt"]),
   agentRuns: defineTable({
     threadId: v.string(),
     userId: v.id("users"),

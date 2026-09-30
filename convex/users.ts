@@ -660,7 +660,11 @@ export const revokeApiKey = mutation({
 export const resolveApiKey = query({
   args: { digest: v.string() },
   returns: v.union(
-    v.object({ hasCredits: v.boolean(), premiumAllowed: v.boolean() }),
+    v.object({
+      userId: v.string(),
+      hasCredits: v.boolean(),
+      premiumAllowed: v.boolean(),
+    }),
     v.null(),
   ),
   handler: async (ctx, { digest }) => {
@@ -676,9 +680,21 @@ export const resolveApiKey = query({
     const trialTokens = Math.max(0, user.trialTokens ?? 0);
     const paidTokens = Math.max(0, user.tokens ?? 0);
     return {
+      userId: String(key.userId),
       hasCredits: trialTokens > 0 || paidTokens > 0 || isActiveSubscription(user),
       premiumAllowed: isActiveSubscription(user),
     };
+  },
+});
+
+/** Server-only identity check for issuing sandbox code-execution grants. */
+export const codeModePrincipal = internalQuery({
+  args: { userId: v.id("users") },
+  returns: v.union(v.string(), v.null()),
+  handler: async (ctx, { userId }) => {
+    const user = await ctx.db.get(userId);
+    if (!user || user.isAnonymous) return null;
+    return String(userId);
   },
 });
 

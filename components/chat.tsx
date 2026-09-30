@@ -28,6 +28,7 @@ import {
   ToolOutput,
   ToolInput,
 } from '@/components/ai-elements/tool';
+import { CodeBlock, CodeBlockCopyButton } from '@/components/ai-elements/code-block';
 import { Fragment, useEffect, useMemo, useRef, useState, useCallback, type ComponentProps } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useUIMessages } from '@convex-dev/agent/react';
@@ -92,6 +93,78 @@ type ToolOutputTextItem = {
 type ToolHeaderType = ComponentProps<typeof ToolHeader>['type'];
 type ToolHeaderState = ComponentProps<typeof ToolHeader>['state'];
 
+type CodeRunView = {
+  code: string;
+  description: string;
+  status: 'running' | 'completed' | 'failed' | 'stopped' | 'interrupted';
+  stdout: string;
+  stderr: string;
+  outputTruncated: boolean;
+  returnValue?: string;
+  errorText?: string;
+};
+
+function CodeRunPanel({ code, description, run, errorText }: {
+  code: string;
+  description: string;
+  run?: CodeRunView;
+  errorText?: string;
+}) {
+  const [tab, setTab] = useState<'code' | 'output'>('code');
+  const status = run?.status ?? (errorText ? 'failed' : 'running');
+  const statusLabel = status === 'running' ? 'Running'
+    : status === 'completed' ? 'Completed'
+      : status === 'stopped' ? 'Stopped'
+        : status === 'interrupted' ? 'Interrupted' : 'Error';
+  const output = [
+    run?.stdout ? `stdout:\n${run.stdout}` : '',
+    run?.stderr ? `stderr:\n${run.stderr}` : '',
+    run?.returnValue ? `Return value: ${run.returnValue}` : '',
+    run?.errorText ?? errorText ?? '',
+    run?.outputTruncated ? 'Output truncated at 64 KiB.' : '',
+  ].filter(Boolean).join('\n\n') || (status === 'running' ? 'Waiting for output…' : 'No output.');
+
+  return (
+    <div className="space-y-2 p-4">
+      <p className="text-sm text-muted-foreground">{description}</p>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex rounded-md bg-muted p-1" role="tablist" aria-label="Code run details">
+          {(['code', 'output'] as const).map((name) => (
+            <button
+              key={name}
+              type="button"
+              role="tab"
+              aria-selected={tab === name}
+              onClick={() => setTab(name)}
+              className={`rounded px-3 py-1 text-xs capitalize ${tab === name ? 'bg-background shadow-sm' : 'text-muted-foreground'}`}
+            >
+              {name}
+            </button>
+          ))}
+        </div>
+        <span className="text-xs text-muted-foreground" aria-live="polite">{statusLabel}</span>
+      </div>
+      {tab === 'code' ? (
+        <CodeBlock code={code} language="typescript" className="max-h-96 overflow-auto">
+          <CodeBlockCopyButton aria-label="Copy TypeScript" />
+        </CodeBlock>
+      ) : (
+        <pre className="max-h-96 min-h-24 overflow-auto whitespace-pre-wrap rounded-md bg-muted/50 p-4 font-mono text-xs" aria-live="polite">
+          {output}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+function codeInput(value: unknown): { code: string; description: string } | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const record = value as Record<string, unknown>;
+  return typeof record.code === 'string'
+    ? { code: record.code, description: typeof record.description === 'string' ? record.description : '' }
+    : null;
+}
+
 function shouldShowBottomLoader(params: {
   defaultThreadId: string | undefined
   activeThreadId: string | null
@@ -149,6 +222,10 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
   const disconnectNotion = useMutation(api.notion.removeConnection)
 
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null)
+  const liveCodeRuns = useQuery(
+    api.computerUseCodeRuns.getForThread,
+    activeThreadId ? { threadId: activeThreadId } : 'skip',
+  )
   const agentRunState = useQuery(
     api.threads.getAgentRunState,
     activeThreadId ? { threadId: activeThreadId } : 'skip',
@@ -537,6 +614,13 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                       }
                       return part.output
                     })()
+                    const inputCode = rawToolName === 'run_code' ? codeInput(part.input) : null
+                    const matchingCodeRun = inputCode
+                      ? liveCodeRuns?.find((run) =>
+                          run.code === inputCode.code &&
+                          run.description === inputCode.description,
+                        )
+                      : undefined
 
                     return (
                       <Tool key={`${messageKey}-${partIndex}`} defaultOpen={false}>
@@ -546,8 +630,19 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                           state={toolState}
                         />
                         <ToolContent>
-                          <ToolInput input={part.input} />
-                          <ToolOutput output={output} errorText={part.errorText} />
+                          {inputCode ? (
+                            <CodeRunPanel
+                              code={inputCode.code}
+                              description={inputCode.description}
+                              run={matchingCodeRun}
+                              errorText={part.errorText}
+                            />
+                          ) : (
+                            <>
+                              <ToolInput input={part.input} />
+                              <ToolOutput output={output} errorText={part.errorText} />
+                            </>
+                          )}
                         </ToolContent>
                       </Tool>
                     )

@@ -48,4 +48,11 @@ crons.interval(
   {},
 )
 
+crons.interval(
+  "Expire computer-use code runs",
+  { minutes: 15 },
+  internal.computerUseCodeRuns.cleanupExpired,
+  {},
+)
+
 export default crons;

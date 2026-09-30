@@ -1569,29 +1569,59 @@ struct ToolOutputSheet: View {
     let tool: ResponseTool
     let isDarkMode: Bool
     @Environment(\.dismiss) private var dismiss
+    @State private var selectedCodeRunTab = "Code"
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 Group {
                     VStack(alignment: .leading, spacing: Theme.Dimensions.responseSectionSpacing) {
-                            if let inputSummary = tool.inputSummary, !inputSummary.isEmpty {
-                                Text(inputSummary)
-                                    .font(.system(.subheadline))
-                                    .foregroundColor(isDarkMode ? .white.opacity(0.65) : Color.black.opacity(0.6))
-                            }
+                            if tool.name == "run_code" {
+                                Picker("Run details", selection: $selectedCodeRunTab) {
+                                    Text("Code").tag("Code")
+                                    Text("Output").tag("Output")
+                                }
+                                .pickerStyle(.segmented)
 
-                            Text(tool.output ?? tool.errorText ?? "No output yet.")
-                                .font(.system(.body, design: .monospaced))
-                                .foregroundColor(tool.errorText == nil
-                                    ? (isDarkMode ? .white.opacity(0.9) : Color.black.opacity(0.8))
-                                    : .red.opacity(0.82))
-                                .textSelection(.enabled)
-
-                            if tool.outputTruncated == true {
-                                Text("Preview truncated")
-                                    .font(.system(.footnote))
-                                    .foregroundColor(isDarkMode ? .white.opacity(0.55) : Color.black.opacity(0.55))
+                                if selectedCodeRunTab == "Code" {
+                                    Text(tool.inputSummary ?? "No source available.")
+                                        .font(.system(.subheadline, design: .monospaced))
+                                        .foregroundColor(isDarkMode ? .white.opacity(0.75) : Color.black.opacity(0.7))
+                                        .textSelection(.enabled)
+                                } else {
+                                    Text(tool.status.rawValue.capitalized)
+                                        .font(.system(.caption, design: .rounded).weight(.medium))
+                                        .foregroundColor(isDarkMode ? .white.opacity(0.55) : Color.black.opacity(0.55))
+                                    Text(tool.output ?? tool.errorText ?? "Waiting for output…")
+                                        .font(.system(.body, design: .monospaced))
+                                        .foregroundColor(tool.errorText == nil
+                                            ? (isDarkMode ? .white.opacity(0.9) : Color.black.opacity(0.8))
+                                            : .red.opacity(0.82))
+                                        .textSelection(.enabled)
+                                    if tool.outputTruncated == true {
+                                        Text("Preview truncated")
+                                            .font(.system(.footnote))
+                                            .foregroundColor(isDarkMode ? .white.opacity(0.55) : Color.black.opacity(0.55))
+                                    }
+                                }
+                            } else {
+                                if let inputSummary = tool.inputSummary, !inputSummary.isEmpty {
+                                    Text(inputSummary)
+                                        .font(.system(.subheadline, design: .default))
+                                        .foregroundColor(isDarkMode ? .white.opacity(0.65) : Color.black.opacity(0.6))
+                                        .textSelection(.enabled)
+                                }
+                                Text(tool.output ?? tool.errorText ?? "No output yet.")
+                                    .font(.system(.body, design: .monospaced))
+                                    .foregroundColor(tool.errorText == nil
+                                        ? (isDarkMode ? .white.opacity(0.9) : Color.black.opacity(0.8))
+                                        : .red.opacity(0.82))
+                                    .textSelection(.enabled)
+                                if tool.outputTruncated == true {
+                                    Text("Preview truncated")
+                                        .font(.system(.footnote))
+                                        .foregroundColor(isDarkMode ? .white.opacity(0.55) : Color.black.opacity(0.55))
+                                }
                             }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)

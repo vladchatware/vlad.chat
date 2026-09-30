@@ -22,11 +22,18 @@ export {
 } from "./tools";
 export { registerComputerUseMcpTools } from "./mcp-tools";
 export {
+  signCodeModeGrant,
+  verifyCodeModeGrant,
+  type CodeModeGrant,
+} from "./code-mode";
+export {
   computerSessionAls,
   computerSessionFromRequest,
   computerThreadFromRequest,
   resolveMcpComputerSessionKey,
   resolveMcpComputerThreadId,
+  resolveCodeModeGrant,
+  resolveCodeModeGrantToken,
 } from "./mcp-session";
 export {
   computerUseEnabled,
@@ -47,4 +54,5 @@ export {
   COMPUTER_USE_SKILL_BODY,
   computerUseInstruction,
   hasComputerUseTools,
+  hasCodeModeTools,
 } from "./skill";

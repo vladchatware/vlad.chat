@@ -81,6 +81,14 @@ export type MobileMessage = {
   attachments?: MobileAttachment[];
 };
 
+export type MobileCodeRun = {
+  status: "running" | "completed" | "failed" | "stopped" | "interrupted";
+  stdout: string;
+  stderr: string;
+  outputTruncated: boolean;
+  errorText?: string;
+};
+
 type MobileAttachment = {
   id: string;
   type: "image" | "document";
@@ -144,6 +152,39 @@ export function toolOutputText(output: unknown): string {
     }
   }
   return output == null ? "" : String(output);
+}
+
+/** Join the current persistent execution logs onto its ordered run_code tool row. */
+export function attachCodeRunProgress(
+  messages: MobileMessage[],
+  run: MobileCodeRun,
+): MobileMessage[] {
+  const output = [
+    run.stdout ? `stdout:\n${run.stdout}` : "",
+    run.stderr ? `stderr:\n${run.stderr}` : "",
+  ].filter(Boolean).join("\n\n");
+  const status: MobileToolStatus = run.status === "interrupted" ? "failed" : run.status;
+  return messages.map((message) => {
+    const response = message.response;
+    if (!response) return message;
+    const matching = (tool: MobileTool) =>
+      tool.name === "run_code" && tool.status === "running";
+    const update = (tool: MobileTool): MobileTool => {
+      if (!matching(tool)) return tool;
+      return {
+        ...tool,
+        status,
+        ...(output ? { output: truncateToolOutput(output) } : {}),
+        outputTruncated: run.outputTruncated || output.length > MAX_TOOL_OUTPUT_CHARS,
+        ...(run.errorText ? { errorText: run.errorText } : {}),
+      };
+    };
+    const tools = response.tools.map(update);
+    const parts = response.parts.map((part) =>
+      part.type === "tool" ? { ...part, tool: update(part.tool) } : part,
+    );
+    return { ...message, response: { ...response, tools, parts } };
+  });
 }
 
 type OrderState = {
@@ -259,7 +300,7 @@ function storedPartID(state: OrderState, type: MobileTextPart["type"]): string {
   return `stored:${type}:${index}`;
 }
 
-function summarizeToolInput(input: unknown): string | undefined {
+function summarizeToolInput(input: unknown, name?: string): string | undefined {
   if (typeof input === "string") {
     return input.trim() || undefined;
   }
@@ -268,6 +309,12 @@ function summarizeToolInput(input: unknown): string | undefined {
   }
 
   const record = input as Record<string, unknown>;
+  if (name === "run_code" && typeof record.code === "string") {
+    const description = typeof record.description === "string" && record.description.trim()
+      ? `// ${record.description.trim()}\n\n`
+      : "";
+    return `${description}${record.code}`.slice(0, 64 * 1024);
+  }
   for (const key of ["query", "searchQuery", "url", "title"]) {
     if (typeof record[key] === "string" && record[key].trim()) {
       return record[key].trim();
@@ -357,7 +404,7 @@ function applyPart(state: OrderState, part: UIMessageChunk) {
         id: part.toolCallId,
         name: part.toolName,
         status: "running",
-        inputSummary: summarizeToolInput(part.input),
+        inputSummary: summarizeToolInput(part.input, part.toolName),
         title: part.title,
       });
       state.phase = "tool";
@@ -367,7 +414,7 @@ function applyPart(state: OrderState, part: UIMessageChunk) {
         id: part.toolCallId,
         name: part.toolName,
         status: "failed",
-        inputSummary: summarizeToolInput(part.input),
+        inputSummary: summarizeToolInput(part.input, part.toolName),
         errorText: part.errorText,
         title: part.title,
       });
@@ -489,7 +536,9 @@ function projectStoredPart(state: OrderState, part: MobileUIMessagePart) {
           name: toolName(toolPart),
           status,
           title: toolPart.title,
-          inputSummary: hasInput ? summarizeToolInput(toolPart.input) : undefined,
+          inputSummary: hasInput
+            ? summarizeToolInput(toolPart.input, toolName(toolPart))
+            : undefined,
           ...(hasOutput ? toolOutputFields(output) : {}),
           errorText: hasError ? toolPart.errorText : undefined,
         });
