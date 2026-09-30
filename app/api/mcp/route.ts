@@ -9,6 +9,7 @@ import { authenticateProviderRequest } from "@/lib/provider-auth"
 import { bearerToken } from "@/lib/api-key"
 import {
   canUseCodeMode,
+  computerUseToolsAvailable,
   computerSessionAls,
   computerSessionFromRequest,
   computerThreadFromRequest,
