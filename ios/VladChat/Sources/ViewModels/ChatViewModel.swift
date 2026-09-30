@@ -31,6 +31,8 @@ final class ChatViewModel: ObservableObject {
     @Published var pendingImageThumbnails: [String: String] = [:]
     @Published var account: MobileAccount?
     @Published var usageSummary: MobileUsageSummary?
+    @Published private(set) var agentRunStatus: AgentRunStatus?
+    @Published private(set) var isResumingAgentRun = false
     @Published var isLinkingAccount = false
     @Published var isLoggingOut = false
 
@@ -40,6 +42,8 @@ final class ChatViewModel: ObservableObject {
     private var authProvider: ConvexAnonymousAuthProvider?
     private var subscriptionTask: Task<Void, Never>?
     private var usageSubscriptionTask: Task<Void, Never>?
+    private var agentRunSubscriptionTask: Task<Void, Never>?
+    private var agentRunSubscriptionThreadId: String?
     private var presentationTask: Task<Void, Never>?
     private var presentationTaskID: UUID?
     private var pendingMobileChat: MobileChat?
@@ -164,12 +168,12 @@ final class ChatViewModel: ObservableObject {
                 )
                 guard activeGenerationID == generationID else { return }
                 localGenerationExpectedOrder = result.order
-                if hasObservedLocalGeneration(order: result.order) {
+                if let order = result.order, hasObservedLocalGeneration(order: order) {
                     localGenerationActive = false
                     localGenerationExpectedOrder = nil
                     localGenerationPreviousMaxOrder = nil
                     localGenerationMessageID = nil
-                    isLoading = hasActiveObservedResponse(order: result.order)
+                    isLoading = hasActiveObservedResponse(order: order)
                 }
             } catch {
                 guard !Task.isCancelled else { return }
@@ -206,19 +210,35 @@ final class ChatViewModel: ObservableObject {
         localGenerationMessageID = nil
         isLoading = false
         guard let client, let threadId = currentChat?.id else { return }
-        let activeOrder = currentChat?.messages
-            .last(where: { $0.role == .assistant && $0.isStreaming })
-            .flatMap { messageOrders[$0.id] }
         Task { [weak self] in
             do {
-                var arguments: [String: ConvexEncodable?] = ["threadId": threadId]
-                if let activeOrder { arguments["order"] = activeOrder }
-                let _: AbortReplyResult = try await client.mutation(
-                    "threads:abortReply",
-                    with: arguments
+                let _: StopThreadResult = try await client.mutation(
+                    "threads:stopThread",
+                    with: ["threadId": threadId]
                 )
             } catch {
                 self?.attachmentError = Self.userFacingMessage(for: error)
+            }
+        }
+    }
+
+    func resumeAgentRun() {
+        guard !isResumingAgentRun,
+              let client,
+              let threadId = currentChat?.id,
+              agentRunStatus == .paused else { return }
+        isResumingAgentRun = true
+        Task { [weak self] in
+            guard let self else { return }
+            defer { isResumingAgentRun = false }
+            do {
+                let result: ResumeThreadResult = try await client.mutation(
+                    "threads:resumeThread",
+                    with: ["threadId": threadId]
+                )
+                agentRunStatus = result.status
+            } catch {
+                attachmentError = Self.userFacingMessage(for: error)
             }
         }
     }
@@ -375,6 +395,9 @@ final class ChatViewModel: ObservableObject {
             defer { isLoggingOut = false }
             subscriptionTask?.cancel()
             usageSubscriptionTask?.cancel()
+            agentRunSubscriptionTask?.cancel()
+            agentRunSubscriptionThreadId = nil
+            agentRunStatus = nil
             await client.logout()
             do {
                 if case .failure(let error) = await client.login() {
@@ -447,10 +470,16 @@ final class ChatViewModel: ObservableObject {
     ) {
         subscriptionTask?.cancel()
         usageSubscriptionTask?.cancel()
+        agentRunSubscriptionTask?.cancel()
+        agentRunSubscriptionThreadId = nil
+        agentRunStatus = nil
         presentationTask?.cancel()
         presentationTask = nil
         presentationTaskID = nil
         pendingMobileChat = nil
+        if let threadId {
+            subscribeToAgentRunState(using: client, threadId: threadId)
+        }
         messageOrders = [:]
         streamingChunkers = [:]
         streamingContent = [:]
@@ -551,8 +580,7 @@ final class ChatViewModel: ObservableObject {
 
     private func apply(_ mobileChat: MobileChat) {
         account = mobileChat.account
-        if let expectedOrder = localGenerationExpectedOrder,
-           hasObservedLocalGeneration(in: mobileChat, order: expectedOrder) {
+        if hasObservedLocalGeneration(in: mobileChat, order: localGenerationExpectedOrder) {
             localGenerationActive = false
             localGenerationExpectedOrder = nil
             localGenerationPreviousMaxOrder = nil
@@ -689,7 +717,51 @@ final class ChatViewModel: ObservableObject {
             )
         }
         currentChat = chats.first(where: { $0.id == selectedId })
+        if let client {
+            subscribeToAgentRunState(using: client, threadId: selectedId)
+        }
         scrollToBottomTrigger = UUID()
+    }
+
+    private func subscribeToAgentRunState(
+        using client: ConvexClientWithAuth<ConvexAuthSession>,
+        threadId: String?
+    ) {
+        guard agentRunSubscriptionThreadId != threadId else { return }
+        agentRunSubscriptionTask?.cancel()
+        agentRunSubscriptionTask = nil
+        agentRunSubscriptionThreadId = threadId
+        agentRunStatus = nil
+        guard let threadId else { return }
+
+        agentRunSubscriptionTask = Task { [weak self] in
+            var retryDelay: UInt64 = 1_000_000_000
+            while !Task.isCancelled {
+                do {
+                    let updates = client.subscribe(
+                        to: "threads:getAgentRunState",
+                        with: ["threadId": threadId],
+                        yielding: AgentRunState?.self
+                    ).values
+                    for try await state in updates {
+                        guard !Task.isCancelled else { return }
+                        guard self?.agentRunSubscriptionThreadId == threadId else { return }
+                        self?.agentRunStatus = state?.status
+                        retryDelay = 1_000_000_000
+                        if self?.attachmentError?.hasPrefix("Run state sync failed:") == true {
+                            self?.attachmentError = nil
+                        }
+                    }
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    guard self?.agentRunSubscriptionThreadId == threadId else { return }
+                    self?.attachmentError = "Run state sync failed: \(Self.userFacingMessage(for: error))"
+                }
+                guard !Task.isCancelled else { return }
+                try? await Task.sleep(nanoseconds: retryDelay)
+                retryDelay = min(retryDelay * 2, 30_000_000_000)
+            }
+        }
     }
 
     func updateComputerUseSession(from mobileChat: MobileChat, isActive: Bool) {
@@ -856,10 +928,20 @@ final class ChatViewModel: ObservableObject {
         } ?? false
     }
 
-    private func hasObservedLocalGeneration(in mobileChat: MobileChat, order: Double) -> Bool {
+    private func hasObservedLocalGeneration(in mobileChat: MobileChat, order: Double?) -> Bool {
+        if let order {
+            return hasObservedLocalGeneration(in: mobileChat, order: order)
+        }
+
         let previousMaxOrder = localGenerationPreviousMaxOrder ?? -.infinity
+        guard let optimisticText = currentChat?.messages.last(where: {
+            $0.role == .user && $0.id.hasPrefix("optimistic-")
+        })?.content else {
+            return false
+        }
+
         return mobileChat.messages.contains {
-            !$0.isUser && $0.order >= order && $0.order > previousMaxOrder
+            $0.isUser && $0.text == optimisticText && $0.order > previousMaxOrder
         }
     }
 

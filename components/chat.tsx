@@ -32,7 +32,7 @@ import { Fragment, useEffect, useMemo, useRef, useState, useCallback, type Compo
 import { AnimatePresence, motion } from 'motion/react';
 import { useUIMessages } from '@convex-dev/agent/react';
 import { Response } from '@/components/ai-elements/response';
-import { AlertCircleIcon, BarChart3Icon, CopyIcon, KeyRoundIcon, MessageCircleIcon, RefreshCcwIcon } from 'lucide-react';
+import { AlertCircleIcon, BarChart3Icon, CopyIcon, KeyRoundIcon, MessageCircleIcon, PlayIcon, RefreshCcwIcon, SquareIcon } from 'lucide-react';
 import { SiNotion } from '@icons-pack/react-simple-icons';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
@@ -141,12 +141,21 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
   const user = useQuery(api.users.viewer)
   const defaultThreadId = useQuery(api.threads.getDefaultThreadId)
   const generateReply = useAction(api.threads.generateReply)
-  const abortReply = useMutation(api.threads.abortReply)
+  const stopAgentRun = useMutation(api.threads.stopThread)
+  const resumeAgentRun = useMutation(api.threads.resumeThread)
+  const steerAgentRun = useMutation(api.threads.steerThread)
   const { signIn } = useAuthActions()
   const notionConn = useQuery(api.notion.getConnection)
   const disconnectNotion = useMutation(api.notion.removeConnection)
 
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null)
+  const agentRunState = useQuery(
+    api.threads.getAgentRunState,
+    activeThreadId ? { threadId: activeThreadId } : 'skip',
+  )
+  const queuedRuns = agentRunState?.queuedRuns ?? []
+  const steeringNotes = agentRunState?.steeringNotes ?? []
+  const failedQueuedRuns = agentRunState?.failedQueuedRuns ?? []
   const [showSuggestions, setShowSuggestions] = useState(true)
   const [input, setInput] = useState('');
   const [model, setModel] = useState<string>(models[0].value);
@@ -154,6 +163,7 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
   const [searchEnabled, setSearchEnabled] = useState(false);
   const [submitState, setSubmitState] = useState<'ready' | 'submitted'>('ready')
   const [submitError, setSubmitError] = useState<{ message: string } | null>(null)
+  const [isSteering, setIsSteering] = useState(false)
 
   const {
     results: messages,
@@ -221,6 +231,7 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
         prompt,
         model,
         searchEnabled,
+        threadId: activeThreadId ?? undefined,
       })
       setActiveThreadId(result.threadId)
     } catch (error) {
@@ -231,7 +242,7 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
     } finally {
       setSubmitState('ready')
     }
-  }, [generateReply, model, searchEnabled])
+  }, [activeThreadId, generateReply, model, searchEnabled])
 
   // Auto-send message when page is ready and autoMessage is provided
   useEffect(() => {
@@ -282,18 +293,6 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
     () => (messages ?? []).some((message) => message.status === 'streaming' || message.status === 'pending'),
     [messages],
   )
-  const activeStreamOrder = useMemo(() => {
-    if (!messages) {
-      return null
-    }
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const message = messages[i]
-      if (message.status === 'streaming' || message.status === 'pending') {
-        return message.order
-      }
-    }
-    return null
-  }, [messages])
   const submitStatus = (streamActive ? 'streaming' : submitState) as 'ready' | 'submitted' | 'streaming'
   const showBottomLoader = shouldShowBottomLoader({
     defaultThreadId,
@@ -301,30 +300,64 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
     paginationStatus,
   })
   const handleSubmit = async (message: PromptInputMessage) => {
-    if (submitStatus === 'streaming') {
+    const text = message.text ?? ''
+    if (!text.trim()) {
+      if (agentRunState?.status === 'running') {
+        await handleStop()
+      } else if (agentRunState?.status === 'paused') {
+        await handleResume()
+      }
       return
     }
 
-    if (!message.text) {
-      return;
+    if (submitState === 'submitted') {
+      return
     }
 
     setInput('');
-    await sendPrompt(message.text)
+    await sendPrompt(text)
   };
 
   const handleStop = async () => {
-    if (!activeThreadId || activeStreamOrder === null) {
+    if (!activeThreadId) {
       return
     }
 
     try {
-      await abortReply({
-        threadId: activeThreadId,
-        order: activeStreamOrder,
-      })
+      await stopAgentRun({ threadId: activeThreadId })
     } catch (error) {
       console.error('Failed to stop generation', error)
+    }
+  }
+
+  const handleResume = async () => {
+    if (!activeThreadId) return
+
+    try {
+      setSubmitError(null)
+      await resumeAgentRun({ threadId: activeThreadId })
+    } catch (error) {
+      setSubmitError({ message: getUserFacingErrorMessage(error) })
+    }
+  }
+
+  const handleSteer = async () => {
+    const instruction = input.trim()
+    if (!activeThreadId || !instruction || isSteering) return
+
+    setIsSteering(true)
+    setSubmitError(null)
+    try {
+      await steerAgentRun({
+        threadId: activeThreadId,
+        requestId: crypto.randomUUID(),
+        instruction,
+      })
+      setInput('')
+    } catch (error) {
+      setSubmitError({ message: getUserFacingErrorMessage(error) })
+    } finally {
+      setIsSteering(false)
     }
   }
 
@@ -369,6 +402,34 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
       console.error('Subscribe error:', error);
     }
   }
+
+  const hasDraft = Boolean(input.trim())
+  const runStatus = agentRunState?.status
+  const runAction = !hasDraft && runStatus === 'running'
+    ? 'stop'
+    : !hasDraft && runStatus === 'paused'
+      ? 'resume'
+      : 'send'
+  const isStopping = runStatus === 'stopRequested'
+  const isQueued = !hasDraft && runStatus === 'queued'
+  const runActionLabel = isStopping
+    ? 'Stopping'
+    : isQueued
+      ? 'Run queued'
+      : runAction === 'stop'
+        ? 'Stop run'
+        : runAction === 'resume'
+          ? 'Resume run'
+          : 'Send'
+  const runActionTitle = isStopping
+    ? 'Stopping this run'
+    : isQueued
+      ? 'This run is queued'
+      : runAction === 'stop'
+        ? 'Stop this run and keep its checkpoint for resume'
+        : runAction === 'resume'
+          ? 'Resume this run from its last checkpoint'
+          : 'Send message'
 
   return (
     <>
@@ -601,6 +662,55 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                   )
                 })}
               </AnimatePresence>
+              {queuedRuns.map((queued) => (
+                <Message key={queued.runId} from="user">
+                  <MessageContent>
+                    <Response>
+                      {queued.text ||
+                        `${queued.attachmentCount} ${queued.attachmentCount === 1 ? 'attachment' : 'attachments'}`}
+                    </Response>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      Queued — sends after current response
+                    </div>
+                  </MessageContent>
+                </Message>
+              ))}
+              {steeringNotes.map((note) => (
+                <Message key={note.id} from="user">
+                  <MessageContent>
+                    <Response>{note.text}</Response>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      {note.status === 'pending'
+                        ? 'Steering — applies from the next model step onward'
+                        : 'In effect for this run'}
+                    </div>
+                  </MessageContent>
+                </Message>
+              ))}
+              {failedQueuedRuns.map((failed) => (
+                <Message key={failed.runId} from="user">
+                  <MessageContent>
+                    <Response>
+                      {failed.text ||
+                        `${failed.attachmentCount} ${failed.attachmentCount === 1 ? 'attachment' : 'attachments'}`}
+                    </Response>
+                    <div className="mt-1 text-xs text-destructive">
+                      Could not send: {failed.lastError}
+                    </div>
+                  </MessageContent>
+                </Message>
+              ))}
+              {agentRunState?.status === 'failed' &&
+                agentRunState.runId &&
+                !failedQueuedRuns.some(
+                  (failed) => failed.runId === agentRunState.runId,
+                ) && (
+                  <Message from="assistant">
+                    <MessageContent className="text-sm text-destructive">
+                      This response could not continue: {agentRunState.lastError}
+                    </MessageContent>
+                  </Message>
+                )}
               {showBottomLoader && (
                 <div className="pb-52 flex justify-center text-muted-foreground">
                   <Shimmer as="span" duration={1.5} spread={1.3} className="text-sm">
@@ -668,6 +778,12 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
         <PromptInput onSubmit={handleSubmit} className="mt-2">
           <PromptInputBody>
             <PromptInputTextarea
+              placeholder={
+                agentRunState &&
+                ['running', 'stopRequested', 'paused', 'queued'].includes(agentRunState.status)
+                  ? 'Type a message, then choose Steer or Send'
+                  : undefined
+              }
               onChange={(e) => {
                 setInput(e.target.value)
                 if (submitError) {
@@ -758,19 +874,31 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
               </button>
             </PromptInputTools>
             <div className="flex items-center gap-1">
+              {input.trim() && agentRunState?.runId &&
+                ['running', 'stopRequested', 'paused'].includes(agentRunState.status) && (
+                  <button
+                    type="button"
+                    onClick={() => void handleSteer()}
+                    disabled={isSteering}
+                    className="h-9 rounded-full border px-3 text-sm font-medium transition-colors hover:bg-muted disabled:opacity-50"
+                    title="Apply this direction to the active run at its next model step"
+                  >
+                    {isSteering ? 'Steering…' : 'Steer'}
+                  </button>
+                )}
               <PromptInputSubmit
-                onClick={(event) => {
-                  if (submitStatus === 'streaming') {
-                    event.preventDefault()
-                    void handleStop()
-                  }
-                }}
-                disabled={
-                  (submitStatus === 'ready' && !input)
-                  || submitStatus === 'submitted'
-                }
-                status={submitStatus}
-              />
+                type="submit"
+                disabled={isStopping || isQueued || (runAction === 'send' && (!hasDraft || submitState === 'submitted'))}
+                status={isStopping || isQueued ? 'submitted' : submitState}
+                aria-label={runActionLabel}
+                title={runActionTitle}
+              >
+                {runAction === 'stop'
+                  ? <SquareIcon className="size-4" />
+                  : runAction === 'resume'
+                    ? <PlayIcon className="size-4" />
+                    : undefined}
+              </PromptInputSubmit>
             </div>
           </PromptInputToolbar>
         </PromptInput>

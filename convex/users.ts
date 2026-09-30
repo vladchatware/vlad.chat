@@ -68,6 +68,56 @@ async function usageWindows(
   return { fiveCredits, fiveLimit, weekCredits, weekLimit };
 }
 
+async function enforceUsageGate(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  model: string,
+) {
+  const user = await ctx.db.get(userId);
+  if (!user) throw new ConvexError("User not found.");
+  const now = Date.now();
+
+  if (isPremiumModel(model)) {
+    if (user.isAnonymous || !isActiveSubscription(user)) {
+      throw new ConvexError("This model requires a vlad.chat subscription.");
+    }
+  } else if (!isModelEnabled(model)) {
+    throw new ConvexError("This model is unavailable.");
+  }
+  if (user.isAnonymous) {
+    if ((user.trialMessages ?? 0) <= 0) {
+      throw new ConvexError("You've reached the anonymous message limit. Sign in with Google for unlimited messages.");
+    }
+    return;
+  }
+
+  const subscriber = isActiveSubscription(user);
+  const hasBalance =
+    (user.trialTokens ?? 0) > 0 ||
+    (user.tokens ?? 0) > 0 ||
+    (user.includedCredits ?? 0) > 0 ||
+    subscriber;
+  if (!hasBalance) {
+    throw new ConvexError("You have run out of credits. Buy more to continue.");
+  }
+
+  const windows = await usageWindows(ctx, String(userId), now, subscriber);
+  if (windows.fiveCredits >= windows.fiveLimit) {
+    throw new ConvexError(
+      subscriber
+        ? "You've hit the 5-hour usage cap for your plan. It resets on a rolling basis — try again soon."
+        : "You've hit the free 5-hour usage cap. It resets on a rolling basis — try again soon.",
+    );
+  }
+  if (windows.weekCredits >= windows.weekLimit) {
+    throw new ConvexError(
+      subscriber
+        ? "You've hit the weekly usage cap for your plan. It resets on a rolling basis."
+        : "You've hit the free weekly usage cap. It resets on a rolling basis.",
+    );
+  }
+}
+
 async function recordUsage(
   ctx: MutationCtx,
   userId: string,
@@ -152,52 +202,16 @@ export const usageGate = mutation({
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new ConvexError("Please sign in to continue.");
-    const user = await ctx.db.get(userId);
-    if (!user) throw new ConvexError("User not found.");
-    const now = Date.now();
+    await enforceUsageGate(ctx, userId, args.model);
+    return null;
+  },
+});
 
-    // Premium access is checked first and independently of the operational
-    // enabled flag: premium models are enabled:false by definition, so a
-    // subscriber must not be blocked by the enabled check below.
-    if (isPremiumModel(args.model)) {
-      if (user.isAnonymous || !isActiveSubscription(user)) {
-        throw new ConvexError("This model requires a vlad.chat subscription.");
-      }
-    } else if (!isModelEnabled(args.model)) {
-      throw new ConvexError("This model is unavailable.");
-    }
-    if (user.isAnonymous) {
-      if ((user.trialMessages ?? 0) <= 0) {
-        throw new ConvexError("You've reached the anonymous message limit. Sign in with Google for unlimited messages.");
-      }
-      return null;
-    }
-
-    const subscriber = isActiveSubscription(user);
-    const hasBalance =
-      (user.trialTokens ?? 0) > 0 ||
-      (user.tokens ?? 0) > 0 ||
-      (user.includedCredits ?? 0) > 0 ||
-      subscriber;
-    if (!hasBalance) {
-      throw new ConvexError("You have run out of credits. Buy more to continue.");
-    }
-
-    const windows = await usageWindows(ctx, userId, now, subscriber);
-    if (windows.fiveCredits >= windows.fiveLimit) {
-      throw new ConvexError(
-        subscriber
-          ? "You've hit the 5-hour usage cap for your plan. It resets on a rolling basis — try again soon."
-          : "You've hit the free 5-hour usage cap. It resets on a rolling basis — try again soon.",
-      );
-    }
-    if (windows.weekCredits >= windows.weekLimit) {
-      throw new ConvexError(
-        subscriber
-          ? "You've hit the weekly usage cap for your plan. It resets on a rolling basis."
-          : "You've hit the free weekly usage cap. It resets on a rolling basis.",
-      );
-    }
+export const usageGateForAgentRun = internalMutation({
+  args: { userId: v.id("users"), model: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { userId, model }) => {
+    await enforceUsageGate(ctx, userId, model);
     return null;
   },
 });
@@ -459,6 +473,92 @@ export const usage = mutation({
     return recordUsage(ctx, userId, { ...args, source: "chat" });
   },
 })
+
+export const settleAgentRunStep = internalMutation({
+  args: {
+    runId: v.id("agentRuns"),
+    stepNumber: v.number(),
+    model: v.string(),
+    provider: v.string(),
+    order: v.number(),
+    stepOrder: v.number(),
+    hasOutput: v.boolean(),
+    hasToolCalls: v.boolean(),
+    wasInterrupted: v.optional(v.boolean()),
+    toolCallIds: v.array(v.string()),
+    steeringIds: v.array(v.id("agentRunSteering")),
+    usage: usageValidator,
+    providerMetadata: v.optional(vProviderMetadata),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("agentRunSteps")
+      .withIndex("byRunStep", (q) =>
+        q.eq("runId", args.runId).eq("stepNumber", args.stepNumber),
+      )
+      .unique();
+    if (existing) return null;
+
+    const run = await ctx.db.get(args.runId);
+    if (!run) throw new ConvexError("Agent run not found.");
+    if (args.stepNumber !== run.stepCount + 1) {
+      throw new ConvexError("Agent run checkpoint is out of sequence.");
+    }
+
+    const user = await ctx.db.get(run.userId);
+    if (!user) throw new ConvexError("User not found.");
+
+    if (user.isAnonymous) {
+      if (args.hasOutput && !run.anonymousMessageBilled) {
+        const trialMessages = Math.max(0, user.trialMessages ?? 0);
+        if (trialMessages > 0) {
+          await ctx.db.patch(user._id, { trialMessages: trialMessages - 1 });
+        }
+        await ctx.db.patch(run._id, { anonymousMessageBilled: true });
+      }
+    } else {
+      await recordUsage(ctx, run.userId, {
+        model: args.model,
+        provider: args.provider,
+        usage: args.usage,
+        providerMetadata: args.providerMetadata,
+        source: "chat",
+      });
+    }
+
+    await ctx.db.insert("agentRunSteps", {
+      runId: run._id,
+      stepNumber: args.stepNumber,
+      model: args.model,
+      provider: args.provider,
+      order: args.order,
+      stepOrder: args.stepOrder,
+      hasOutput: args.hasOutput,
+      hasToolCalls: args.hasToolCalls,
+      toolCallIds: args.toolCallIds,
+      steeringIds: args.steeringIds,
+      usage: args.usage,
+      providerMetadata: args.providerMetadata,
+      createdAt: Date.now(),
+    });
+    await ctx.db.patch(run._id, {
+      stepCount: args.stepNumber,
+      inFlightAttempt: undefined,
+      inFlightStep: undefined,
+      inFlightPhase: undefined,
+      inFlightStreamId: undefined,
+      inFlightStepOrder: undefined,
+      inFlightSteeringIds: undefined,
+      continueAfterStop: args.wasInterrupted ?? false,
+      updatedAt: Date.now(),
+    });
+    await Promise.all(args.steeringIds.map((steeringId) =>
+      ctx.db.patch(steeringId, { status: "applied", appliedAt: Date.now() }),
+    ));
+    return null;
+  },
+});
 
 export const listApiKeys = query({
   args: {},

@@ -32,6 +32,16 @@ struct MessageInputView: View {
         !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !viewModel.pendingAttachments.isEmpty
     }
+    private var isAgentRunActionPending: Bool {
+        viewModel.agentRunStatus == .stopRequested
+            || viewModel.agentRunStatus == .queued
+            || viewModel.isResumingAgentRun
+    }
+    private var canResumeAgentRun: Bool {
+        viewModel.agentRunStatus == .paused
+            && !hasDraftContent
+            && !dictationService.isActive
+    }
 
     // Attachment picker state
     @State private var showDocumentPicker = false
@@ -191,14 +201,24 @@ struct MessageInputView: View {
             Image(systemName: composerActionSymbol)
         }
         .buttonStyle(ComposerIconButtonStyle(
-            isProminent: viewModel.isLoading || hasDraftContent || dictationService.isActive,
+            isProminent: viewModel.isLoading
+                || viewModel.agentRunStatus == .running
+                || canResumeAgentRun
+                || hasDraftContent
+                || dictationService.isActive,
             isDarkMode: isDarkMode,
             surfaceAlignment: .bottomTrailing
         ))
         .padding(.trailing, 8)
+        .disabled(isAgentRunActionPending)
         .accessibilityLabel(composerActionLabel)
         .accessibilityValue(
-            viewModel.isLoading ? "Generating"
+            viewModel.agentRunStatus == .stopRequested ? "Stopping run"
+                : viewModel.agentRunStatus == .queued ? "Run queued"
+                : viewModel.isResumingAgentRun ? "Resuming run"
+                : canResumeAgentRun ? "Run paused"
+                : viewModel.agentRunStatus == .running ? "Run active"
+                : viewModel.isLoading ? "Generating"
                 : dictationService.isFinalizing ? "Finishing dictation"
                 : dictationService.isRecording ? "Dictating"
                 : dictationService.isStarting ? "Starting dictation"
@@ -209,13 +229,20 @@ struct MessageInputView: View {
     }
 
     private var composerActionSymbol: String {
-        if viewModel.isLoading { return "stop.fill" }
+        if isAgentRunActionPending { return "ellipsis" }
+        if canResumeAgentRun { return "play.fill" }
+        if viewModel.agentRunStatus == .running || viewModel.isLoading { return "stop.fill" }
         if dictationService.isRecording { return "stop.fill" }
         if dictationService.isFinalizing || dictationService.isStarting { return "ellipsis" }
         return hasDraftContent ? "arrow.up" : "mic.fill"
     }
 
     private var composerActionLabel: String {
+        if viewModel.agentRunStatus == .stopRequested { return "Stopping run" }
+        if viewModel.agentRunStatus == .queued { return "Run queued" }
+        if viewModel.isResumingAgentRun { return "Resuming run" }
+        if canResumeAgentRun { return "Resume run" }
+        if viewModel.agentRunStatus == .running { return "Stop run" }
         if viewModel.isLoading { return "Stop generation" }
         if dictationService.isRecording { return "Stop dictation" }
         if dictationService.isFinalizing { return "Finishing dictation" }
@@ -224,6 +251,11 @@ struct MessageInputView: View {
     }
 
     private var composerActionHint: String {
+        if viewModel.agentRunStatus == .stopRequested { return "Saving this run's checkpoint" }
+        if viewModel.agentRunStatus == .queued { return "This run is waiting to start" }
+        if viewModel.isResumingAgentRun { return "Resuming from the saved checkpoint" }
+        if canResumeAgentRun { return "Continues this run from its saved checkpoint" }
+        if viewModel.agentRunStatus == .running { return "Stops this run and saves its checkpoint" }
         if viewModel.isLoading { return "Stops the response" }
         if dictationService.isRecording { return "Stops dictation and keeps the recognized text" }
         if dictationService.isFinalizing { return "Wait for the recognized text" }
@@ -232,6 +264,11 @@ struct MessageInputView: View {
     }
 
     private var composerActionIdentifier: String {
+        if isAgentRunActionPending {
+            return "agentRunPendingButton"
+        }
+        if canResumeAgentRun { return "resumeAgentRunButton" }
+        if viewModel.agentRunStatus == .running { return "stopAgentRunButton" }
         if viewModel.isLoading { return "stopGenerationButton" }
         if dictationService.isRecording { return "stopDictationButton" }
         if dictationService.isFinalizing { return "dictationFinalizingButton" }
@@ -328,7 +365,11 @@ struct MessageInputView: View {
     }
 
     private func handleComposerAction() {
-        if viewModel.isLoading {
+        if isAgentRunActionPending {
+            return
+        } else if canResumeAgentRun {
+            viewModel.resumeAgentRun()
+        } else if viewModel.agentRunStatus == .running || viewModel.isLoading {
             viewModel.cancelGeneration()
         } else if dictationService.isRecording {
             dictationService.stop()
