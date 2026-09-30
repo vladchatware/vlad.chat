@@ -29,6 +29,55 @@ struct ComputerComposerTopPreferenceKey: PreferenceKey {
     }
 }
 
+private struct NavigationBarFrameReader: UIViewRepresentable {
+    let onBottomChange: (CGFloat) -> Void
+
+    func makeUIView(context: Context) -> NavigationBarFrameProbeView {
+        let view = NavigationBarFrameProbeView()
+        view.onBottomChange = onBottomChange
+        return view
+    }
+
+    func updateUIView(_ uiView: NavigationBarFrameProbeView, context: Context) {
+        uiView.onBottomChange = onBottomChange
+        uiView.reportNavigationBarFrame()
+    }
+}
+
+private final class NavigationBarFrameProbeView: UIView {
+    var onBottomChange: ((CGFloat) -> Void)?
+    private var lastReportedBottom: CGFloat?
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        reportNavigationBarFrame()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        reportNavigationBarFrame()
+    }
+
+    func reportNavigationBarFrame() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let window = self.window else { return }
+
+            var responder: UIResponder? = self
+            while let current = responder {
+                if let navigationController = current as? UINavigationController {
+                    let navigationBar = navigationController.navigationBar
+                    let bottom = navigationBar.convert(navigationBar.bounds, to: window).maxY
+                    guard bottom != self.lastReportedBottom else { return }
+                    self.lastReportedBottom = bottom
+                    self.onBottomChange?(bottom)
+                    return
+                }
+                responder = current.next
+            }
+        }
+    }
+}
+
 @MainActor
 final class ComputerUseSessionController: NSObject, ObservableObject, WKNavigationDelegate, WKScriptMessageHandler {
     @Published private(set) var state = ComputerConnectionState.idle
@@ -697,6 +746,7 @@ struct ComputerUseViewerOverlay: View {
     @State private var tuckedSide: TuckedSide = .trailing
     @State private var tuckedTop: CGFloat = 12
     @State private var isTuckedHandleVisible = false
+    @State private var navigationBarBottom: CGFloat?
 #if DEBUG
     @State private var isSamplingDragMotion = false
     @State private var dragMotionSamples: [String] = []
@@ -720,6 +770,12 @@ struct ComputerUseViewerOverlay: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            .background {
+                NavigationBarFrameReader { bottom in
+                    navigationBarBottom = bottom
+                }
+                .frame(width: 0, height: 0)
+            }
         }
     }
 
@@ -944,7 +1000,10 @@ struct ComputerUseViewerOverlay: View {
     }
 
     private func topDock(geometry: GeometryProxy) -> CGFloat {
-        geometry.safeAreaInsets.top + Self.navigationBarHeight + Self.dockSpacing
+        let measuredTop = navigationBarBottom.map {
+            $0 - geometry.frame(in: .global).minY
+        } ?? (geometry.safeAreaInsets.top + Self.navigationBarHeight)
+        return measuredTop + Self.dockSpacing
     }
 
     private var floatingPinch: some Gesture {
