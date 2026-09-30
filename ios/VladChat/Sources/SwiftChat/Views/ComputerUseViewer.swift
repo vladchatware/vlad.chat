@@ -88,6 +88,8 @@ final class ComputerUseSessionController: NSObject, ObservableObject, WKNavigati
     @Published private(set) var errorMessage: String?
     @Published private(set) var cursor = CGPoint(x: 0.5, y: 0.5)
 
+    @Published private(set) var activeModifiers: Set<String> = []
+
     let webView: WKWebView
     private let scriptMessageProxy = WeakVNCMessageHandler()
     private var sessionID: String?
@@ -166,6 +168,7 @@ final class ComputerUseSessionController: NSObject, ObservableObject, WKNavigati
             return
         }
         if self.sessionID == sessionID, viewerURL == url, state != .failed, state != .ended { return }
+        releaseKeyboardModifiers()
         releasePointer()
         self.sessionID = sessionID
         owningThreadID = threadID
@@ -196,6 +199,7 @@ final class ComputerUseSessionController: NSObject, ObservableObject, WKNavigati
 
     func showFailure(_ message: String, sessionID: String, threadID: String?) {
         cancelConnectionDeadline()
+        releaseKeyboardModifiers()
         releasePointer()
         activeNavigation = nil
         activeNavigationID = nil
@@ -212,6 +216,7 @@ final class ComputerUseSessionController: NSObject, ObservableObject, WKNavigati
     func markEndedIfActive(message: String = "This computer session has ended. Start a new computer session to continue.") {
         guard sessionID != nil, state != .idle, state != .ended else { return }
         cancelConnectionDeadline()
+        releaseKeyboardModifiers()
         releasePointer()
         activeNavigation = nil
         activeNavigationID = nil
@@ -224,11 +229,16 @@ final class ComputerUseSessionController: NSObject, ObservableObject, WKNavigati
 
     func updateAgentState(isActive: Bool, needsUser: Bool) {
         canControl = needsUser || !isActive
-        if !canControl { releasePointer() }
+        if !canControl {
+            releaseKeyboardModifiers()
+            releasePointer()
+        }
     }
 
     func retry() {
         guard let viewerURL else { return }
+        releaseKeyboardModifiers()
+        releasePointer()
         state = .connecting
         errorMessage = nil
         didAutoReconnect = false
@@ -242,6 +252,7 @@ final class ComputerUseSessionController: NSObject, ObservableObject, WKNavigati
         pointerFlushTask?.cancel()
         pointerFlushTask = nil
         pendingPointer = nil
+        releaseKeyboardModifiers()
         releasePointer()
         sessionID = nil
         viewerURL = nil
@@ -267,11 +278,13 @@ final class ComputerUseSessionController: NSObject, ObservableObject, WKNavigati
 
     func collapse() {
         isExpanding = false
+        releaseKeyboardModifiers()
         releasePointer()
         presentation = .floating
     }
 
     func tuck() {
+        releaseKeyboardModifiers()
         releasePointer()
         presentation = .tucked
     }
@@ -322,8 +335,22 @@ final class ComputerUseSessionController: NSObject, ObservableObject, WKNavigati
 
     func sendSpecialKey(_ key: RemoteKey) {
         guard canControl, state.canSendInput else { return }
+        if key.isModifier {
+            let pressed = !activeModifiers.contains(key.code)
+            if pressed { activeModifiers.insert(key.code) }
+            else { activeModifiers.remove(key.code) }
+            webView.evaluateJavaScript("window.vladVNC?.key(\(key.keysym), \(Self.jsonString(key.code)), \(pressed));")
+            return
+        }
         let source = "window.vladVNC?.key(\(key.keysym), \(Self.jsonString(key.code)), true); window.vladVNC?.key(\(key.keysym), \(Self.jsonString(key.code)), false);"
         webView.evaluateJavaScript(source)
+    }
+
+    func releaseKeyboardModifiers() {
+        for key in RemoteKey.accessory where activeModifiers.contains(key.code) {
+            webView.evaluateJavaScript("window.vladVNC?.key(\(key.keysym), \(Self.jsonString(key.code)), false);")
+        }
+        activeModifiers.removeAll()
     }
 
     func sendText(_ value: String) {
@@ -365,6 +392,7 @@ final class ComputerUseSessionController: NSObject, ObservableObject, WKNavigati
 
     private func fail(_ message: String) {
         cancelConnectionDeadline()
+        releaseKeyboardModifiers()
         releasePointer()
         activeNavigation = nil
         activeNavigationID = nil
@@ -397,6 +425,7 @@ final class ComputerUseSessionController: NSObject, ObservableObject, WKNavigati
 
     private func reconnectIfNeeded() {
         guard state == .live || state == .connecting else { return }
+        releaseKeyboardModifiers()
         releasePointer()
         state = .reconnecting
         errorMessage = "Connection interrupted. Reconnecting…"
@@ -476,7 +505,8 @@ struct RemoteKey: Identifiable {
     let label: String
     let code: String
     let keysym: Int
-    var id: String { label }
+    var id: String { code }
+    var isModifier: Bool { ["ControlLeft", "AltLeft", "ShiftLeft"].contains(code) }
 
     static let accessory: [RemoteKey] = [
         .init(label: "Esc", code: "Escape", keysym: 0xFF1B),
@@ -1035,11 +1065,17 @@ struct ComputerUseInspectorScreen: View {
     @ObservedObject var controller: ComputerUseSessionController
     @State private var remoteText = ""
     @FocusState private var textFocused: Bool
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var keyboardFocusRequest = 0
 
     var body: some View {
         VStack(spacing: 0) {
-            ComputerInspectorPreview(controller: controller)
-                .padding(.horizontal, 12)
+            GeometryReader { geometry in
+                ComputerInspectorPreview(controller: controller)
+                    .frame(maxWidth: geometry.size.width, maxHeight: geometry.size.height)
+                    .frame(width: geometry.size.width, height: geometry.size.height)
+            }
+            .padding(.horizontal, 12)
 
             ComputerInspectorControls(controller: controller) {
                 textFocused = true
@@ -1052,8 +1088,9 @@ struct ComputerUseInspectorScreen: View {
                 text: $remoteText,
                 isFocused: $textFocused
             )
-
-            Spacer(minLength: 10)
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            ComputerInspectorKeyAccessory(controller: controller)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(uiColor: .systemBackground))
@@ -1073,17 +1110,46 @@ struct ComputerUseInspectorScreen: View {
                 .accessibilityLabel("Collapse to preview")
             }
         }
-        .task {
-            guard controller.isExpanding else { return }
+        .task(id: keyboardFocusRequest) {
+            // Rotation can dismiss UIKit's keyboard without updating FocusState.
+            // Re-establish focus after the presentation/rotation transition settles.
+            textFocused = false
             do {
-                try await Task.sleep(nanoseconds: 350_000_000)
+                try await Task.sleep(for: .milliseconds(350))
             } catch {
                 return
             }
+            guard controller.presentation == .inspector, scenePhase == .active else { return }
+            textFocused = controller.canControl && controller.state.canSendInput
             controller.finishInspectorExpansion()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
+            guard UIDevice.current.orientation.isValidInterfaceOrientation else { return }
+            keyboardFocusRequest += 1
         }
         .onChange(of: controller.presentation) { _, presentation in
             if presentation != .inspector { textFocused = false }
+        }
+        .onChange(of: textFocused) { _, focused in
+            if !focused { controller.releaseKeyboardModifiers() }
+        }
+        .onChange(of: controller.canControl) { _, canControl in
+            textFocused = canControl && controller.state.canSendInput
+        }
+        .onChange(of: controller.state) { _, state in
+            textFocused = controller.canControl && state.canSendInput
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active {
+                textFocused = false
+                controller.releaseKeyboardModifiers()
+            } else {
+                textFocused = controller.canControl && controller.state.canSendInput
+            }
+        }
+        .onDisappear {
+            textFocused = false
+            controller.releaseKeyboardModifiers()
         }
     }
 }
@@ -1171,32 +1237,50 @@ private struct ComputerInspectorKeyboard: View {
                         for _ in 0..<old.count - new.count { controller.sendSpecialKey(.backspace) }
                     }
                 }
+                .submitLabel(.return)
+                .onSubmit {
+                    controller.sendSpecialKey(.init(label: "Enter", code: "Enter", keysym: 0xFF0D))
+                    isFocused.wrappedValue = true
+                }
                 .textFieldStyle(.roundedBorder)
                 .disabled(!controller.canControl || !controller.state.canSendInput)
                 .accessibilityIdentifier("computerRemoteText")
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    ForEach(RemoteKey.accessory) { key in
-                        Button(key.label) { controller.sendSpecialKey(key) }
-                            .font(.system(size: 13, weight: .medium))
-                            .frame(minWidth: 42, minHeight: 44)
-                            .foregroundStyle(.primary)
-                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
-                            }
-                            .tint(.primary)
-                            .disabled(!controller.canControl || !controller.state.canSendInput)
-                            .accessibilityIdentifier("remoteKey_\(key.code)")
-                    }
-                }
-                .padding(.horizontal, 12)
-            }
         }
         .padding(.horizontal, 12)
-        .padding(.top, 9)
+        .padding(.vertical, 8)
+    }
+}
+
+private struct ComputerInspectorKeyAccessory: View {
+    @ObservedObject var controller: ComputerUseSessionController
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(RemoteKey.accessory) { key in
+                    Button(key.label) { controller.sendSpecialKey(key) }
+                        .font(.system(size: 13, weight: .medium))
+                        .frame(minWidth: 42, minHeight: 44)
+                        .foregroundStyle(.primary)
+                        .background(
+                            controller.activeModifiers.contains(key.code)
+                                ? Color.accentColor.opacity(0.25)
+                                : Color(uiColor: .tertiarySystemFill),
+                            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        )
+                        .buttonStyle(.plain)
+                        .disabled(!controller.canControl || !controller.state.canSendInput)
+                        .accessibilityValue(controller.activeModifiers.contains(key.code) ? "Pressed" : "Released")
+                        .accessibilityIdentifier("remoteKey_\(key.code)")
+                }
+            }
+            .padding(.horizontal, 12)
+        }
+        .frame(height: 44)
+        .padding(.vertical, 6)
+        .background(.bar)
+        .accessibilityIdentifier("computerKeyAccessory")
     }
 }
 
