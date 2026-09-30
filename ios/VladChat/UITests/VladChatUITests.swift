@@ -395,7 +395,10 @@ final class VladChatUITests: XCTestCase {
         expand.tap()
         for orientation in [UIDeviceOrientation.portrait, .landscapeLeft] {
             XCUIDevice.shared.orientation = orientation
-            XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+            let visibleKeyboard = NSPredicate { _, _ in
+                self.app.keyboards.firstMatch.exists && self.app.keyboards.firstMatch.frame.height > 0
+            }
+            XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: visibleKeyboard, object: nil)], timeout: 5), .completed)
             let desktop = app.webViews["computerInspectorPreview"]
             let escape = app.buttons["remoteKey_Escape"]
             XCTAssertTrue(desktop.waitForExistence(timeout: 5))

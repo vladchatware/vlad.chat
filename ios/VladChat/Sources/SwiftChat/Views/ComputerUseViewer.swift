@@ -916,6 +916,7 @@ struct ComputerUseInspectorScreen: View {
     @State private var remoteText = ""
     @FocusState private var textFocused: Bool
     @Environment(\.scenePhase) private var scenePhase
+    @State private var keyboardFocusRequest = 0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -937,7 +938,6 @@ struct ComputerUseInspectorScreen: View {
                 text: $remoteText,
                 isFocused: $textFocused
             )
-
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             ComputerInspectorKeyAccessory(controller: controller)
@@ -960,15 +960,22 @@ struct ComputerUseInspectorScreen: View {
                 .accessibilityLabel("Collapse to preview")
             }
         }
-        .task {
-            textFocused = controller.canControl && controller.state.canSendInput
-            guard controller.isExpanding else { return }
+        .task(id: keyboardFocusRequest) {
+            // Rotation can dismiss UIKit's keyboard without updating FocusState.
+            // Re-establish focus after the presentation/rotation transition settles.
+            textFocused = false
             do {
-                try await Task.sleep(nanoseconds: 350_000_000)
+                try await Task.sleep(for: .milliseconds(350))
             } catch {
                 return
             }
+            guard controller.presentation == .inspector, scenePhase == .active else { return }
+            textFocused = controller.canControl && controller.state.canSendInput
             controller.finishInspectorExpansion()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
+            guard UIDevice.current.orientation.isValidInterfaceOrientation else { return }
+            keyboardFocusRequest += 1
         }
         .onChange(of: controller.presentation) { _, presentation in
             if presentation != .inspector { textFocused = false }
