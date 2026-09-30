@@ -104,14 +104,16 @@ type CodeRunView = {
   errorText?: string;
 };
 
-function CodeRunPanel({ code, description, run, errorText }: {
+function CodeRunPanel({ code, description, run, fallbackStatus, persistedOutput, errorText }: {
   code: string;
   description: string;
   run?: CodeRunView;
+  fallbackStatus: CodeRunView['status'];
+  persistedOutput?: string;
   errorText?: string;
 }) {
   const [tab, setTab] = useState<'code' | 'output'>('code');
-  const status = run?.status ?? (errorText ? 'failed' : 'running');
+  const status = run?.status ?? fallbackStatus;
   const statusLabel = status === 'running' ? 'Running'
     : status === 'completed' ? 'Completed'
       : status === 'stopped' ? 'Stopped'
@@ -122,7 +124,7 @@ function CodeRunPanel({ code, description, run, errorText }: {
     run?.returnValue ? `Return value: ${run.returnValue}` : '',
     run?.errorText ?? errorText ?? '',
     run?.outputTruncated ? 'Output truncated at 64 KiB.' : '',
-  ].filter(Boolean).join('\n\n') || (status === 'running' ? 'Waiting for output…' : 'No output.');
+  ].filter(Boolean).join('\n\n') || persistedOutput || (status === 'running' ? 'Waiting for output…' : 'No output.');
 
   return (
     <div className="space-y-2 p-4">
@@ -161,7 +163,12 @@ function codeInput(value: unknown): { code: string; description: string } | null
   if (typeof value !== 'object' || value === null) return null;
   const record = value as Record<string, unknown>;
   return typeof record.code === 'string'
-    ? { code: record.code, description: typeof record.description === 'string' ? record.description : '' }
+    ? {
+        code: record.code,
+        description: typeof record.description === 'string' && record.description.trim()
+          ? record.description.trim()
+          : 'TypeScript sandbox run',
+      }
     : null;
 }
 
@@ -614,8 +621,11 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                       }
                       return part.output
                     })()
+                    const persistedOutput = typeof output === 'string'
+                      ? output
+                      : output == null ? undefined : JSON.stringify(output)
                     const inputCode = rawToolName === 'run_code' ? codeInput(part.input) : null
-                    const matchingCodeRun = inputCode
+                    const matchingCodeRun = inputCode && (toolState === 'input-streaming' || toolState === 'input-available')
                       ? liveCodeRuns?.find((run) =>
                           run.code === inputCode.code &&
                           run.description === inputCode.description,
@@ -635,6 +645,10 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                               code={inputCode.code}
                               description={inputCode.description}
                               run={matchingCodeRun}
+                              fallbackStatus={part.errorText || toolState === 'output-error'
+                                ? 'failed'
+                                : toolState === 'output-available' ? 'completed' : 'running'}
+                              persistedOutput={persistedOutput}
                               errorText={part.errorText}
                             />
                           ) : (

@@ -58,7 +58,7 @@ export function registerComputerUseMcpTools(server: McpToolServer): void {
         .describe("Run deadline in milliseconds; default 60000, maximum 120000."),
     },
     async ({ code, description, timeoutMs }, extra) => {
-      const runDescription = description ?? "TypeScript sandbox run";
+      const runDescription = description?.trim() || "TypeScript sandbox run";
       const result = await runSandboxCode(codeModeGrant.sessionKey, codeModeGrant.threadId, {
         code,
         description: runDescription,

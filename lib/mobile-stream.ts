@@ -82,6 +82,8 @@ export type MobileMessage = {
 };
 
 export type MobileCodeRun = {
+  code: string;
+  description: string;
   status: "running" | "completed" | "failed" | "stopped" | "interrupted";
   stdout: string;
   stderr: string;
@@ -164,13 +166,24 @@ export function attachCodeRunProgress(
     run.stderr ? `stderr:\n${run.stderr}` : "",
   ].filter(Boolean).join("\n\n");
   const status: MobileToolStatus = run.status === "interrupted" ? "failed" : run.status;
+  const inputSummary = `${run.description ? `// ${run.description}\n\n` : ""}${run.code}`.slice(0, 64 * 1024);
+  const isMatchingRun = (tool: MobileTool) =>
+    tool.name === "run_code" &&
+    tool.status === "running" &&
+    run.status === "running" &&
+    tool.inputSummary === inputSummary;
+  let targetToolId: string | undefined;
+  for (const message of messages) {
+    for (const tool of message.response?.tools ?? []) {
+      if (isMatchingRun(tool)) targetToolId = tool.id;
+    }
+  }
+  if (!targetToolId) return messages;
   return messages.map((message) => {
     const response = message.response;
     if (!response) return message;
-    const matching = (tool: MobileTool) =>
-      tool.name === "run_code" && tool.status === "running";
     const update = (tool: MobileTool): MobileTool => {
-      if (!matching(tool)) return tool;
+      if (tool.id !== targetToolId || !isMatchingRun(tool)) return tool;
       return {
         ...tool,
         status,
@@ -310,9 +323,10 @@ function summarizeToolInput(input: unknown, name?: string): string | undefined {
 
   const record = input as Record<string, unknown>;
   if (name === "run_code" && typeof record.code === "string") {
-    const description = typeof record.description === "string" && record.description.trim()
-      ? `// ${record.description.trim()}\n\n`
-      : "";
+    const rawDescription = typeof record.description === "string" && record.description.trim()
+      ? record.description.trim()
+      : "TypeScript sandbox run";
+    const description = `// ${rawDescription}\n\n`;
     return `${description}${record.code}`.slice(0, 64 * 1024);
   }
   for (const key of ["query", "searchQuery", "url", "title"]) {

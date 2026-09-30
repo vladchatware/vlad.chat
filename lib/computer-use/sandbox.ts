@@ -612,7 +612,19 @@ export async function runSandboxCode(
     try {
       const latestMeta = (await sandbox.readFileToBuffer({ path: "/tmp/cu/meta.json" }))?.toString("utf8");
       if (latestMeta && latestMeta !== previousMeta) {
-        screenshot = (await sandbox.readFileToBuffer({ path: "/tmp/cu/shot.jpg" })) ?? undefined;
+        try {
+          screenshot = (await sandbox.readFileToBuffer({ path: "/tmp/cu/shot.jpg" })) ?? undefined;
+        } catch {
+          screenshot = undefined;
+        }
+        if (!screenshot?.length) {
+          screenshot = undefined;
+          try {
+            screenshot = (await sandbox.readFileToBuffer({ path: "/tmp/cu/shot.png" })) ?? undefined;
+          } catch {
+            screenshot = undefined;
+          }
+        }
       }
     } catch {
       screenshot = undefined;
