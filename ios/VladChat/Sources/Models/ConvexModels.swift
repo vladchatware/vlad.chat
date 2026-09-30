@@ -238,6 +238,30 @@ struct StopThreadResult: Decodable, Sendable {
     let status: String
 }
 
+enum AgentRunStatus: String, Decodable, Sendable {
+    case running
+    case stopRequested
+    case paused
+    case queued
+    case completed
+    case failed
+    case idle
+    case unknown
+
+    init(from decoder: Decoder) throws {
+        let value = try decoder.singleValueContainer().decode(String.self)
+        self = Self(rawValue: value) ?? .unknown
+    }
+}
+
+struct AgentRunState: Decodable, Sendable {
+    let status: AgentRunStatus
+}
+
+struct ResumeThreadResult: Decodable, Sendable {
+    let status: AgentRunStatus
+}
+
 struct DeleteMobileMessagesResult: Decodable, Sendable {
     let deleted: Bool
 }
