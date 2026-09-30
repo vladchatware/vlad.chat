@@ -691,6 +691,14 @@ struct ComputerUseViewerOverlay: View {
     @State private var pinchStartWidth: CGFloat?
     @State private var tuckedSide: TuckedSide = .trailing
     @State private var tuckedTop: CGFloat = 12
+#if DEBUG
+    @State private var isSamplingDragMotion = false
+    @State private var dragMotionSamples: [String] = []
+
+    private var capturesDragMotion: Bool {
+        ProcessInfo.processInfo.arguments.contains("--ui-test-computer-viewer")
+    }
+#endif
 
     var body: some View {
         GeometryReader { geometry in
@@ -712,7 +720,8 @@ struct ComputerUseViewerOverlay: View {
 
     private func floatingViewer(geometry: GeometryProxy) -> some View {
         let previewHeight = floatWidth * controller.desktopSize.height / max(1, controller.desktopSize.width)
-        let bottomDockTop = bottomDockTop(previewHeight: previewHeight, geometry: geometry)
+        let restingTop = restingPreviewTop(previewHeight: previewHeight, geometry: geometry)
+        let currentTop = clampedTop(restingTop + dragTranslation.height, height: previewHeight, geometry: geometry)
         return ZStack {
             desktopSurface(cornerRadius: 18)
                 .frame(
@@ -729,6 +738,9 @@ struct ComputerUseViewerOverlay: View {
                 .accessibilityLabel("Open computer inspector")
                 .accessibilityIdentifier("computerExpandTarget")
                 .accessibilityAddTraits(.isButton)
+#if DEBUG
+                .accessibilityValue(dragMotionSamples.joined(separator: ";"))
+#endif
         }
         .frame(width: floatWidth)
         .fixedSize(horizontal: false, vertical: true)
@@ -737,7 +749,7 @@ struct ComputerUseViewerOverlay: View {
         .shadow(color: .black.opacity(0.2), radius: 18, y: 8)
         .offset(
             x: -12 + dockOffset.width + dragTranslation.width,
-            y: bottomDockTop + dockOffset.height + dragTranslation.height
+            y: currentTop
         )
         .accessibilityElement(children: .contain)
     }
@@ -794,17 +806,37 @@ struct ComputerUseViewerOverlay: View {
         DragGesture(minimumDistance: 8, coordinateSpace: .global)
             .onChanged { value in
                 let previewHeight = floatWidth * controller.desktopSize.height / max(1, controller.desktopSize.width)
-                let topDock = topDock(geometry: geometry)
-                let bottomDock = bottomDockTop(previewHeight: previewHeight, geometry: geometry)
-                let startTop = bottomDock + dockOffset.height
+                let startTop = restingPreviewTop(previewHeight: previewHeight, geometry: geometry)
                 let proposedTop = startTop + value.translation.height
-                let clampedTop = min(max(proposedTop, topDock), bottomDock)
+                let boundedTop = clampedTop(proposedTop, height: previewHeight, geometry: geometry)
+#if DEBUG
+                if capturesDragMotion {
+                    if !isSamplingDragMotion {
+                        dragMotionSamples = []
+                        isSamplingDragMotion = true
+                    }
+                    let globalMinY = geometry.frame(in: .global).minY
+                    let topBound = globalMinY + topDock(geometry: geometry)
+                    let bottomBound = globalMinY + bottomDockTop(previewHeight: previewHeight, geometry: geometry) + previewHeight
+                    let frameTop = globalMinY + boundedTop
+                    let sample = [frameTop, frameTop + previewHeight, topBound, bottomBound]
+                        .map { String(Int($0.rounded())) }
+                        .joined(separator: ",")
+                    dragMotionSamples.append(sample)
+                    if dragMotionSamples.count > 120 {
+                        dragMotionSamples.removeFirst(dragMotionSamples.count - 120)
+                    }
+                }
+#endif
                 dragTranslation = CGSize(
                     width: value.translation.width,
-                    height: clampedTop - startTop
+                    height: boundedTop - startTop
                 )
             }
             .onEnded { value in
+#if DEBUG
+                isSamplingDragMotion = false
+#endif
                 guard abs(value.translation.width) >= 8 || abs(value.translation.height) >= 8 else { return }
                 let size = geometry.size
                 let baseLeft = size.width - floatWidth - 12
@@ -812,10 +844,9 @@ struct ComputerUseViewerOverlay: View {
                 if proposedLeft <= -floatWidth * 0.5 || proposedLeft >= size.width - floatWidth * 0.5 {
                     let side: TuckedSide = proposedLeft <= -floatWidth * 0.5 ? .leading : .trailing
                     let previewHeight = floatWidth * controller.desktopSize.height / max(1, controller.desktopSize.width)
-                    let topDock = topDock(geometry: geometry)
                     let bottomDock = bottomDockTop(previewHeight: previewHeight, geometry: geometry)
-                    let proposedTop = bottomDock + dockOffset.height + value.translation.height
-                    let dockTop = min(max(proposedTop, topDock), bottomDock)
+                    let startTop = restingPreviewTop(previewHeight: previewHeight, geometry: geometry)
+                    let dockTop = clampedTop(startTop + value.translation.height, height: previewHeight, geometry: geometry)
                     let dockLeft = side == .leading ? 12 : baseLeft
                     let tabHeight: CGFloat = 64
                     let tabTop = clampedTop(
@@ -833,10 +864,9 @@ struct ComputerUseViewerOverlay: View {
                 } else {
                     let dockLeft = proposedLeft + floatWidth / 2 < size.width / 2 ? 12 : baseLeft
                     let previewHeight = floatWidth * controller.desktopSize.height / max(1, controller.desktopSize.width)
-                    let topDock = topDock(geometry: geometry)
                     let bottomDock = bottomDockTop(previewHeight: previewHeight, geometry: geometry)
-                    let proposedTop = bottomDock + dockOffset.height + value.translation.height
-                    let dockTop = min(max(proposedTop, topDock), bottomDock)
+                    let startTop = restingPreviewTop(previewHeight: previewHeight, geometry: geometry)
+                    let dockTop = clampedTop(startTop + value.translation.height, height: previewHeight, geometry: geometry)
                     withAnimation(dockSettleAnimation) {
                         dockOffset = CGSize(
                             width: dockLeft - baseLeft,
@@ -850,6 +880,13 @@ struct ComputerUseViewerOverlay: View {
 
     private var dockSettleAnimation: Animation? {
         reduceMotion ? nil : .spring(response: 0.38, dampingFraction: 0.82)
+    }
+
+    private func restingPreviewTop(previewHeight: CGFloat, geometry: GeometryProxy) -> CGFloat {
+        let top = topDock(geometry: geometry)
+        let bottom = bottomDockTop(previewHeight: previewHeight, geometry: geometry)
+        let preferred = bottom + dockOffset.height
+        return min(max(preferred, top), bottom)
     }
 
     private func bottomDockTop(previewHeight: CGFloat, geometry: GeometryProxy) -> CGFloat {

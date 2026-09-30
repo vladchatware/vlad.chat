@@ -2,6 +2,10 @@ import XCTest
 
 final class VladChatUITests: XCTestCase {
     private var app: XCUIApplication!
+    private enum PreviewDragBoundary {
+        case header
+        case composer
+    }
 
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -292,6 +296,7 @@ final class VladChatUITests: XCTestCase {
         XCTAssertLessThan(preview.frame.minX, 28)
         XCTAssertEqual(preview.frame.midY, lowerLaneY, accuracy: 20, "A horizontal swipe should preserve the lower vertical position")
         let foldY = preview.frame.midY
+        let foldWidth = preview.frame.width
         floatingWindow.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(
             forDuration: 0.1,
             thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0.78))
@@ -304,10 +309,14 @@ final class VladChatUITests: XCTestCase {
         XCTAssertTrue(preview.waitForExistence(timeout: 5))
         XCTAssertLessThan(preview.frame.minX, 28)
         XCTAssertEqual(preview.frame.midY, foldY, accuracy: 30, "Unfolding should restore preview at its previous position")
+        XCTAssertEqual(preview.frame.width, foldWidth, accuracy: 1, "Unfolding should preserve preview size")
         preview.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(
             forDuration: 0.1,
-            thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.18, dy: 0.1))
+            thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.99)),
+            withVelocity: .slow,
+            thenHoldForDuration: 0.4
         )
+        assertDragMotionStayedWithinBounds(floatingWindow, preview: preview, toward: .composer)
         XCTAssertGreaterThanOrEqual(
             preview.frame.minY,
             header.frame.maxY + 8,
@@ -315,16 +324,16 @@ final class VladChatUITests: XCTestCase {
         )
         preview.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(
             forDuration: 0.1,
-            thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0.1))
+            thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.01)),
+            withVelocity: .slow,
+            thenHoldForDuration: 0.4
         )
-        XCTAssertTrue(restorePreview.waitForExistence(timeout: 5))
-        XCTAssertGreaterThanOrEqual(
-            restorePreview.frame.minY,
-            header.frame.maxY + 8,
-            "A folded tab should stay below the navigation bar"
+        assertDragMotionStayedWithinBounds(floatingWindow, preview: preview, toward: .header)
+        XCTAssertLessThanOrEqual(
+            preview.frame.maxY,
+            composer.frame.minY - 8,
+            "The lower dock should leave room for the composer after release"
         )
-        restorePreview.tap()
-        XCTAssertGreaterThanOrEqual(preview.frame.minY, header.frame.maxY + 8)
         let expandTarget = app.buttons["computerExpandTarget"]
         XCTAssertTrue(expandTarget.waitForExistence(timeout: 5))
         expandTarget.tap()
@@ -405,5 +414,51 @@ final class VladChatUITests: XCTestCase {
     private func launchGallery() {
         app.launchArguments = ["--ui-test-gallery"]
         app.launch()
+    }
+
+    private func assertDragMotionStayedWithinBounds(
+        _ target: XCUIElement,
+        preview: XCUIElement,
+        toward boundary: PreviewDragBoundary,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        guard let trace = target.value as? String else {
+            XCTFail("The active drag should expose motion samples", file: file, line: line)
+            return
+        }
+
+        let attachment = XCTAttachment(string: trace)
+        attachment.name = "V-104 live preview drag frames"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+
+        let samples = trace.split(separator: ";").compactMap { entry -> [Int]? in
+            let values = entry.split(separator: ",").compactMap { Int($0) }
+            return values.count == 4 ? values : nil
+        }
+        XCTAssertGreaterThan(samples.count, 1, "The trace must contain multiple frames from the active drag", file: file, line: line)
+        switch boundary {
+        case .header:
+            let closestHeaderSample = samples.map { abs($0[0] - $0[2]) }.min() ?? Int.max
+            XCTAssertLessThanOrEqual(closestHeaderSample, 1, "The held drag should reach the header boundary", file: file, line: line)
+        case .composer:
+            let closestComposerSample = samples.map { abs($0[3] - $0[1]) }.min() ?? Int.max
+            XCTAssertLessThanOrEqual(closestComposerSample, 1, "The held drag should reach the composer boundary", file: file, line: line)
+        }
+        if let lastSample = samples.last {
+            XCTAssertEqual(
+                preview.frame.minY,
+                CGFloat(lastSample[0]),
+                accuracy: 24,
+                "The preview should remain at the last bounded frame after release",
+                file: file,
+                line: line
+            )
+        }
+        for sample in samples {
+            XCTAssertGreaterThanOrEqual(sample[0], sample[2] - 1, "Preview crossed the header boundary during drag", file: file, line: line)
+            XCTAssertLessThanOrEqual(sample[1], sample[3] + 1, "Preview crossed the composer boundary during drag", file: file, line: line)
+        }
     }
 }
