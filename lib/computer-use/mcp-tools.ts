@@ -39,7 +39,7 @@ export function registerComputerUseMcpTools(server: McpToolServer): void {
 
   server.tool(
     "computer_open",
-    "Open a public URL in the isolated computer-use browser (Vercel Sandbox + Playwright). Returns viewerUrl for noVNC control and nativeViewerUrl for the in-app live viewer; screenshot is deferred to computer_screenshot. Reopens an expired session in a fresh sandbox. Sessions capped at 30 min / 20 steps.",
+    "Open a public URL in the isolated computer-use browser (Vercel Sandbox + Playwright). Viewer and screenshot URLs are internal; the app displays the live session to the user. Screenshot is deferred to computer_screenshot. Reopens an expired session in a fresh sandbox. Sessions capped at 30 min / 20 steps.",
     {
       url: z.string().url().describe("https URL to open"),
       sessionId: sessionIdField,
@@ -54,7 +54,7 @@ export function registerComputerUseMcpTools(server: McpToolServer): void {
 
   server.tool(
     "computer_screenshot",
-    "Capture a light JPEG clip of the computer-use viewport (separate from open). Returns screenshotUrl, viewerUrl, and nativeViewerUrl.",
+    "Capture a light JPEG clip of the computer-use viewport (separate from open). Screenshot and viewer URLs are internal; do not include them in assistant messages.",
     {
       sessionId: sessionIdField,
     },
@@ -68,7 +68,7 @@ export function registerComputerUseMcpTools(server: McpToolServer): void {
 
   server.tool(
     "computer_act",
-    "One browser action (click/type/key/scroll/wait/drag) then a fresh screenshotUrl. Refuses payment/signing text — use computer_handoff. Counts toward the 20-step cap.",
+    "One browser action (click/type/key/scroll/wait/drag) then a fresh screenshot for agent verification. Result URLs are internal; do not include them in assistant messages. Refuses payment/signing text — use computer_handoff. Counts toward the 20-step cap.",
     {
       action: computerActionSchema,
       sessionId: sessionIdField,
