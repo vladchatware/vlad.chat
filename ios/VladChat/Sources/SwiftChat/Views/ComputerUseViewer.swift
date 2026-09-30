@@ -696,6 +696,7 @@ struct ComputerUseViewerOverlay: View {
     @State private var pinchStartWidth: CGFloat?
     @State private var tuckedSide: TuckedSide = .trailing
     @State private var tuckedTop: CGFloat = 12
+    @State private var isTuckedHandleVisible = false
 #if DEBUG
     @State private var isSamplingDragMotion = false
     @State private var dragMotionSamples: [String] = []
@@ -797,9 +798,8 @@ struct ComputerUseViewerOverlay: View {
             .background(handleGradient, in: handleShape)
             .accessibilityHidden(true)
         let button = Button {
-            withAnimation(dockSettleAnimation) {
-                controller.restore()
-            }
+            isTuckedHandleVisible = false
+            controller.restore()
         } label: {
             HStack(spacing: 0) {
                 if tuckedSide == .trailing { Spacer(minLength: 0) }
@@ -820,12 +820,16 @@ struct ComputerUseViewerOverlay: View {
         return VStack(spacing: 0) {
             Color.clear.frame(height: clampedTop(tuckedTop, height: Self.tuckedHandleHeight, geometry: geometry))
             HStack(spacing: 0) {
-                if tuckedSide == .leading {
-                    button
-                    Spacer(minLength: 0)
+                if isTuckedHandleVisible {
+                    if tuckedSide == .leading {
+                        button
+                        Spacer(minLength: 0)
+                    } else {
+                        Spacer(minLength: 0)
+                        button
+                    }
                 } else {
                     Spacer(minLength: 0)
-                    button
                 }
             }
             Spacer(minLength: 0)
@@ -885,12 +889,17 @@ struct ComputerUseViewerOverlay: View {
                         height: tabHeight,
                         geometry: geometry
                     )
-                    withAnimation(dockSettleAnimation) {
+                    withTransaction(Transaction(animation: nil)) {
                         dockOffset = CGSize(width: dockLeft - baseLeft, height: dockTop - bottomDock)
                         dragTranslation = .zero
                         tuckedSide = side
                         tuckedTop = tabTop
                         controller.tuck()
+                    }
+                    DispatchQueue.main.async {
+                        withAnimation(dockSettleAnimation) {
+                            isTuckedHandleVisible = true
+                        }
                     }
                 } else {
                     let dockLeft = proposedLeft + floatWidth / 2 < size.width / 2 ? 12 : baseLeft
