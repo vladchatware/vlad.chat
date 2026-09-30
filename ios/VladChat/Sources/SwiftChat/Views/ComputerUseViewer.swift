@@ -788,9 +788,12 @@ struct ComputerUseViewerOverlay: View {
             startPoint: .top,
             endPoint: .bottom
         )
-        let handle = Image(systemName: tuckedSide == .trailing ? "chevron.left" : "chevron.right")
-            .font(.system(size: 24, weight: .semibold))
-            .foregroundStyle(colorScheme == .dark ? Color.black : Color.white)
+        let handle = TuckChevron(pointsRight: tuckedSide == .leading)
+            .stroke(
+                colorScheme == .dark ? Color.black : Color.white,
+                style: StrokeStyle(lineWidth: 3.25, lineCap: .round, lineJoin: .round)
+            )
+            .frame(width: 10, height: 26)
             .frame(width: Self.tuckedHandleVisibleWidth, height: Self.tuckedHandleHeight)
             .background(handleGradient, in: handleShape)
             .accessibilityHidden(true)
@@ -936,6 +939,20 @@ struct ComputerUseViewerOverlay: View {
                 floatWidth = min(300, max(176, start * scale))
             }
             .onEnded { _ in pinchStartWidth = nil }
+    }
+}
+
+private struct TuckChevron: Shape {
+    let pointsRight: Bool
+
+    func path(in rect: CGRect) -> Path {
+        let outerX = rect.width * (pointsRight ? 0.24 : 0.76)
+        let inwardX = rect.width * (pointsRight ? 0.76 : 0.24)
+        var path = Path()
+        path.move(to: CGPoint(x: outerX, y: rect.minY))
+        path.addLine(to: CGPoint(x: inwardX, y: rect.midY))
+        path.addLine(to: CGPoint(x: outerX, y: rect.maxY))
+        return path
     }
 }
 
