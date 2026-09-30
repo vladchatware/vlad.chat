@@ -88,9 +88,9 @@ function isCodeRunUpdate(value: unknown): value is CodeRunUpdate {
 }
 
 export const save = internalMutation({
-  args: runFields,
+  args: { ...runFields, isAnonymous: v.boolean() },
   returns: v.null(),
-  handler: async (ctx, args) => {
+  handler: async (ctx, { isAnonymous, ...args }) => {
     const userId = ctx.db.normalizeId("users", args.userId);
     if (!userId) throw new Error("Code run grant has invalid user identity.");
     const existing = await ctx.db
@@ -124,8 +124,8 @@ export const save = internalMutation({
       throw new Error("A new code run must start in running state.");
     }
     const user = await ctx.db.get(userId);
-    if (!user || user.isAnonymous) {
-      throw new Error("Code execution requires a signed-in account.");
+    if (!user || Boolean(user.isAnonymous) !== isAnonymous) {
+      throw new Error("Code run grant does not match its user identity.");
     }
     await ctx.db.insert("computerCodeRuns", { ...args, userId });
     return null;
@@ -160,6 +160,7 @@ export const publish = httpAction(async (ctx, request) => {
   let userId: string;
   let sessionKey: string;
   let threadId: string;
+  let isAnonymous: boolean;
   try {
     const { payload } = await jwtVerify(token, new TextEncoder().encode(secret), {
       issuer: GRANT_ISSUER,
@@ -170,6 +171,7 @@ export const publish = httpAction(async (ctx, request) => {
       typeof payload.sub !== "string" ||
       typeof payload.sessionKey !== "string" ||
       typeof payload.threadId !== "string" ||
+      typeof payload.isAnonymous !== "boolean" ||
       payload.sessionKey !== payload.sub
     ) {
       return new Response("Invalid grant", { status: 401 });
@@ -177,6 +179,7 @@ export const publish = httpAction(async (ctx, request) => {
     userId = payload.sub;
     sessionKey = payload.sessionKey;
     threadId = payload.threadId;
+    isAnonymous = payload.isAnonymous;
   } catch {
     return new Response("Invalid grant", { status: 401 });
   }
@@ -216,6 +219,7 @@ export const publish = httpAction(async (ctx, request) => {
     userId,
     sessionKey,
     threadId,
+    isAnonymous,
     description,
     code,
     status: body.status,
