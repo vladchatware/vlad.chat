@@ -367,6 +367,46 @@ final class VladChatUITests: XCTestCase {
         XCTAssertTrue(expandTarget.isHittable)
     }
 
+    func testInspectorAutomaticallyFocusesKeyboardAndReleasesModifiersAcrossReopen() {
+        app.launchArguments = ["--ui-test-computer-viewer"]
+        app.launch()
+        let expand = app.buttons["computerExpandTarget"]
+        XCTAssertTrue(expand.waitForExistence(timeout: 5))
+        expand.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        let control = app.buttons["remoteKey_ControlLeft"]
+        XCTAssertTrue(control.waitForExistence(timeout: 5))
+        control.tap()
+        XCTAssertEqual(control.value as? String, "Pressed")
+        app.buttons["Collapse to preview"].tap()
+        XCTAssertTrue(expand.waitForExistence(timeout: 5))
+        expand.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertEqual(control.value as? String, "Released")
+    }
+
+    func testInspectorKeepsPreviewAndAccessoryVisibleWithKeyboardInBothOrientations() {
+        app.launchArguments = ["--ui-test-computer-viewer"]
+        XCUIDevice.shared.orientation = .portrait
+        defer { XCUIDevice.shared.orientation = .portrait }
+        app.launch()
+        let expand = app.buttons["computerExpandTarget"]
+        XCTAssertTrue(expand.waitForExistence(timeout: 5))
+        expand.tap()
+        for orientation in [UIDeviceOrientation.portrait, .landscapeLeft] {
+            XCUIDevice.shared.orientation = orientation
+            XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+            let desktop = app.webViews["computerInspectorPreview"]
+            let escape = app.buttons["remoteKey_Escape"]
+            XCTAssertTrue(desktop.waitForExistence(timeout: 5))
+            XCTAssertTrue(escape.isHittable)
+            XCTAssertTrue(app.buttons["Click"].isHittable)
+            XCTAssertGreaterThan(desktop.frame.height, 0)
+            XCTAssertLessThanOrEqual(desktop.frame.maxY, escape.frame.minY)
+            XCTAssertLessThanOrEqual(escape.frame.maxY, app.keyboards.firstMatch.frame.minY)
+        }
+    }
+
     func testOpeningInspectorShowsLoadingWhileVNCConnects() {
         app.launchArguments = ["--ui-test-computer-viewer-connecting"]
         app.launch()
