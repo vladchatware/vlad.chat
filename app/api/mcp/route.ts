@@ -5,11 +5,16 @@ import { getRelativeTime } from "@/lib/utils"
 import { after } from "next/server"
 import { PostHog, instrument } from "@posthog/mcp"
 import { createMcpHandler } from "mcp-handler"
+import { authenticateProviderRequest } from "@/lib/provider-auth"
+import { bearerToken } from "@/lib/api-key"
 import {
+  canUseCodeMode,
   computerSessionAls,
   computerSessionFromRequest,
   computerThreadFromRequest,
   registerComputerUseMcpTools,
+  signCodeModeGrant,
+  verifyCodeModeGrant,
 } from "@/lib/computer-use"
 import type {
   PageObjectResponse,
@@ -635,11 +640,37 @@ For database queries, first use notion-get-database to discover available proper
  * pass the header. Authenticated request identity wins over model tool input.
  */
 async function withComputerSession(req: Request): Promise<Response> {
-  const session = computerSessionFromRequest(req)
-  const threadId = computerThreadFromRequest(req)
-  if (!session && !threadId) return handler(req)
+  const token = req.headers.get("x-code-mode-grant")
+  let grant = token ? await verifyCodeModeGrant(token) : null
+  if (grant?.isAnonymous && !canUseCodeMode(true)) grant = null
+  let grantToken = grant ? token ?? undefined : undefined
+  const apiKey = bearerToken(req)
+  if (
+    !grant &&
+    apiKey?.startsWith("vlad_") &&
+    (process.env.COMPUTER_USE_AUTH_SECRET?.length ?? 0) >= 32
+  ) {
+    const auth = await authenticateProviderRequest(req)
+    if (auth.ok) {
+      grant = {
+        userId: auth.userId,
+        sessionKey: auth.userId,
+        threadId: computerThreadFromRequest(req) ?? `mcp-${auth.userId}`,
+        isAnonymous: false,
+      }
+      grantToken = await signCodeModeGrant(grant)
+    }
+  }
+  const session = grant?.sessionKey ?? computerSessionFromRequest(req)
+  const threadId = grant?.threadId ?? computerThreadFromRequest(req)
+  if (!session && !threadId && !grant) return handler(req)
   return await computerSessionAls.run(
-    { sessionKey: session || "mcp-default", threadId },
+    {
+      sessionKey: session || "mcp-default",
+      threadId,
+      ...(grant ? { codeModeGrant: grant } : {}),
+      ...(grantToken ? { codeModeGrantToken: grantToken } : {}),
+    },
     () => handler(req),
   )
 }

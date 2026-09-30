@@ -7,8 +7,10 @@ import { fetchMutation, fetchQuery } from "convex/nextjs"
 import { NextResponse } from 'next/server';
 import {
   computerUseToolsAvailable,
+  canUseCodeMode,
   createComputerUseTools,
   computerUseInstruction,
+  signCodeModeGrant,
 } from '@/lib/computer-use'
 
 export async function POST(req: Request) {
@@ -40,10 +42,21 @@ export async function POST(req: Request) {
     )
   }
 
+  const webThreadId = `api-chat-${String(user._id)}`
+  const codeModeGrant = canUseCodeMode(Boolean(user.isAnonymous)) && (process.env.COMPUTER_USE_AUTH_SECRET?.length ?? 0) >= 32
+    ? await signCodeModeGrant({
+      userId: String(user._id),
+      sessionKey: String(user._id),
+      threadId: webThreadId,
+      isAnonymous: Boolean(user.isAnonymous),
+      })
+    : undefined
+
   const notion = await createMCPClient({
     transport: {
       type: 'http',
-      url: `${process.env.NEXT_PUBLIC_SITE_URL}/api/mcp`
+      url: `${process.env.NEXT_PUBLIC_SITE_URL}/api/mcp`,
+      headers: codeModeGrant ? { 'x-code-mode-grant': codeModeGrant } : {},
     }
   })
 
@@ -74,10 +87,11 @@ export async function POST(req: Request) {
   if (computerUseToolsAvailable()) {
     const computerTools = createComputerUseTools({
       userId: String(user._id),
+      chatId: webThreadId,
     })
     tools = { ...tools, ...computerTools }
     // skills/computer-use/SKILL.md
-    instructions = `${system}${computerUseInstruction()}`
+    instructions = `${system}${computerUseInstruction('run_code' in tools)}`
   }
 
   const result = streamText({

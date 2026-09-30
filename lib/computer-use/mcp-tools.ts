@@ -7,9 +7,13 @@ import {
 import {
   resolveMcpComputerSessionKey,
   resolveMcpComputerThreadId,
+  resolveCodeModeGrant,
+  resolveCodeModeGrantToken,
 } from "./mcp-session";
 import type { ComputerAction } from "./types";
 import { computerToolMcpResult } from "./vision";
+import { runSandboxCode } from "./sandbox";
+import { putScreenshot, screenshotPublicUrl } from "./artifacts";
 
 /** Only the Zod 3 registration overload used here, with typed input and output. */
 type McpToolServer = {
@@ -17,7 +21,10 @@ type McpToolServer = {
     name: string,
     description: string,
     parameters: Shape,
-    execute: (args: z.infer<z.ZodObject<Shape>>) => Promise<Awaited<ReturnType<typeof computerToolMcpResult>>>,
+    execute: (
+      args: z.infer<z.ZodObject<Shape>>,
+      extra?: { signal?: AbortSignal },
+    ) => Promise<Awaited<ReturnType<typeof computerToolMcpResult>>>,
   ): void;
 };
 
@@ -36,6 +43,64 @@ const sessionIdField = z
  */
 export function registerComputerUseMcpTools(server: McpToolServer): void {
   if (!computerUseToolsAvailable()) return;
+
+  const codeModeGrant = resolveCodeModeGrant();
+  if (codeModeGrant) server.tool(
+    "run_code",
+    "Execute one asynchronous TypeScript program inside the current live computer sandbox. Fresh program state per call; sandbox files and browser persist. Use tools.run_command, tools.read_file, tools.write_file, tools.computer.screenshot, or tools.computer.act. Program timeout defaults to 60 seconds and caps at 120 seconds. Return only concise values needed for the next decision.",
+    {
+      code: z.string().min(1).max(64 * 1024).describe(
+        "Body of an async TypeScript function. Type annotations are stripped at runtime; use only erasable TypeScript syntax.",
+      ),
+      description: z.string().min(1).max(500).optional()
+        .describe("Optional short purpose of this program."),
+      timeoutMs: z.number().int().min(1000).max(120_000).optional()
+        .describe("Run deadline in milliseconds; default 60000, maximum 120000."),
+    },
+    async ({ code, description, timeoutMs }, extra) => {
+      const runDescription = description?.trim() || "TypeScript sandbox run";
+      const result = await runSandboxCode(codeModeGrant.sessionKey, codeModeGrant.threadId, {
+        code,
+        description: runDescription,
+        timeoutMs: timeoutMs ?? 60_000,
+        signal: extra?.signal,
+      }, resolveCodeModeGrantToken());
+      const value = result.valueJson === undefined
+        ? "No value returned."
+        : `Return value: ${result.valueJson}`;
+      const output = [
+        `Program: ${runDescription}`,
+        `Run ID: ${result.runId}`,
+        `Status: ${result.status}`,
+        `Exit code: ${String(result.exitCode)}`,
+        result.stdout ? `stdout:\n${result.stdout}` : "",
+        result.stderr ? `stderr:\n${result.stderr}` : "",
+        value,
+        result.outputTruncated ? "Output truncated at 64 KiB." : "",
+        result.valueTruncated ? "Return value exceeds 16 KiB." : "",
+        result.timedOut ? "Execution exceeded its time limit." : "",
+      ].filter(Boolean).join("\n\n");
+      if (!result.screenshot) {
+        return { content: [{ type: "text" as const, text: output }] };
+      }
+      const artifact = await putScreenshot(codeModeGrant.sessionKey, result.screenshot);
+      const withImage = await computerToolMcpResult({
+        ok: result.exitCode === 0,
+        op: "act",
+        action: "run_code",
+        screenshotId: artifact.id,
+        screenshotUrl: screenshotPublicUrl(artifact.id),
+        mimeType: artifact.contentType,
+      });
+      return {
+        ...withImage,
+        content: [
+          { type: "text" as const, text: output },
+          ...withImage.content.filter((item) => item.type === "image"),
+        ],
+      };
+    },
+  );
 
   server.tool(
     "computer_open",

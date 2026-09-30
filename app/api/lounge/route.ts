@@ -48,7 +48,9 @@ export async function POST() {
     });
     const siteTools = await notion.tools();
     const tools = Object.fromEntries(
-      Object.entries(siteTools).filter(([name]) => !name.startsWith('computer_'))
+      Object.entries(siteTools).filter(
+        ([name]) => !name.startsWith('computer_') && name !== 'run_code',
+      )
     ) as typeof siteTools;
 
     const model = 'openai/gpt-5.3-chat';

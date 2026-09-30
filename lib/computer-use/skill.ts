@@ -5,6 +5,36 @@
  */
 export const COMPUTER_USE_SKILL_NAME = "computer-use" as const;
 
+export const CODE_MODE_SDK_INSTRUCTIONS = `## TypeScript Code Mode
+
+\`run_code\` executes the body of one async TypeScript function in the open computer sandbox. Type annotations are stripped; use erasable TypeScript syntax. Program variables reset each call. Files and the browser session persist. Require an open computer. Calls time out after 60 seconds by default and 120 seconds maximum.
+
+\`\`\`ts
+type CommandResult = { exitCode: number | null; stdout: string; stderr: string };
+type ComputerAction =
+  | { type: "click"; x: number; y: number; button?: "left" | "right" | "middle" }
+  | { type: "type"; text: string }
+  | { type: "key"; key: string }
+  | { type: "scroll"; x: number; y: number; deltaX?: number; deltaY?: number }
+  | { type: "wait"; ms?: number }
+  | { type: "drag"; fromX: number; fromY: number; toX: number; toY: number };
+declare const tools: {
+  run_command(args: { command: string; cwd?: string; timeoutMs?: number }): Promise<CommandResult>;
+  read_file(args: { path: string }): Promise<string>;
+  write_file(args: { path: string; content: string }): Promise<{ path: string; bytesWritten: number }>;
+  computer: {
+    screenshot(): Promise<{ url?: string; title?: string }>;
+    act(action: ComputerAction): Promise<{ ok?: boolean; url?: string; title?: string }>;
+  };
+};
+\`\`\`
+
+Use \`return\` for a concise JSON result and \`console.log\` for essential output. Catch expected nonzero command results via \`exitCode\`. For visual browser decisions, take a fresh screenshot and stop the program so you can inspect it before choosing another action. Never pay, sign, submit checkout, or approve a transaction autonomously. The typed computer action blocks known payment and signing text; stop and call \`computer_handoff\` so the user can take over. `;
+
+export function codeModeInstruction(): string {
+  return CODE_MODE_SDK_INSTRUCTIONS;
+}
+
 /** Full SKILL.md body (no YAML frontmatter) for system-prompt injection. */
 export const COMPUTER_USE_SKILL_BODY = `# Computer use playbook
 
@@ -102,8 +132,8 @@ When the user goal is met (or blocked on handoff they will finish themselves), l
 `;
 
 /** Instruction fragment to append when computer_* tools are available. */
-export function computerUseInstruction(): string {
-  return `\n\n${COMPUTER_USE_SKILL_BODY}`;
+export function computerUseInstruction(codeModeEnabled = false): string {
+  return `\n\n${COMPUTER_USE_SKILL_BODY}${codeModeEnabled ? `\n\n${CODE_MODE_SDK_INSTRUCTIONS}` : ""}`;
 }
 
 /** True when the toolset includes any computer_* MCP/tool entry. */
@@ -118,4 +148,10 @@ export function hasComputerUseTools(
     "computer_handoff" in tools ||
     "computer_end" in tools
   );
+}
+
+export function hasCodeModeTools(
+  tools: Record<string, unknown> | null | undefined,
+): boolean {
+  return Boolean(tools && "run_code" in tools);
 }

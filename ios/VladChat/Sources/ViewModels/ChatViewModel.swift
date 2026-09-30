@@ -930,7 +930,10 @@ final class ChatViewModel: ObservableObject {
 
     private func hasObservedLocalGeneration(in mobileChat: MobileChat, order: Double?) -> Bool {
         if let order {
-            return hasObservedLocalGeneration(in: mobileChat, order: order)
+            let previousMaxOrder = localGenerationPreviousMaxOrder ?? -.infinity
+            return mobileChat.messages.contains { message in
+                !message.isUser && message.order >= order && message.order > previousMaxOrder
+            }
         }
 
         let previousMaxOrder = localGenerationPreviousMaxOrder ?? -.infinity

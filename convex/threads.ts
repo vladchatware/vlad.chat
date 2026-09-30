@@ -31,7 +31,9 @@ import { userNotionInstruction } from "@/lib/ai";
 import {
   computerUseInstruction,
   hasComputerUseTools,
+  hasCodeModeTools,
 } from "@/lib/computer-use/skill";
+import { signCodeModeGrant } from "@/lib/computer-use/code-mode";
 import { getActiveLiveSessionForThread } from "./computerUseScreenshots";
 import { isModelEnabled, isPremiumModel } from "@/lib/provider";
 import { z } from "zod/v3";
@@ -43,6 +45,7 @@ import {
 } from "ai";
 import { createMCPClient } from "@ai-sdk/mcp";
 import {
+  attachCodeRunProgress,
   mergeMobileStreamText,
   projectStoredResponse,
 } from "@/lib/mobile-stream";
@@ -210,6 +213,7 @@ async function getMcpTools(
   /** Stable sandbox session for computer_* MCP tools (userId). */
   computerSessionKey?: string,
   computerThreadId?: string,
+  codeModeGrant?: string,
 ): Promise<ToolSet> {
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
   if (!siteUrl) {
@@ -231,6 +235,7 @@ async function getMcpTools(
             : {}),
           ...(computerSessionKey ? { "x-computer-session": computerSessionKey } : {}),
           ...(computerThreadId ? { "x-computer-thread": computerThreadId } : {}),
+          ...(codeModeGrant ? { "x-code-mode-grant": codeModeGrant } : {}),
         },
       },
     });
@@ -893,17 +898,32 @@ export const runAgentStep = internalAction({
       run.userId,
       notionConn,
     );
+    let codeModeGrant: string | undefined;
+    if ((process.env.COMPUTER_USE_AUTH_SECRET?.length ?? 0) >= 32) {
+      const principal = await ctx.runQuery(internal.users.codeModePrincipal, {
+        userId: run.userId,
+      });
+      if (principal) {
+        codeModeGrant = await signCodeModeGrant({
+          userId: principal.userId,
+          sessionKey: String(run.userId),
+          threadId: run.threadId,
+          isAnonymous: principal.isAnonymous,
+        });
+      }
+    }
     const tools = await getMcpTools(
       run.searchEnabled,
       userNotionToken ?? undefined,
       String(run.userId),
       run.threadId,
+      codeModeGrant,
     );
     const notionInstruction = notionConn
       ? userNotionInstruction(notionConn.workspaceName)
       : "";
-    const computerInstruction = hasComputerUseTools(tools)
-      ? computerUseInstruction()
+    const computerInstruction = hasComputerUseTools(tools) || hasCodeModeTools(tools)
+      ? computerUseInstruction(hasCodeModeTools(tools))
       : "";
     const steeringInstruction = steering.length > 0
       ? `\n\nPersistent user steering for this run. Apply these directions from this model step onward:\n${steering.map((note) => `- ${note.text}`).join("\n")}`
@@ -1761,26 +1781,36 @@ export const getMobileChat = query({
           },
         })
       : undefined;
+    const latestCodeRun = await ctx.db
+      .query("computerCodeRuns")
+      .withIndex("byUserThreadUpdatedAt", (q) =>
+        q.eq("userId", userId).eq("threadId", threadId),
+      )
+      .order("desc")
+      .first();
+    const mobileMessages = mergeMobileStreamText(
+      messages,
+      streamMessages,
+      activeDeltas?.kind === "deltas" ? activeDeltas.deltas : [],
+      (stream, text) => ({
+        id: `stream:${stream.streamId}`,
+        role: "assistant",
+        text,
+        status: "streaming",
+        order: stream.order,
+        createdAt: messages.find((message) => message.order === stream.order)
+          ?.createdAt ?? 0,
+        attachments: [],
+      }),
+    );
 
     return {
       threadId,
       title: metadata.title ?? "Untitled",
       threads,
-      messages: mergeMobileStreamText(
-        messages,
-        streamMessages,
-        activeDeltas?.kind === "deltas" ? activeDeltas.deltas : [],
-        (stream, text) => ({
-          id: `stream:${stream.streamId}`,
-          role: "assistant",
-          text,
-          status: "streaming",
-          order: stream.order,
-          createdAt: messages.find((message) => message.order === stream.order)
-            ?.createdAt ?? 0,
-          attachments: [],
-        }),
-      ),
+      messages: latestCodeRun
+        ? attachCodeRunProgress(mobileMessages, latestCodeRun)
+        : mobileMessages,
       account: user ? mobileAccount(user) : null,
       remainingMessages: user?.isAnonymous ? (user.trialMessages ?? 0) : null,
       computerViewer: liveComputerSessionForThread,

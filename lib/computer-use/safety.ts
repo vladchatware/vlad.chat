@@ -5,6 +5,10 @@ const PAYMENT_RE =
 const SIGNING_RE =
   /\b(sign (the )?contract|sign (and )?submit|authorize transaction|approve wire|seed phrase|private key|connect wallet|sign message)\b/i;
 
+/** Serialized into the sandbox's typed computer binding to share these exact checks. */
+export const COMPUTER_ACTION_SAFETY_SOURCE =
+  `(text) => ${PAYMENT_RE.toString()}.test(text) || ${SIGNING_RE.toString()}.test(text)`;
+
 export function looksLikePaymentOrSigning(text: string): boolean {
   return PAYMENT_RE.test(text) || SIGNING_RE.test(text);
 }
