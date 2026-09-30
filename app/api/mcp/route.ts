@@ -8,6 +8,7 @@ import { createMcpHandler } from "mcp-handler"
 import { authenticateProviderRequest } from "@/lib/provider-auth"
 import { bearerToken } from "@/lib/api-key"
 import {
+  canUseCodeMode,
   computerSessionAls,
   computerSessionFromRequest,
   computerThreadFromRequest,
@@ -641,6 +642,7 @@ For database queries, first use notion-get-database to discover available proper
 async function withComputerSession(req: Request): Promise<Response> {
   const token = req.headers.get("x-code-mode-grant")
   let grant = token ? await verifyCodeModeGrant(token) : null
+  if (grant?.isAnonymous && !canUseCodeMode(true)) grant = null
   let grantToken = grant ? token ?? undefined : undefined
   const apiKey = bearerToken(req)
   if (
@@ -654,6 +656,7 @@ async function withComputerSession(req: Request): Promise<Response> {
         userId: auth.userId,
         sessionKey: auth.userId,
         threadId: computerThreadFromRequest(req) ?? `mcp-${auth.userId}`,
+        isAnonymous: false,
       }
       grantToken = await signCodeModeGrant(grant)
     }

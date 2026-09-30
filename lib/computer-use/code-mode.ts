@@ -8,7 +8,17 @@ export type CodeModeGrant = {
   userId: string;
   sessionKey: string;
   threadId: string;
+  isAnonymous: boolean;
 };
+
+/** Anonymous sessions may use Code Mode only outside production. */
+export function canUseCodeMode(isAnonymous: boolean): boolean {
+  return (
+    !isAnonymous ||
+    process.env.NODE_ENV === "development" ||
+    process.env.VERCEL_ENV === "preview"
+  );
+}
 
 function grantKey(): Uint8Array {
   const secret = process.env.COMPUTER_USE_AUTH_SECRET;
@@ -21,7 +31,11 @@ function grantKey(): Uint8Array {
 export async function signCodeModeGrant(
   grant: CodeModeGrant,
 ): Promise<string> {
-  return new SignJWT({ sessionKey: grant.sessionKey, threadId: grant.threadId })
+  return new SignJWT({
+    sessionKey: grant.sessionKey,
+    threadId: grant.threadId,
+    isAnonymous: grant.isAnonymous,
+  })
     .setProtectedHeader({ alg: "HS256", typ: "JWT" })
     .setIssuer(GRANT_ISSUER)
     .setAudience(GRANT_AUDIENCE)
@@ -43,7 +57,8 @@ export async function verifyCodeModeGrant(
     if (
       typeof payload.sub !== "string" ||
       typeof payload.sessionKey !== "string" ||
-      typeof payload.threadId !== "string"
+      typeof payload.threadId !== "string" ||
+      typeof payload.isAnonymous !== "boolean"
     ) {
       return null;
     }
@@ -51,6 +66,7 @@ export async function verifyCodeModeGrant(
       userId: payload.sub,
       sessionKey: payload.sessionKey,
       threadId: payload.threadId,
+      isAnonymous: payload.isAnonymous,
     };
   } catch {
     return null;

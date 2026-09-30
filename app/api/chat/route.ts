@@ -7,6 +7,7 @@ import { fetchMutation, fetchQuery } from "convex/nextjs"
 import { NextResponse } from 'next/server';
 import {
   computerUseToolsAvailable,
+  canUseCodeMode,
   createComputerUseTools,
   computerUseInstruction,
   signCodeModeGrant,
@@ -42,11 +43,12 @@ export async function POST(req: Request) {
   }
 
   const webThreadId = `api-chat-${String(user._id)}`
-  const codeModeGrant = !user.isAnonymous && (process.env.COMPUTER_USE_AUTH_SECRET?.length ?? 0) >= 32
+  const codeModeGrant = canUseCodeMode(Boolean(user.isAnonymous)) && (process.env.COMPUTER_USE_AUTH_SECRET?.length ?? 0) >= 32
     ? await signCodeModeGrant({
-        userId: String(user._id),
-        sessionKey: String(user._id),
-        threadId: webThreadId,
+      userId: String(user._id),
+      sessionKey: String(user._id),
+      threadId: webThreadId,
+      isAnonymous: Boolean(user.isAnonymous),
       })
     : undefined
 

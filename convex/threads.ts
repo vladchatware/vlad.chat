@@ -905,9 +905,10 @@ export const runAgentStep = internalAction({
       });
       if (principal) {
         codeModeGrant = await signCodeModeGrant({
-          userId: principal,
+          userId: principal.userId,
           sessionKey: String(run.userId),
           threadId: run.threadId,
+          isAnonymous: principal.isAnonymous,
         });
       }
     }

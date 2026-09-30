@@ -22,6 +22,7 @@ export {
 } from "./tools";
 export { registerComputerUseMcpTools } from "./mcp-tools";
 export {
+  canUseCodeMode,
   signCodeModeGrant,
   verifyCodeModeGrant,
   type CodeModeGrant,

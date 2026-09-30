@@ -690,11 +690,14 @@ export const resolveApiKey = query({
 /** Server-only identity check for issuing sandbox code-execution grants. */
 export const codeModePrincipal = internalQuery({
   args: { userId: v.id("users") },
-  returns: v.union(v.string(), v.null()),
+  returns: v.union(
+    v.object({ userId: v.string(), isAnonymous: v.boolean() }),
+    v.null(),
+  ),
   handler: async (ctx, { userId }) => {
     const user = await ctx.db.get(userId);
-    if (!user || user.isAnonymous) return null;
-    return String(userId);
+    if (!user) return null;
+    return { userId: String(userId), isAnonymous: Boolean(user.isAnonymous) };
   },
 });
 
