@@ -1101,13 +1101,26 @@ struct ComputerUseE2EHarnessView: View {
                     .padding(24)
             } else {
                 NavigationStack {
-                    Color(uiColor: .systemBackground)
-                        .ignoresSafeArea()
-                        .overlay(alignment: .topTrailing) {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 20) {
                             Text("Chat canvas")
                                 .accessibilityIdentifier("chatCanvas")
+                            Text("TRANSCRIPT_SCROLL_ANCHOR")
+                                .accessibilityIdentifier("transcriptScrollAnchor")
+                            ForEach(0..<30, id: \.self) { index in
+                                Text("Transcript row \(index + 1)")
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
                         }
-                        .safeAreaInset(edge: .bottom, spacing: 0) {
+                        .padding(24)
+                    }
+                    .accessibilityIdentifier("chatTranscriptScroll")
+                    .background(Color(uiColor: .systemBackground))
+                    .overlay(alignment: .topTrailing) {
+                        Text("Session: \(String(describing: controller.state))")
+                            .accessibilityIdentifier("computerFixtureSessionState")
+                    }
+                    .safeAreaInset(edge: .bottom, spacing: 0) {
                             RoundedRectangle(cornerRadius: 22, style: .continuous)
                                 .fill(Color(uiColor: .secondarySystemBackground))
                                 .overlay(alignment: .leading) {
@@ -1126,8 +1139,8 @@ struct ComputerUseE2EHarnessView: View {
                                         )
                                     }
                                 }
-                        }
-                        .overlayPreferenceValue(ComputerComposerTopPreferenceKey.self) { composerTop in
+                    }
+                    .overlayPreferenceValue(ComputerComposerTopPreferenceKey.self) { composerTop in
                             ComputerUseViewerOverlay(controller: controller, composerTop: composerTop)
                         }
                         .toolbar {

@@ -256,9 +256,14 @@ final class VladChatUITests: XCTestCase {
         let chatCanvas = app.staticTexts["chatCanvas"]
         let composer = app.descendants(matching: .any)["chatComposer"]
         let header = app.navigationBars.firstMatch
+        let transcriptAnchor = app.staticTexts["transcriptScrollAnchor"]
+        let sessionState = app.staticTexts["computerFixtureSessionState"]
         XCTAssertTrue(chatCanvas.exists)
         XCTAssertTrue(composer.exists)
         XCTAssertTrue(header.exists)
+        XCTAssertTrue(transcriptAnchor.exists)
+        XCTAssertEqual(sessionState.label, "Session: live")
+        let transcriptAnchorY = transcriptAnchor.frame.minY
         XCTAssertTrue(app.buttons["showChats"].exists)
         XCTAssertFalse(app.staticTexts["Computer"].exists)
         XCTAssertFalse(app.buttons["Hide computer"].exists)
@@ -271,7 +276,9 @@ final class VladChatUITests: XCTestCase {
             forDuration: 0.1,
             thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.18, dy: 0.35))
         )
+        XCTAssertEqual(transcriptAnchor.frame.minY, transcriptAnchorY, accuracy: 1, "Dragging the preview must not scroll the transcript")
         XCTAssertLessThan(preview.frame.minX, 28, "The floating preview should settle against the left dock after dragging")
+        XCTAssertEqual(sessionState.label, "Session: live", "Docking must preserve the live computer session")
         let upperLaneY = preview.frame.midY
         XCTAssertGreaterThanOrEqual(preview.frame.minY, header.frame.maxY)
         XCTAssertLessThan(preview.frame.maxY, composer.frame.minY)
@@ -279,12 +286,14 @@ final class VladChatUITests: XCTestCase {
             forDuration: 0.1,
             thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.82, dy: 0.35))
         )
+        XCTAssertEqual(transcriptAnchor.frame.minY, transcriptAnchorY, accuracy: 1, "Dragging the preview across the chat must not scroll the transcript")
         XCTAssertGreaterThan(preview.frame.maxX, app.frame.maxX - 28, "Dragging from the left dock should follow the swipe to the right dock")
         XCTAssertEqual(preview.frame.midY, upperLaneY, accuracy: 20, "A horizontal swipe should keep the preview at its vertical position")
         floatingWindow.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(
             forDuration: 0.1,
             thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.82, dy: 0.78))
         )
+        XCTAssertEqual(transcriptAnchor.frame.minY, transcriptAnchorY, accuracy: 1, "Moving the preview vertically must not scroll the transcript")
         XCTAssertGreaterThan(preview.frame.maxX, app.frame.maxX - 28)
         let lowerLaneY = preview.frame.midY
         XCTAssertGreaterThan(lowerLaneY, upperLaneY + 100, "A vertical swipe should keep the preview near its release point")
@@ -293,6 +302,7 @@ final class VladChatUITests: XCTestCase {
             forDuration: 0.1,
             thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.18, dy: 0.78))
         )
+        XCTAssertEqual(transcriptAnchor.frame.minY, transcriptAnchorY, accuracy: 1, "Moving the preview back across the chat must not scroll the transcript")
         XCTAssertLessThan(preview.frame.minX, 28)
         XCTAssertEqual(preview.frame.midY, lowerLaneY, accuracy: 20, "A horizontal swipe should preserve the lower vertical position")
         let foldY = preview.frame.midY
@@ -301,12 +311,14 @@ final class VladChatUITests: XCTestCase {
             forDuration: 0.1,
             thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0.78))
         )
+        XCTAssertEqual(transcriptAnchor.frame.minY, transcriptAnchorY, accuracy: 1, "Tucking the preview must not scroll the transcript")
         let restorePreview = app.buttons["Restore computer preview"]
         XCTAssertTrue(restorePreview.waitForExistence(timeout: 5))
         XCTAssertLessThan(restorePreview.frame.minX, 28, "A leftward fold should leave restore tab at the same screen edge")
         XCTAssertEqual(restorePreview.frame.midY, foldY, accuracy: 30, "Restore tab should stay at the preview's folded vertical position")
         restorePreview.tap()
         XCTAssertTrue(preview.waitForExistence(timeout: 5))
+        XCTAssertEqual(sessionState.label, "Session: live", "Restoring the preview must preserve the live computer session")
         XCTAssertLessThan(preview.frame.minX, 28)
         XCTAssertEqual(preview.frame.midY, foldY, accuracy: 30, "Unfolding should restore preview at its previous position")
         XCTAssertEqual(preview.frame.width, foldWidth, accuracy: 1, "Unfolding should preserve preview size")
@@ -314,6 +326,7 @@ final class VladChatUITests: XCTestCase {
             forDuration: 0.1,
             thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 1.0, dy: 0.78))
         )
+        XCTAssertEqual(transcriptAnchor.frame.minY, transcriptAnchorY, accuracy: 1, "Trailing-edge tuck must not scroll the transcript")
         let restoreRightPreview = app.buttons["Restore computer preview"]
         XCTAssertTrue(restoreRightPreview.waitForExistence(timeout: 5))
         XCTAssertGreaterThan(restoreRightPreview.frame.maxX, app.frame.maxX - 28, "A rightward fold should leave the restore handle on the trailing edge")
@@ -321,6 +334,7 @@ final class VladChatUITests: XCTestCase {
         XCTAssertTrue(app.buttons["chevron.left"].exists, "The trailing restore handle should point inward")
         restoreRightPreview.tap()
         XCTAssertTrue(preview.waitForExistence(timeout: 5))
+        XCTAssertEqual(sessionState.label, "Session: live", "Trailing-edge restore must preserve the live computer session")
         XCTAssertGreaterThan(preview.frame.maxX, app.frame.maxX - 28)
         XCTAssertEqual(preview.frame.midY, foldY, accuracy: 30, "Trailing restore should return to the remembered preview height")
         XCTAssertEqual(preview.frame.width, foldWidth, accuracy: 1, "Trailing restore should preserve preview size")
@@ -331,6 +345,8 @@ final class VladChatUITests: XCTestCase {
             thenHoldForDuration: 0.4
         )
         assertDragMotionStayedWithinBounds(floatingWindow, preview: preview, toward: .composer)
+        XCTAssertEqual(transcriptAnchor.frame.minY, transcriptAnchorY, accuracy: 1, "Held composer-boundary dragging must not scroll the transcript")
+        XCTAssertEqual(sessionState.label, "Session: live")
         XCTAssertGreaterThanOrEqual(
             preview.frame.minY,
             header.frame.maxY + 8,
@@ -343,6 +359,7 @@ final class VladChatUITests: XCTestCase {
             thenHoldForDuration: 0.4
         )
         assertDragMotionStayedWithinBounds(floatingWindow, preview: preview, toward: .header)
+        XCTAssertEqual(transcriptAnchor.frame.minY, transcriptAnchorY, accuracy: 1, "Held header-boundary dragging must not scroll the transcript")
         XCTAssertLessThanOrEqual(
             preview.frame.maxY,
             composer.frame.minY - 8,
@@ -352,6 +369,7 @@ final class VladChatUITests: XCTestCase {
         XCTAssertTrue(expandTarget.waitForExistence(timeout: 5))
         expandTarget.tap()
 
+        XCTAssertEqual(sessionState.label, "Session: live", "Opening the inspector must preserve the live computer session")
         XCTAssertFalse(chatCanvas.isHittable, "The chat should be covered by the inspector modal")
         XCTAssertFalse(app.buttons["showChats"].isHittable, "The inspector modal should block the chat navigation control")
         XCTAssertTrue(app.navigationBars["Inspector"].exists)
@@ -369,6 +387,7 @@ final class VladChatUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Collapse to preview"].exists)
         app.buttons["Collapse to preview"].tap()
         XCTAssertTrue(preview.waitForExistence(timeout: 5))
+        XCTAssertEqual(sessionState.label, "Session: live", "Collapsing the inspector must preserve the live computer session")
         XCTAssertTrue(chatCanvas.isHittable)
         XCTAssertTrue(app.buttons["showChats"].isHittable)
         XCTAssertFalse(app.navigationBars["Inspector"].exists)
@@ -377,6 +396,7 @@ final class VladChatUITests: XCTestCase {
         XCTAssertLessThanOrEqual(preview.frame.width, 300)
         expandTarget.tap()
 
+        XCTAssertEqual(sessionState.label, "Session: live", "Reopening the inspector must preserve the live computer session")
         XCTAssertTrue(app.buttons["Collapse to preview"].waitForExistence(timeout: 5))
         let keyboard = app.buttons["Keyboard"]
         XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
