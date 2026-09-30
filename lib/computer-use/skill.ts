@@ -32,6 +32,10 @@ Never chain multiple guessed acts from a stale frame. **After every act, always 
 
 Screenshot-bearing results include image content for your vision and compact JSON for the client. A screenshot URL alone is not a visible frame. If image delivery fails, call \`computer_screenshot\` and wait for an image before acting again.
 
+## User-facing output
+
+The app displays the live computer window to the user. Treat page URLs, viewer URLs, screenshot URLs, page titles, screenshots, action details, and tool results as internal context. Do not paste or narrate them in assistant messages. When the task is complete, give only a concise outcome. If the user must take over, state the required action without a URL; they can open the in-app inspector to control the same session.
+
 ## Coordinates and focus
 
 - Use **window-local coordinates from the shot just taken** (not an older frame, not guessed layout).
@@ -49,11 +53,11 @@ Screenshot-bearing results include image content for your vision and compact JSO
 | wait | \`{ type: "wait", ms? }\` |
 | drag | \`{ type: "drag", fromX, fromY, toX, toY }\` |
 
-## viewerUrl vs tools
+## Viewer endpoints
 
-- **\`nativeViewerUrl\`**: same live noVNC/RFB desktop. The iOS client embeds the RFB viewer; no video transcoding is used.
-- **\`viewerUrl\`**: interactive noVNC control surface. Use it for handoff or when the human must operate the browser.
-- **Tools**: for agent control (\`computer_screenshot\` / \`computer_act\`). Do not assume the human saw what you did unless they have \`viewerUrl\` or you describe the latest shot.
+- The app embeds the live session in its floating viewer and inspector.
+- \`viewerUrl\` and \`nativeViewerUrl\` are internal endpoints. Never include them or screenshot links in user-facing messages.
+- Use tool screenshots for agent control (\`computer_screenshot\` / \`computer_act\`).
 
 ## Sessions
 
@@ -80,7 +84,7 @@ Call \`computer_handoff\` and stop acting when you hit:
 - Payment / checkout confirmation
 - Passkey / WebAuthn / wallet signing
 
-Tell the user to finish in \`viewerUrl\`, then continue only after they confirm — with a fresh screenshot on the **same** session (do not open a new sandbox unless the old one ended).
+Ask the user to take over in the in-app inspector, then continue only after they confirm — with a fresh screenshot on the **same** session (do not open a new sandbox unless the old one ended). Do not provide a session URL.
 
 ## Driver fallback
 

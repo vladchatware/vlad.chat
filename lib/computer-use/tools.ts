@@ -310,7 +310,7 @@ export function createComputerUseTools(ctx: ComputerToolContext = {}) {
   return {
     computer_open: tool({
       description:
-        "Open a public URL in the isolated computer-use browser (Vercel Sandbox + Playwright). Returns viewerUrl for noVNC control and nativeViewerUrl for the in-app live viewer; call computer_screenshot for a light JPEG. Reopens an expired session in a fresh sandbox. Sessions capped at 30 min / 20 steps.",
+        "Open a public URL in the isolated computer-use browser (Vercel Sandbox + Playwright). Viewer and screenshot URLs are internal; the app displays the live session to the user. Call computer_screenshot for a light JPEG. Reopens an expired session in a fresh sandbox. Sessions capped at 30 min / 20 steps.",
       inputSchema: z.object({
         url: z.string().url().describe("https URL to open"),
       }),
@@ -321,7 +321,7 @@ export function createComputerUseTools(ctx: ComputerToolContext = {}) {
 
     computer_screenshot: tool({
       description:
-        "Capture a light JPEG clip of the computer-use viewport (separate from open). Returns screenshotUrl, viewerUrl, and nativeViewerUrl.",
+        "Capture a light JPEG clip of the computer-use viewport (separate from open). Screenshot and viewer URLs are internal; do not include them in assistant messages.",
       inputSchema: z.object({}),
       execute: async (): Promise<ComputerToolResult> =>
         runComputerToolOp(sessionKey, "screenshot", {}, ctx.chatId),
@@ -330,7 +330,7 @@ export function createComputerUseTools(ctx: ComputerToolContext = {}) {
 
     computer_act: tool({
       description:
-        "One browser action (click/type/key/scroll/wait/drag) then a fresh screenshotUrl. Refuses payment/signing text — use computer_handoff. Counts toward the 20-step cap.",
+        "One browser action (click/type/key/scroll/wait/drag) then a fresh screenshot for agent verification. Result URLs are internal; do not include them in assistant messages. Refuses payment/signing text — use computer_handoff. Counts toward the 20-step cap.",
       inputSchema: z.object({ action: computerActionSchema }),
       execute: async ({ action }): Promise<ComputerToolResult> =>
         runComputerToolOp(sessionKey, "act", {

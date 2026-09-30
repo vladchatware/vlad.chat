@@ -29,6 +29,55 @@ struct ComputerComposerTopPreferenceKey: PreferenceKey {
     }
 }
 
+private struct NavigationBarFrameReader: UIViewRepresentable {
+    let onBottomChange: (CGFloat) -> Void
+
+    func makeUIView(context: Context) -> NavigationBarFrameProbeView {
+        let view = NavigationBarFrameProbeView()
+        view.onBottomChange = onBottomChange
+        return view
+    }
+
+    func updateUIView(_ uiView: NavigationBarFrameProbeView, context: Context) {
+        uiView.onBottomChange = onBottomChange
+        uiView.reportNavigationBarFrame()
+    }
+}
+
+private final class NavigationBarFrameProbeView: UIView {
+    var onBottomChange: ((CGFloat) -> Void)?
+    private var lastReportedBottom: CGFloat?
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        reportNavigationBarFrame()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        reportNavigationBarFrame()
+    }
+
+    func reportNavigationBarFrame() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let window = self.window else { return }
+
+            var responder: UIResponder? = self
+            while let current = responder {
+                if let navigationController = current as? UINavigationController {
+                    let navigationBar = navigationController.navigationBar
+                    let bottom = navigationBar.convert(navigationBar.bounds, to: window).maxY
+                    guard bottom != self.lastReportedBottom else { return }
+                    self.lastReportedBottom = bottom
+                    self.onBottomChange?(bottom)
+                    return
+                }
+                responder = current.next
+            }
+        }
+    }
+}
+
 @MainActor
 final class ComputerUseSessionController: NSObject, ObservableObject, WKNavigationDelegate, WKScriptMessageHandler {
     @Published private(set) var state = ComputerConnectionState.idle
@@ -675,6 +724,10 @@ struct ComputerTrackpad: UIViewRepresentable {
 struct ComputerUseViewerOverlay: View {
     private static let navigationBarHeight: CGFloat = 44
     private static let dockSpacing: CGFloat = 12
+    private static let tuckedHandleHitWidth: CGFloat = 44
+    private static let tuckedHandleVisibleWidth: CGFloat = 24
+    private static let tuckedHandleHeight: CGFloat = 96
+    private static let tuckedHandleCornerRadius: CGFloat = 16
 
     private enum TuckedSide: Equatable {
         case leading
@@ -684,6 +737,7 @@ struct ComputerUseViewerOverlay: View {
     @ObservedObject var controller: ComputerUseSessionController
     let composerTop: CGFloat?
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var floatWidth: CGFloat = 208
     @State private var dockOffset = CGSize.zero
@@ -691,14 +745,24 @@ struct ComputerUseViewerOverlay: View {
     @State private var pinchStartWidth: CGFloat?
     @State private var tuckedSide: TuckedSide = .trailing
     @State private var tuckedTop: CGFloat = 12
+    @State private var isTuckedHandleVisible = false
+    @State private var navigationBarBottom: CGFloat?
+#if DEBUG
+    @State private var isSamplingDragMotion = false
+    @State private var dragMotionSamples: [String] = []
+
+    private var capturesDragMotion: Bool {
+        ProcessInfo.processInfo.arguments.contains("--ui-test-computer-viewer")
+    }
+#endif
 
     var body: some View {
         GeometryReader { geometry in
             Group {
                 switch controller.presentation {
                 case .hidden: EmptyView()
-                case .floating: floatingViewer(geometry: geometry)
-                case .tucked: tuckedTab(geometry: geometry)
+                case .floating: floatingViewer(geometry: geometry).transition(.identity)
+                case .tucked: tuckedTab(geometry: geometry).transition(.identity)
                 case .inspector:
                     if controller.isExpanding && horizontalSizeClass == .compact {
                         floatingViewer(geometry: geometry)
@@ -706,13 +770,19 @@ struct ComputerUseViewerOverlay: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-            .animation(.easeInOut(duration: 0.24), value: controller.presentation)
+            .background {
+                NavigationBarFrameReader { bottom in
+                    navigationBarBottom = bottom
+                }
+                .frame(width: 0, height: 0)
+            }
         }
     }
 
     private func floatingViewer(geometry: GeometryProxy) -> some View {
         let previewHeight = floatWidth * controller.desktopSize.height / max(1, controller.desktopSize.width)
-        let bottomDockTop = bottomDockTop(previewHeight: previewHeight, geometry: geometry)
+        let restingTop = restingPreviewTop(previewHeight: previewHeight, geometry: geometry)
+        let currentTop = clampedTop(restingTop + dragTranslation.height, height: previewHeight, geometry: geometry)
         return ZStack {
             desktopSurface(cornerRadius: 18)
                 .frame(
@@ -729,6 +799,9 @@ struct ComputerUseViewerOverlay: View {
                 .accessibilityLabel("Open computer inspector")
                 .accessibilityIdentifier("computerExpandTarget")
                 .accessibilityAddTraits(.isButton)
+#if DEBUG
+                .accessibilityValue(dragMotionSamples.joined(separator: ";"))
+#endif
         }
         .frame(width: floatWidth)
         .fixedSize(horizontal: false, vertical: true)
@@ -737,7 +810,7 @@ struct ComputerUseViewerOverlay: View {
         .shadow(color: .black.opacity(0.2), radius: 18, y: 8)
         .offset(
             x: -12 + dockOffset.width + dragTranslation.width,
-            y: bottomDockTop + dockOffset.height + dragTranslation.height
+            y: currentTop
         )
         .accessibilityElement(children: .contain)
     }
@@ -758,31 +831,61 @@ struct ComputerUseViewerOverlay: View {
 
     private func tuckedTab(geometry: GeometryProxy) -> some View {
         let roundsLeadingEdge = tuckedSide == .trailing
-        let button = Button { controller.restore() } label: {
-            Image(systemName: tuckedSide == .trailing ? "chevron.left" : "chevron.right")
-                .frame(width: 44, height: 64)
-                .background(
-                    .regularMaterial,
-                    in: UnevenRoundedRectangle(
-                        topLeadingRadius: roundsLeadingEdge ? 12 : 0,
-                        bottomLeadingRadius: roundsLeadingEdge ? 12 : 0,
-                        bottomTrailingRadius: roundsLeadingEdge ? 0 : 12,
-                        topTrailingRadius: roundsLeadingEdge ? 0 : 12
-                    )
-                )
+        let handleShape = UnevenRoundedRectangle(
+            topLeadingRadius: roundsLeadingEdge ? Self.tuckedHandleCornerRadius : 0,
+            bottomLeadingRadius: roundsLeadingEdge ? Self.tuckedHandleCornerRadius : 0,
+            bottomTrailingRadius: roundsLeadingEdge ? 0 : Self.tuckedHandleCornerRadius,
+            topTrailingRadius: roundsLeadingEdge ? 0 : Self.tuckedHandleCornerRadius
+        )
+        let handleGradient = LinearGradient(
+            colors: colorScheme == .dark
+                ? [Color.white.opacity(0.95), Color.white.opacity(0.78)]
+                : [Color.black.opacity(0.52), Color.black.opacity(0.88)],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+        let handle = TuckChevron(pointsRight: tuckedSide == .leading)
+            .stroke(
+                colorScheme == .dark ? Color.black : Color.white,
+                style: StrokeStyle(lineWidth: 3.5, lineCap: .round, lineJoin: .round)
+            )
+            .frame(width: 10, height: 26)
+            .frame(width: Self.tuckedHandleVisibleWidth, height: Self.tuckedHandleHeight)
+            .background(handleGradient, in: handleShape)
+            .accessibilityHidden(true)
+        let button = Button {
+            isTuckedHandleVisible = false
+            controller.restore()
+        } label: {
+            HStack(spacing: 0) {
+                if tuckedSide == .trailing { Spacer(minLength: 0) }
+                handle
+                if tuckedSide == .leading { Spacer(minLength: 0) }
+            }
+            .frame(width: Self.tuckedHandleHitWidth, height: Self.tuckedHandleHeight)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Restore computer preview")
+        .accessibilityValue(tuckedSide == .leading ? "Left edge" : "Right edge")
+        .transition(.asymmetric(
+            insertion: .move(edge: tuckedSide == .trailing ? .trailing : .leading),
+            removal: .identity
+        ))
 
         return VStack(spacing: 0) {
-            Color.clear.frame(height: clampedTop(tuckedTop, height: 64, geometry: geometry))
+            Color.clear.frame(height: clampedTop(tuckedTop, height: Self.tuckedHandleHeight, geometry: geometry))
             HStack(spacing: 0) {
-                if tuckedSide == .leading {
-                    button
-                    Spacer(minLength: 0)
+                if isTuckedHandleVisible {
+                    if tuckedSide == .leading {
+                        button
+                        Spacer(minLength: 0)
+                    } else {
+                        Spacer(minLength: 0)
+                        button
+                    }
                 } else {
                     Spacer(minLength: 0)
-                    button
                 }
             }
             Spacer(minLength: 0)
@@ -794,17 +897,37 @@ struct ComputerUseViewerOverlay: View {
         DragGesture(minimumDistance: 8, coordinateSpace: .global)
             .onChanged { value in
                 let previewHeight = floatWidth * controller.desktopSize.height / max(1, controller.desktopSize.width)
-                let topDock = topDock(geometry: geometry)
-                let bottomDock = bottomDockTop(previewHeight: previewHeight, geometry: geometry)
-                let startTop = bottomDock + dockOffset.height
+                let startTop = restingPreviewTop(previewHeight: previewHeight, geometry: geometry)
                 let proposedTop = startTop + value.translation.height
-                let clampedTop = min(max(proposedTop, topDock), bottomDock)
+                let boundedTop = clampedTop(proposedTop, height: previewHeight, geometry: geometry)
+#if DEBUG
+                if capturesDragMotion {
+                    if !isSamplingDragMotion {
+                        dragMotionSamples = []
+                        isSamplingDragMotion = true
+                    }
+                    let globalMinY = geometry.frame(in: .global).minY
+                    let topBound = globalMinY + topDock(geometry: geometry)
+                    let bottomBound = globalMinY + bottomDockTop(previewHeight: previewHeight, geometry: geometry) + previewHeight
+                    let frameTop = globalMinY + boundedTop
+                    let sample = [frameTop, frameTop + previewHeight, topBound, bottomBound]
+                        .map { String(Int($0.rounded())) }
+                        .joined(separator: ",")
+                    dragMotionSamples.append(sample)
+                    if dragMotionSamples.count > 120 {
+                        dragMotionSamples.removeFirst(dragMotionSamples.count - 120)
+                    }
+                }
+#endif
                 dragTranslation = CGSize(
                     width: value.translation.width,
-                    height: clampedTop - startTop
+                    height: boundedTop - startTop
                 )
             }
             .onEnded { value in
+#if DEBUG
+                isSamplingDragMotion = false
+#endif
                 guard abs(value.translation.width) >= 8 || abs(value.translation.height) >= 8 else { return }
                 let size = geometry.size
                 let baseLeft = size.width - floatWidth - 12
@@ -812,31 +935,34 @@ struct ComputerUseViewerOverlay: View {
                 if proposedLeft <= -floatWidth * 0.5 || proposedLeft >= size.width - floatWidth * 0.5 {
                     let side: TuckedSide = proposedLeft <= -floatWidth * 0.5 ? .leading : .trailing
                     let previewHeight = floatWidth * controller.desktopSize.height / max(1, controller.desktopSize.width)
-                    let topDock = topDock(geometry: geometry)
                     let bottomDock = bottomDockTop(previewHeight: previewHeight, geometry: geometry)
-                    let proposedTop = bottomDock + dockOffset.height + value.translation.height
-                    let dockTop = min(max(proposedTop, topDock), bottomDock)
+                    let startTop = restingPreviewTop(previewHeight: previewHeight, geometry: geometry)
+                    let dockTop = clampedTop(startTop + value.translation.height, height: previewHeight, geometry: geometry)
                     let dockLeft = side == .leading ? 12 : baseLeft
-                    let tabHeight: CGFloat = 64
+                    let tabHeight = Self.tuckedHandleHeight
                     let tabTop = clampedTop(
                         dockTop + (previewHeight - tabHeight) / 2,
                         height: tabHeight,
                         geometry: geometry
                     )
-                    withAnimation(dockSettleAnimation) {
+                    withTransaction(Transaction(animation: nil)) {
                         dockOffset = CGSize(width: dockLeft - baseLeft, height: dockTop - bottomDock)
                         dragTranslation = .zero
                         tuckedSide = side
                         tuckedTop = tabTop
                         controller.tuck()
                     }
+                    DispatchQueue.main.async {
+                        withAnimation(dockSettleAnimation) {
+                            isTuckedHandleVisible = true
+                        }
+                    }
                 } else {
                     let dockLeft = proposedLeft + floatWidth / 2 < size.width / 2 ? 12 : baseLeft
                     let previewHeight = floatWidth * controller.desktopSize.height / max(1, controller.desktopSize.width)
-                    let topDock = topDock(geometry: geometry)
                     let bottomDock = bottomDockTop(previewHeight: previewHeight, geometry: geometry)
-                    let proposedTop = bottomDock + dockOffset.height + value.translation.height
-                    let dockTop = min(max(proposedTop, topDock), bottomDock)
+                    let startTop = restingPreviewTop(previewHeight: previewHeight, geometry: geometry)
+                    let dockTop = clampedTop(startTop + value.translation.height, height: previewHeight, geometry: geometry)
                     withAnimation(dockSettleAnimation) {
                         dockOffset = CGSize(
                             width: dockLeft - baseLeft,
@@ -850,6 +976,13 @@ struct ComputerUseViewerOverlay: View {
 
     private var dockSettleAnimation: Animation? {
         reduceMotion ? nil : .spring(response: 0.38, dampingFraction: 0.82)
+    }
+
+    private func restingPreviewTop(previewHeight: CGFloat, geometry: GeometryProxy) -> CGFloat {
+        let top = topDock(geometry: geometry)
+        let bottom = bottomDockTop(previewHeight: previewHeight, geometry: geometry)
+        let preferred = bottom + dockOffset.height
+        return min(max(preferred, top), bottom)
     }
 
     private func bottomDockTop(previewHeight: CGFloat, geometry: GeometryProxy) -> CGFloat {
@@ -867,7 +1000,10 @@ struct ComputerUseViewerOverlay: View {
     }
 
     private func topDock(geometry: GeometryProxy) -> CGFloat {
-        geometry.safeAreaInsets.top + Self.navigationBarHeight + Self.dockSpacing
+        let measuredTop = navigationBarBottom.map {
+            $0 - geometry.frame(in: .global).minY
+        } ?? (geometry.safeAreaInsets.top + Self.navigationBarHeight)
+        return measuredTop + Self.dockSpacing
     }
 
     private var floatingPinch: some Gesture {
@@ -878,6 +1014,20 @@ struct ComputerUseViewerOverlay: View {
                 floatWidth = min(300, max(176, start * scale))
             }
             .onEnded { _ in pinchStartWidth = nil }
+    }
+}
+
+private struct TuckChevron: Shape {
+    let pointsRight: Bool
+
+    func path(in rect: CGRect) -> Path {
+        let outerX = rect.width * (pointsRight ? 0.18 : 0.82)
+        let inwardX = rect.width * (pointsRight ? 0.82 : 0.18)
+        var path = Path()
+        path.move(to: CGPoint(x: outerX, y: rect.minY))
+        path.addLine(to: CGPoint(x: inwardX, y: rect.midY))
+        path.addLine(to: CGPoint(x: outerX, y: rect.maxY))
+        return path
     }
 }
 
@@ -1064,13 +1214,26 @@ struct ComputerUseE2EHarnessView: View {
                     .padding(24)
             } else {
                 NavigationStack {
-                    Color(uiColor: .systemBackground)
-                        .ignoresSafeArea()
-                        .overlay(alignment: .topTrailing) {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 20) {
                             Text("Chat canvas")
                                 .accessibilityIdentifier("chatCanvas")
+                            Text("TRANSCRIPT_SCROLL_ANCHOR")
+                                .accessibilityIdentifier("transcriptScrollAnchor")
+                            ForEach(0..<30, id: \.self) { index in
+                                Text("Transcript row \(index + 1)")
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
                         }
-                        .safeAreaInset(edge: .bottom, spacing: 0) {
+                        .padding(24)
+                    }
+                    .accessibilityIdentifier("chatTranscriptScroll")
+                    .background(Color(uiColor: .systemBackground))
+                    .overlay(alignment: .topTrailing) {
+                        Text("Session: \(String(describing: controller.state))")
+                            .accessibilityIdentifier("computerFixtureSessionState")
+                    }
+                    .safeAreaInset(edge: .bottom, spacing: 0) {
                             RoundedRectangle(cornerRadius: 22, style: .continuous)
                                 .fill(Color(uiColor: .secondarySystemBackground))
                                 .overlay(alignment: .leading) {
@@ -1089,8 +1252,8 @@ struct ComputerUseE2EHarnessView: View {
                                         )
                                     }
                                 }
-                        }
-                        .overlayPreferenceValue(ComputerComposerTopPreferenceKey.self) { composerTop in
+                    }
+                    .overlayPreferenceValue(ComputerComposerTopPreferenceKey.self) { composerTop in
                             ComputerUseViewerOverlay(controller: controller, composerTop: composerTop)
                         }
                         .toolbar {
