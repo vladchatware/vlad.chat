@@ -675,6 +675,10 @@ struct ComputerTrackpad: UIViewRepresentable {
 struct ComputerUseViewerOverlay: View {
     private static let navigationBarHeight: CGFloat = 44
     private static let dockSpacing: CGFloat = 12
+    private static let tuckedHandleHitWidth: CGFloat = 44
+    private static let tuckedHandleVisibleWidth: CGFloat = 24
+    private static let tuckedHandleHeight: CGFloat = 96
+    private static let tuckedHandleCornerRadius: CGFloat = 16
 
     private enum TuckedSide: Equatable {
         case leading
@@ -684,6 +688,7 @@ struct ComputerUseViewerOverlay: View {
     @ObservedObject var controller: ComputerUseSessionController
     let composerTop: CGFloat?
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var floatWidth: CGFloat = 208
     @State private var dockOffset = CGSize.zero
@@ -770,24 +775,40 @@ struct ComputerUseViewerOverlay: View {
 
     private func tuckedTab(geometry: GeometryProxy) -> some View {
         let roundsLeadingEdge = tuckedSide == .trailing
+        let handleShape = UnevenRoundedRectangle(
+            topLeadingRadius: roundsLeadingEdge ? Self.tuckedHandleCornerRadius : 0,
+            bottomLeadingRadius: roundsLeadingEdge ? Self.tuckedHandleCornerRadius : 0,
+            bottomTrailingRadius: roundsLeadingEdge ? 0 : Self.tuckedHandleCornerRadius,
+            topTrailingRadius: roundsLeadingEdge ? 0 : Self.tuckedHandleCornerRadius
+        )
+        let handleGradient = LinearGradient(
+            colors: colorScheme == .dark
+                ? [Color.white.opacity(0.95), Color.white.opacity(0.78)]
+                : [Color.black.opacity(0.52), Color.black.opacity(0.88)],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+        let handle = Image(systemName: tuckedSide == .trailing ? "chevron.left" : "chevron.right")
+            .font(.system(size: 24, weight: .semibold))
+            .foregroundStyle(colorScheme == .dark ? Color.black : Color.white)
+            .frame(width: Self.tuckedHandleVisibleWidth, height: Self.tuckedHandleHeight)
+            .background(handleGradient, in: handleShape)
+            .accessibilityHidden(true)
         let button = Button { controller.restore() } label: {
-            Image(systemName: tuckedSide == .trailing ? "chevron.left" : "chevron.right")
-                .frame(width: 44, height: 64)
-                .background(
-                    .regularMaterial,
-                    in: UnevenRoundedRectangle(
-                        topLeadingRadius: roundsLeadingEdge ? 12 : 0,
-                        bottomLeadingRadius: roundsLeadingEdge ? 12 : 0,
-                        bottomTrailingRadius: roundsLeadingEdge ? 0 : 12,
-                        topTrailingRadius: roundsLeadingEdge ? 0 : 12
-                    )
-                )
+            HStack(spacing: 0) {
+                if tuckedSide == .trailing { Spacer(minLength: 0) }
+                handle
+                if tuckedSide == .leading { Spacer(minLength: 0) }
+            }
+            .frame(width: Self.tuckedHandleHitWidth, height: Self.tuckedHandleHeight)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Restore computer preview")
+        .accessibilityValue(tuckedSide == .leading ? "Left edge" : "Right edge")
 
         return VStack(spacing: 0) {
-            Color.clear.frame(height: clampedTop(tuckedTop, height: 64, geometry: geometry))
+            Color.clear.frame(height: clampedTop(tuckedTop, height: Self.tuckedHandleHeight, geometry: geometry))
             HStack(spacing: 0) {
                 if tuckedSide == .leading {
                     button
@@ -848,7 +869,7 @@ struct ComputerUseViewerOverlay: View {
                     let startTop = restingPreviewTop(previewHeight: previewHeight, geometry: geometry)
                     let dockTop = clampedTop(startTop + value.translation.height, height: previewHeight, geometry: geometry)
                     let dockLeft = side == .leading ? 12 : baseLeft
-                    let tabHeight: CGFloat = 64
+                    let tabHeight = Self.tuckedHandleHeight
                     let tabTop = clampedTop(
                         dockTop + (previewHeight - tabHeight) / 2,
                         height: tabHeight,
