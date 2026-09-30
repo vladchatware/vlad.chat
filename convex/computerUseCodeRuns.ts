@@ -93,6 +93,10 @@ export const save = internalMutation({
   handler: async (ctx, { isAnonymous, ...args }) => {
     const userId = ctx.db.normalizeId("users", args.userId);
     if (!userId) throw new Error("Code run grant has invalid user identity.");
+    const user = await ctx.db.get(userId);
+    if (!user || Boolean(user.isAnonymous) !== isAnonymous) {
+      throw new Error("Code run grant does not match its user identity.");
+    }
     const existing = await ctx.db
       .query("computerCodeRuns")
       .withIndex("byRunId", (q) => q.eq("runId", args.runId))
@@ -122,10 +126,6 @@ export const save = internalMutation({
     }
     if (args.status !== "running") {
       throw new Error("A new code run must start in running state.");
-    }
-    const user = await ctx.db.get(userId);
-    if (!user || Boolean(user.isAnonymous) !== isAnonymous) {
-      throw new Error("Code run grant does not match its user identity.");
     }
     await ctx.db.insert("computerCodeRuns", { ...args, userId });
     return null;
