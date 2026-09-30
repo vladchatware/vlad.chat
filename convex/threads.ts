@@ -899,11 +899,13 @@ export const runAgentStep = internalAction({
       notionConn,
     );
     let codeModeGrant: string | undefined;
+    let codeModeIsAnonymous: boolean | undefined;
     if ((process.env.COMPUTER_USE_AUTH_SECRET?.length ?? 0) >= 32) {
       const principal = await ctx.runQuery(internal.users.codeModePrincipal, {
         userId: run.userId,
       });
       if (principal) {
+        codeModeIsAnonymous = principal.isAnonymous;
         codeModeGrant = await signCodeModeGrant({
           userId: principal.userId,
           sessionKey: String(run.userId),
@@ -919,6 +921,12 @@ export const runAgentStep = internalAction({
       run.threadId,
       codeModeGrant,
     );
+    console.info("Code Mode MCP discovery", {
+      authSecretConfigured: (process.env.COMPUTER_USE_AUTH_SECRET?.length ?? 0) >= 32,
+      grantIssued: Boolean(codeModeGrant),
+      anonymousPrincipal: codeModeIsAnonymous,
+      runCodeToolReturned: hasCodeModeTools(tools),
+    });
     const notionInstruction = notionConn
       ? userNotionInstruction(notionConn.workspaceName)
       : "";

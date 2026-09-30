@@ -643,6 +643,14 @@ async function withComputerSession(req: Request): Promise<Response> {
   const token = req.headers.get("x-code-mode-grant")
   let grant = token ? await verifyCodeModeGrant(token) : null
   if (grant?.isAnonymous && !canUseCodeMode(true)) grant = null
+  console.info("Code Mode MCP grant check", {
+    tokenReceived: Boolean(token),
+    grantVerified: Boolean(grant),
+    anonymousGrant: grant?.isAnonymous,
+    anonymousAllowed: grant ? canUseCodeMode(grant.isAnonymous) : false,
+    computerUseAvailable: computerUseToolsAvailable(),
+    vercelEnvironment: process.env.VERCEL_ENV ?? "unknown",
+  })
   let grantToken = grant ? token ?? undefined : undefined
   const apiKey = bearerToken(req)
   if (
