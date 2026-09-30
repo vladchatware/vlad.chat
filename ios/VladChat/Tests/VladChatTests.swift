@@ -3,6 +3,24 @@ import Testing
 @testable import VladChat
 
 struct VladChatTests {
+    @Test func queuedGenerationResultDecodesWithoutMessageOrder() throws {
+        let payload = """
+        {
+          "threadId": "thread-1",
+          "runId": "run-1",
+          "queued": true
+        }
+        """.data(using: .utf8)!
+
+        let result = try JSONDecoder().decode(GenerationResult.self, from: payload)
+
+        #expect(result.threadId == "thread-1")
+        #expect(result.order == nil)
+        #expect(result.promptMessageId == nil)
+        #expect(result.runId == "run-1")
+        #expect(result.queued == true)
+    }
+
     @MainActor
     @Test func modelCatalogStartsWithWebDefault() {
         #expect(AppConfig.shared.availableModels.first?.id == "zai/glm-5.3-flash")

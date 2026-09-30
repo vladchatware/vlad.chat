@@ -168,12 +168,12 @@ final class ChatViewModel: ObservableObject {
                 )
                 guard activeGenerationID == generationID else { return }
                 localGenerationExpectedOrder = result.order
-                if hasObservedLocalGeneration(order: result.order) {
+                if let order = result.order, hasObservedLocalGeneration(order: order) {
                     localGenerationActive = false
                     localGenerationExpectedOrder = nil
                     localGenerationPreviousMaxOrder = nil
                     localGenerationMessageID = nil
-                    isLoading = hasActiveObservedResponse(order: result.order)
+                    isLoading = hasActiveObservedResponse(order: order)
                 }
             } catch {
                 guard !Task.isCancelled else { return }
@@ -580,8 +580,7 @@ final class ChatViewModel: ObservableObject {
 
     private func apply(_ mobileChat: MobileChat) {
         account = mobileChat.account
-        if let expectedOrder = localGenerationExpectedOrder,
-           hasObservedLocalGeneration(in: mobileChat, order: expectedOrder) {
+        if hasObservedLocalGeneration(in: mobileChat, order: localGenerationExpectedOrder) {
             localGenerationActive = false
             localGenerationExpectedOrder = nil
             localGenerationPreviousMaxOrder = nil
@@ -929,10 +928,20 @@ final class ChatViewModel: ObservableObject {
         } ?? false
     }
 
-    private func hasObservedLocalGeneration(in mobileChat: MobileChat, order: Double) -> Bool {
+    private func hasObservedLocalGeneration(in mobileChat: MobileChat, order: Double?) -> Bool {
+        if let order {
+            return hasObservedLocalGeneration(in: mobileChat, order: order)
+        }
+
         let previousMaxOrder = localGenerationPreviousMaxOrder ?? -.infinity
+        guard let optimisticText = currentChat?.messages.last(where: {
+            $0.role == .user && $0.id.hasPrefix("optimistic-")
+        })?.content else {
+            return false
+        }
+
         return mobileChat.messages.contains {
-            !$0.isUser && $0.order >= order && $0.order > previousMaxOrder
+            $0.isUser && $0.text == optimisticText && $0.order > previousMaxOrder
         }
     }
 

@@ -225,8 +225,10 @@ struct MobileUsageSummary: Decodable, Equatable, Sendable {
 
 struct GenerationResult: Decodable, Sendable {
     let threadId: String
-    let order: Double
-    let promptMessageId: String
+    let order: Double?
+    let promptMessageId: String?
+    let runId: String?
+    let queued: Bool?
 }
 
 struct AbortReplyResult: Decodable, Sendable {
