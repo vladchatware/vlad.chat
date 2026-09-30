@@ -52,14 +52,16 @@ export function registerComputerUseMcpTools(server: McpToolServer): void {
       code: z.string().min(1).max(64 * 1024).describe(
         "Body of an async TypeScript function. Type annotations are stripped at runtime; use only erasable TypeScript syntax.",
       ),
-      description: z.string().min(1).max(500).describe("Short purpose of this program."),
+      description: z.string().min(1).max(500).optional()
+        .describe("Optional short purpose of this program."),
       timeoutMs: z.number().int().min(1000).max(120_000).optional()
         .describe("Run deadline in milliseconds; default 60000, maximum 120000."),
     },
     async ({ code, description, timeoutMs }, extra) => {
+      const runDescription = description ?? "TypeScript sandbox run";
       const result = await runSandboxCode(codeModeGrant.sessionKey, codeModeGrant.threadId, {
         code,
-        description,
+        description: runDescription,
         timeoutMs: timeoutMs ?? 60_000,
         signal: extra?.signal,
       }, resolveCodeModeGrantToken());
@@ -67,7 +69,7 @@ export function registerComputerUseMcpTools(server: McpToolServer): void {
         ? "No value returned."
         : `Return value: ${result.valueJson}`;
       const output = [
-        `Program: ${description}`,
+        `Program: ${runDescription}`,
         `Run ID: ${result.runId}`,
         `Status: ${result.status}`,
         `Exit code: ${String(result.exitCode)}`,
