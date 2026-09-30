@@ -59,7 +59,7 @@ const require = createRequire(import.meta.url);
 const execFile = promisify(execFileCallback);
 const run = async (cmd, args, options = {}) => {
   const result = await execFile(cmd, args, {
-    cwd: options.cwd ?? "/vercel/sandbox",
+    cwd: options.cwd ?? process.cwd(),
     maxBuffer: 1024 * 1024,
     timeout: options.timeoutMs ?? 30000,
     env: process.env,
@@ -530,7 +530,7 @@ export async function runSandboxCode(
     const command = await sandbox.runCommand({
       cmd: "node",
       args: ["--experimental-strip-types", path],
-      cwd: "/vercel/sandbox",
+      cwd: sandbox.cwd,
       timeoutMs: Math.min(input.timeoutMs, remainingTtlMs),
       detached: true,
     });
@@ -650,7 +650,7 @@ export async function runSandboxCode(
     await sandbox.runCommand({
       cmd: "rm",
       args: ["-f", path],
-      cwd: "/vercel/sandbox",
+      cwd: sandbox.cwd,
       timeoutMs: 5000,
     }).catch(() => undefined);
   }
