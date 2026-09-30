@@ -1120,6 +1120,7 @@ private struct ComputerInspectorKeyAccessory: View {
             }
             .padding(.horizontal, 12)
         }
+        .frame(height: 44)
         .padding(.vertical, 6)
         .background(.bar)
         .accessibilityIdentifier("computerKeyAccessory")
