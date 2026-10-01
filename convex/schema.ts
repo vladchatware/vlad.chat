@@ -172,6 +172,12 @@ export default defineSchema({
     .index("byRunId", ["runId"])
     .index("byUserThreadUpdatedAt", ["userId", "threadId", "updatedAt"])
     .index("byExpiresAt", ["expiresAt"]),
+  threadTitleJobs: defineTable({
+    threadId: v.string(),
+    userId: v.id("users"),
+    originalTitle: v.optional(v.string()),
+    status: v.union(v.literal("pending"), v.literal("generating"), v.literal("completed"), v.literal("failed"), v.literal("canceled")),
+  }).index("byThread", ["threadId"]),
   agentRuns: defineTable({
     threadId: v.string(),
     userId: v.id("users"),

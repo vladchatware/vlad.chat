@@ -99,26 +99,120 @@ export const getThreadDetails = query({
   },
 });
 
+// Title work is claimed and scheduled transactionally; it never awaits the model
+// on the response path. A failed attempt remains terminal for this thread.
+function isDefaultThreadTitle(title: string | undefined) {
+  return !title?.trim() || title.trim() === "New chat";
+}
+
+async function scheduleThreadTitle(ctx: MutationCtx, run: Doc<"agentRuns">) {
+  if (run.status !== "completed") return;
+  const step = await ctx.db.query("agentRunSteps")
+    .withIndex("byRunStep", (q) => q.eq("runId", run._id))
+    .filter((q) => q.and(q.eq(q.field("hasOutput"), true), q.eq(q.field("hasToolCalls"), false)))
+    .first();
+  if (!step) return;
+  const metadata = await getThreadMetadata(ctx, components.agent, { threadId: run.threadId });
+  if (metadata.userId !== run.userId || !isDefaultThreadTitle(metadata.title)) return;
+  const existing = await ctx.db.query("threadTitleJobs")
+    .withIndex("byThread", (q) => q.eq("threadId", run.threadId)).unique();
+  if (existing) return;
+  const jobId = await ctx.db.insert("threadTitleJobs", {
+    threadId: run.threadId, userId: run.userId, originalTitle: metadata.title,
+    status: "pending",
+  });
+  await ctx.scheduler.runAfter(0, internal.threads.generateThreadTitle, { jobId });
+}
+
+export const scheduleThreadTitleForUser = internalMutation({
+  args: { threadId: v.string(), userId: v.id("users") },
+  returns: v.null(),
+  handler: async (ctx, { threadId, userId }) => {
+    const metadata = await getThreadMetadata(ctx, components.agent, { threadId });
+    if (metadata.userId !== userId) throw new ConvexError("Unauthorized");
+    const run = await ctx.db.query("agentRuns")
+      .withIndex("byThreadAndStatus", (q) => q.eq("threadId", threadId).eq("status", "completed"))
+      .first();
+    if (run && run.userId === userId) await scheduleThreadTitle(ctx, run);
+    return null;
+  },
+});
+
 export const updateThreadTitle = action({
   args: { threadId: v.string() },
   handler: async (ctx, { threadId }) => {
-    await authorizeThreadAccess(ctx, threadId);
-    const { thread } = await agent.continueThread(ctx, { threadId });
-    const {
-      object: { title, summary },
-    } = await thread.generateObject(
-      {
-        schemaDescription:
-          "Generate a title and summary for the thread. The title should be a single sentence that captures the main topic of the thread. The summary should be a short description of the thread that could be used to describe it to someone who hasn't read it.",
-        schema: z.object({
-          title: z.string().describe("The new title for the thread"),
-          summary: z.string().describe("The new summary for the thread"),
-        }),
-        prompt: "Generate a title and summary for this thread.",
-      },
-      { storageOptions: { saveMessages: "none" } },
-    );
-    await thread.updateMetadata({ title, summary });
+    await authorizeThreadAccess(ctx, threadId, true);
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new ConvexError("Unauthorized");
+    await ctx.runMutation(internal.threads.scheduleThreadTitleForUser, { threadId, userId });
+  },
+});
+
+export const claimThreadTitle = internalMutation({
+  args: { jobId: v.id("threadTitleJobs") },
+  handler: async (ctx, { jobId }) => {
+    const job = await ctx.db.get(jobId);
+    if (!job || job.status !== "pending") return null;
+    const metadata = await getThreadMetadata(ctx, components.agent, { threadId: job.threadId });
+    if (metadata.userId !== job.userId || metadata.title !== job.originalTitle || !isDefaultThreadTitle(metadata.title)) {
+      await ctx.db.patch(jobId, { status: "canceled" });
+      return null;
+    }
+    await ctx.db.patch(jobId, { status: "generating" });
+    return job.threadId;
+  },
+});
+
+export const finishThreadTitle = internalMutation({
+  args: { jobId: v.id("threadTitleJobs"), result: v.optional(v.object({ title: v.string(), summary: v.string() })) },
+  returns: v.null(),
+  handler: async (ctx, { jobId, result }) => {
+    const job = await ctx.db.get(jobId);
+    if (!job || job.status !== "generating") return null;
+    const metadata = await getThreadMetadata(ctx, components.agent, { threadId: job.threadId });
+    if (metadata.userId !== job.userId || metadata.title !== job.originalTitle || !isDefaultThreadTitle(metadata.title)) {
+      await ctx.db.patch(jobId, { status: "canceled" });
+      return null;
+    }
+    if (!result?.title.trim() || isDefaultThreadTitle(result.title)) {
+      await ctx.db.patch(jobId, { status: "failed" });
+      return null;
+    }
+    await agent.updateThreadMetadata(ctx, { threadId: job.threadId, patch: { title: result.title.trim(), summary: result.summary } });
+    await ctx.db.patch(jobId, { status: "completed" });
+    return null;
+  },
+});
+
+export const generateThreadTitle = internalAction({
+  args: { jobId: v.id("threadTitleJobs") },
+  returns: v.null(),
+  handler: async (ctx, { jobId }) => {
+    try {
+      const threadId = await ctx.runMutation(internal.threads.claimThreadTitle, { jobId });
+      if (!threadId) return null;
+      const { thread } = await agent.continueThread(ctx, { threadId });
+      const {
+        object: { title, summary },
+      } = await thread.generateObject(
+        {
+          schemaDescription:
+            "Generate a title and summary for the thread. The title should be a single sentence that captures the main topic of the thread. The summary should be a short description of the thread that could be used to describe it to someone who hasn't read it.",
+          schema: z.object({
+            title: z.string().describe("The new title for the thread"),
+            summary: z.string().describe("The new summary for the thread"),
+          }),
+          prompt: "Generate a title and summary for this thread.",
+        },
+        { storageOptions: { saveMessages: "none" } },
+      );
+
+      await ctx.runMutation(internal.threads.finishThreadTitle, { jobId, result: { title, summary } });
+    } catch (error) {
+      console.error("Could not generate thread title", error);
+      await ctx.runMutation(internal.threads.finishThreadTitle, { jobId });
+    }
+    return null;
   },
 });
 
@@ -831,6 +925,7 @@ export const agentRunWorkflowCompleted = internalMutation({
           updatedAt: now,
           completedAt: now,
         });
+        await scheduleThreadTitle(ctx, { ...run, status: "completed" });
       }
     } else {
       const error = result.kind === "failed" ? result.error : "Workflow canceled.";
@@ -1864,6 +1959,14 @@ export const renameMobileThread = mutation({
     await authorizeThreadAccess(ctx, threadId, true);
     const normalizedTitle = title.trim();
     if (!normalizedTitle) throw new ConvexError("Chat title cannot be empty.");
+    const job = await ctx.db.query("threadTitleJobs")
+      .withIndex("byThread", (q) => q.eq("threadId", threadId)).unique();
+    if (job) await ctx.db.patch(job._id, { status: "canceled" });
+    else {
+      const userId = await getAuthUserId(ctx);
+      if (!userId) throw new ConvexError("Unauthorized");
+      await ctx.db.insert("threadTitleJobs", { threadId, userId, status: "canceled" });
+    }
     await agent.updateThreadMetadata(ctx, { threadId, patch: { title: normalizedTitle } });
     return null;
   },
