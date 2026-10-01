@@ -555,6 +555,13 @@ final class VladChatUITests: XCTestCase {
         app.buttons["Fit"].tap()
         assertReceived("Fit applied")
 
+        let remoteText = app.textFields["computerRemoteText"]
+        XCTAssertTrue(remoteText.waitForExistence(timeout: 5))
+        remoteText.tap()
+        remoteText.typeText("ok")
+        assertReceived("Text: o")
+        assertReceived("Text: k")
+
         let keyboard = app.buttons["Keyboard"]
         keyboard.tap()
         XCTAssertEqual(keyboard.value as? String, "Hidden")
