@@ -503,23 +503,10 @@ struct ThreadSyncScrollHarnessView: View {
     }
 
     private func snapshot(updateNumber: Int) -> MobileChat {
-        let history = (1...8).flatMap { index in
-            [
-                ChatMessage(
-                    id: "sync-history-user-\(index)", role: "user",
-                    text: "SYNC_HISTORY_USER_\(index) — Explain this earlier step in our conversation.",
-                    status: "completed", order: Double(index * 2),
-                    createdAt: Double(index * 2_000), response: nil,
-                    errorText: nil, attachments: nil
-                ),
-                ChatMessage(
-                    id: "sync-history-assistant-\(index)", role: "assistant",
-                    text: "SYNC_HISTORY_ASSISTANT_\(index) — This reply remains readable while the same thread receives more updates.",
-                    status: "completed", order: Double(index * 2 + 1),
-                    createdAt: Double(index * 2_000 + 1), response: nil,
-                    errorText: nil, attachments: nil
-                ),
-            ]
+        var history: [ChatMessage] = []
+        for index in 1...8 {
+            history.append(historyMessage(index: index, role: "user"))
+            history.append(historyMessage(index: index, role: "assistant"))
         }
         let userMessage = ChatMessage(
             id: "sync-current-user", role: "user",
@@ -552,6 +539,28 @@ struct ThreadSyncScrollHarnessView: View {
             account: nil,
             remainingMessages: nil,
             computerViewer: nil
+        )
+    }
+
+    private func historyMessage(index: Int, role: String) -> ChatMessage {
+        let isUserMessage = role == "user"
+        let messageID = "sync-history-\(role)-\(index)"
+        let text = isUserMessage
+            ? "SYNC_HISTORY_USER_\(index) — Explain this earlier step in our conversation."
+            : "SYNC_HISTORY_ASSISTANT_\(index) — This reply remains readable while the same thread receives more updates."
+        let order = Double(index * 2 + (isUserMessage ? 0 : 1))
+        let createdAt = Double(index * 2_000 + (isUserMessage ? 0 : 1))
+
+        return ChatMessage(
+            id: messageID,
+            role: role,
+            text: text,
+            status: "completed",
+            order: order,
+            createdAt: createdAt,
+            response: nil,
+            errorText: nil,
+            attachments: nil
         )
     }
 }

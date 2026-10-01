@@ -4,12 +4,36 @@ import Testing
 
 struct VladChatTests {
     @Test func jumpToBottomButtonUsesSeparateShowAndHideThresholds() {
-        #expect(!TranscriptScrollPolicy.shouldShowJumpToBottom(distanceFromBottom: 60, currentlyShown: false))
-        #expect(!TranscriptScrollPolicy.shouldShowJumpToBottom(distanceFromBottom: 72, currentlyShown: false))
-        #expect(TranscriptScrollPolicy.shouldShowJumpToBottom(distanceFromBottom: 73, currentlyShown: false))
-        #expect(TranscriptScrollPolicy.shouldShowJumpToBottom(distanceFromBottom: 60, currentlyShown: true))
-        #expect(TranscriptScrollPolicy.shouldShowJumpToBottom(distanceFromBottom: 37, currentlyShown: true))
-        #expect(!TranscriptScrollPolicy.shouldShowJumpToBottom(distanceFromBottom: 36, currentlyShown: true))
+        #expect(!TranscriptScrollPolicy.shouldShowJumpToBottom(
+            distanceFromBottom: 200,
+            userScrollDisplacement: 10,
+            currentlyShown: false
+        ))
+        #expect(!TranscriptScrollPolicy.shouldShowJumpToBottom(
+            distanceFromBottom: 72,
+            userScrollDisplacement: 72,
+            currentlyShown: false
+        ))
+        #expect(TranscriptScrollPolicy.shouldShowJumpToBottom(
+            distanceFromBottom: 73,
+            userScrollDisplacement: 73,
+            currentlyShown: false
+        ))
+        #expect(TranscriptScrollPolicy.shouldShowJumpToBottom(
+            distanceFromBottom: 60,
+            userScrollDisplacement: 200,
+            currentlyShown: true
+        ))
+        #expect(TranscriptScrollPolicy.shouldShowJumpToBottom(
+            distanceFromBottom: 37,
+            userScrollDisplacement: 0,
+            currentlyShown: true
+        ))
+        #expect(!TranscriptScrollPolicy.shouldShowJumpToBottom(
+            distanceFromBottom: 36,
+            userScrollDisplacement: 0,
+            currentlyShown: true
+        ))
     }
 
     @Test func queuedGenerationResultDecodesWithoutMessageOrder() throws {
@@ -491,7 +515,6 @@ struct VladChatTests {
 
     @MainActor
     @Test func activeComputerOpenResultShowsPreviewBeforeLiveSessionPublication() {
-        let viewerURL = "https://sb-example.vercel.run/vladchat.html"
         let openTool = ResponseTool(
             id: "open-call-published-late",
             name: "computer_open",

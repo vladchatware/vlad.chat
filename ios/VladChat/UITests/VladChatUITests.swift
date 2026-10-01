@@ -246,16 +246,21 @@ final class VladChatUITests: XCTestCase {
         let jumpButton = app.buttons["jumpToLatestButton"]
         XCTAssertFalse(jumpButton.exists, "The button should be hidden at the latest message")
 
-        let start = table.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.58))
-        let tinyNudge = table.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.54))
-        start.press(forDuration: 0.05, thenDragTo: tinyNudge)
+        let start = table.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.55))
+        let tinyNudge = table.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.565))
+        start.press(
+            forDuration: 0.2,
+            thenDragTo: tinyNudge,
+            withVelocity: .slow,
+            thenHoldForDuration: 0.15
+        )
         XCTAssertFalse(jumpButton.exists, "A small scroll nudge should stay inside the hidden tolerance zone")
 
-        table.swipeUp()
+        table.swipeDown()
         XCTAssertTrue(jumpButton.waitForExistence(timeout: 2), "A meaningful scroll away from the latest message should reveal the button")
 
         for _ in 0..<8 where jumpButton.exists {
-            table.swipeDown()
+            table.swipeUp()
         }
         XCTAssertFalse(jumpButton.exists, "Returning near the latest message should hide the button")
     }

@@ -97,7 +97,15 @@ enum TranscriptScrollPolicy {
     static let jumpButtonShowThreshold: CGFloat = 72
     static let jumpButtonHideThreshold: CGFloat = 36
 
-    static func shouldShowJumpToBottom(distanceFromBottom: CGFloat, currentlyShown: Bool) -> Bool {
-        distanceFromBottom > (currentlyShown ? jumpButtonHideThreshold : jumpButtonShowThreshold)
+    static func shouldShowJumpToBottom(
+        distanceFromBottom: CGFloat,
+        userScrollDisplacement: CGFloat,
+        currentlyShown: Bool
+    ) -> Bool {
+        if currentlyShown {
+            return distanceFromBottom > jumpButtonHideThreshold
+        }
+        return distanceFromBottom > jumpButtonShowThreshold &&
+            userScrollDisplacement > jumpButtonShowThreshold
     }
 }

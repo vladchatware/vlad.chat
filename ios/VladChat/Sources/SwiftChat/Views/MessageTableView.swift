@@ -82,6 +82,7 @@ struct MessageTableView: UIViewRepresentable {
 
         if chatIdChanged {
             context.coordinator.lastChatId = currentChatId
+            context.coordinator.resetUserScrollDisplacement()
 
             if !isIdConversion && !preservedMessageIdentities {
                 context.coordinator.messageWrappers.removeAll()
@@ -236,6 +237,7 @@ struct MessageTableView: UIViewRepresentable {
 
         if context.coordinator.lastScrollTrigger != scrollTrigger {
             context.coordinator.lastScrollTrigger = scrollTrigger
+            context.coordinator.resetUserScrollDisplacement()
             context.coordinator.shouldScrollToBottomAfterLayout = true
             context.coordinator.shouldScrollToUserMessageAfterLayout = false
             context.coordinator.isUserMessageScrollMode = false
@@ -281,6 +283,8 @@ struct MessageTableView: UIViewRepresentable {
         var lastMessageSequence: [String] = []
         private var renderedMessageSequence: [String] = []
         private var isDragging = false
+        private var userScrollDisplacementFromBottom: CGFloat = 0
+        private var userScrollDisplacementAtDragStart: CGFloat = 0
         private var isUpdatingContentInset = false
         var messageWrappers: [String: ObservableMessageWrapper] = [:]
         var shouldScrollToBottomAfterLayout = false
@@ -580,6 +584,7 @@ struct MessageTableView: UIViewRepresentable {
 
         func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
             isDragging = true
+            userScrollDisplacementAtDragStart = userScrollDisplacementFromBottom
             parent.userHasScrolled = true
             parent.viewModel.isScrollInteractionActive = true
             shouldScrollToBottomAfterLayout = false
@@ -592,6 +597,8 @@ struct MessageTableView: UIViewRepresentable {
         }
 
         func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+            let gestureDisplacement = scrollView.panGestureRecognizer.translation(in: scrollView).y
+            userScrollDisplacementFromBottom = max(0, userScrollDisplacementAtDragStart + gestureDisplacement)
             isDragging = false
             if !decelerate {
                 checkIfAtBottom(userScrollEnded: true)
@@ -755,10 +762,17 @@ struct MessageTableView: UIViewRepresentable {
 
             let isVisible = distanceFromBottom <= Theme.Dimensions.bottomFollowTolerance
             let isUserScrolling = isDragging || tableView.isDecelerating || userScrollEnded
+            let userScrollDisplacement = isDragging
+                ? max(
+                    0,
+                    userScrollDisplacementAtDragStart + tableView.panGestureRecognizer.translation(in: tableView).y
+                )
+                : userScrollDisplacementFromBottom
             let shouldShowJumpButton: Bool
             if isUserScrolling {
                 shouldShowJumpButton = TranscriptScrollPolicy.shouldShowJumpToBottom(
                     distanceFromBottom: distanceFromBottom,
+                    userScrollDisplacement: userScrollDisplacement,
                     currentlyShown: parent.showJumpToBottomButton
                 )
             } else if parent.showJumpToBottomButton,
@@ -766,6 +780,11 @@ struct MessageTableView: UIViewRepresentable {
                 shouldShowJumpButton = false
             } else {
                 shouldShowJumpButton = parent.showJumpToBottomButton
+            }
+
+            if distanceFromBottom <= TranscriptScrollPolicy.jumpButtonHideThreshold,
+               !isDragging, !tableView.isDecelerating {
+                userScrollDisplacementFromBottom = 0
             }
 
             if parent.isAtBottom != isVisible ||
@@ -781,6 +800,11 @@ struct MessageTableView: UIViewRepresentable {
                     }
                 }
             }
+        }
+
+        func resetUserScrollDisplacement() {
+            userScrollDisplacementFromBottom = 0
+            userScrollDisplacementAtDragStart = 0
         }
 
         func invalidateHeight(for messageID: String) {
