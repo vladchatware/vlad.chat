@@ -462,6 +462,50 @@ struct VladChatTests {
     }
 
     @MainActor
+    @Test func switchingComputerSessionsReplacesTheActiveViewer() {
+        let viewModel = ChatViewModel()
+        defer { viewModel.computerUseController.stop() }
+
+        func chat(threadID: String, sessionID: String, host: String) -> MobileChat {
+            MobileChat(
+                threadId: threadID,
+                title: threadID,
+                threads: nil,
+                messages: [],
+                account: nil,
+                remainingMessages: nil,
+                computerViewer: MobileComputerViewerSession(
+                    sessionId: sessionID,
+                    viewerUrl: "https://\(host)/vnc.html",
+                    nativeViewerUrl: "https://\(host)/vladchat.html"
+                )
+            )
+        }
+
+        let firstSession = chat(
+            threadID: "thread-first",
+            sessionID: String(repeating: "a", count: 32),
+            host: "first-session.vercel.run"
+        )
+        viewModel.updateComputerUseSession(from: firstSession, isActive: false)
+
+        #expect(viewModel.computerUseController.owningThreadID == "thread-first")
+        #expect(viewModel.computerUseController.webView.url?.host == "first-session.vercel.run")
+
+        let secondSession = chat(
+            threadID: "thread-second",
+            sessionID: String(repeating: "b", count: 32),
+            host: "second-session.vercel.run"
+        )
+        viewModel.updateComputerUseSession(from: secondSession, isActive: false)
+
+        #expect(viewModel.computerUseController.owningThreadID == "thread-second")
+        #expect(viewModel.computerUseController.webView.url?.host == "second-session.vercel.run")
+        #expect(viewModel.computerUseController.state == .connecting)
+        #expect(viewModel.computerUseController.canControl)
+    }
+
+    @MainActor
     @Test func completedComputerToolCanResumeItsStillLiveSession() throws {
         let sessionId = String(repeating: "f", count: 32)
         let viewerURL = "https://sb-example.vercel.run/vladchat.html"
