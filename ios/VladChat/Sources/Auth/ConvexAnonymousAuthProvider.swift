@@ -109,9 +109,9 @@ final class ConvexAnonymousAuthProvider: AuthProvider, @unchecked Sendable {
         guard let session = response.tokens else {
             throw ConvexAnonymousAuthError.missingTokens
         }
-        lock.lock()
-        pendingSession = session
-        lock.unlock()
+        lock.withLock {
+            pendingSession = session
+        }
     }
 
     private func persist(_ session: ConvexAuthSession) throws {

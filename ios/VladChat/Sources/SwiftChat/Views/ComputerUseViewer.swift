@@ -1104,6 +1104,7 @@ struct ComputerUseInspectorScreen: View {
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @State private var keyboardFocusRequest = 0
     @State private var keyboardRequested = true
+    @State private var keyboardIsVisible = false
 
     var body: some View {
         GeometryReader { geometry in
@@ -1122,11 +1123,18 @@ struct ComputerUseInspectorScreen: View {
                     controller: controller,
                     text: $remoteText,
                     isFocused: $textFocused,
-                    keyboardRequested: keyboardRequested,
+                    keyboardIsVisible: keyboardIsVisible,
                     compactHeight: compactHeight
                 ) {
-                    keyboardRequested.toggle()
-                    textFocused = keyboardRequested && controller.canControl && controller.state.canSendInput
+                    if keyboardIsVisible {
+                        keyboardRequested = false
+                        keyboardIsVisible = false
+                        textFocused = false
+                    } else {
+                        keyboardRequested = true
+                        keyboardIsVisible = true
+                        keyboardFocusRequest += 1
+                    }
                 }
                 .frame(width: compactHeight ? min(300, geometry.size.width * 0.4) : nil)
             }
@@ -1154,8 +1162,7 @@ struct ComputerUseInspectorScreen: View {
             }
         }
         .task(id: keyboardFocusRequest) {
-            // Rotation can dismiss UIKit's keyboard without updating FocusState.
-            // Re-establish focus after the presentation/rotation transition settles.
+            // Reapply focus after inspector and rotation transitions settle.
             textFocused = false
             do {
                 try await Task.sleep(for: .milliseconds(350))
@@ -1168,13 +1175,29 @@ struct ComputerUseInspectorScreen: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
             guard UIDevice.current.orientation.isValidInterfaceOrientation else { return }
+            // Let rotation dismiss the software keyboard; the Keyboard control can reopen it.
+            keyboardRequested = false
+            keyboardIsVisible = false
+            textFocused = false
             keyboardFocusRequest += 1
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+            keyboardIsVisible = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+            guard !keyboardRequested else { return }
+            keyboardIsVisible = false
+            textFocused = false
         }
         .onChange(of: controller.presentation) { _, presentation in
             if presentation != .inspector { textFocused = false }
         }
         .onChange(of: textFocused) { _, focused in
-            if !focused { controller.releaseKeyboardModifiers() }
+            keyboardIsVisible = focused
+            if !focused && !keyboardRequested { controller.releaseKeyboardModifiers() }
+        }
+        .onChange(of: keyboardRequested) { _, requested in
+            if !requested { controller.releaseKeyboardModifiers() }
         }
         .onChange(of: controller.canControl) { _, canControl in
             textFocused = keyboardRequested && canControl && controller.state.canSendInput
@@ -1201,7 +1224,7 @@ private struct ComputerInspectorInputPanel: View {
     @ObservedObject var controller: ComputerUseSessionController
     @Binding var text: String
     var isFocused: FocusState<Bool>.Binding
-    let keyboardRequested: Bool
+    let keyboardIsVisible: Bool
     let compactHeight: Bool
     let toggleKeyboard: () -> Void
 
@@ -1210,7 +1233,7 @@ private struct ComputerInspectorInputPanel: View {
             controller: controller,
             text: $text,
             isFocused: isFocused,
-            keyboardRequested: keyboardRequested,
+            keyboardIsVisible: keyboardIsVisible,
             toggleKeyboard: toggleKeyboard
         )
         if compactHeight {
@@ -1226,14 +1249,14 @@ private struct ComputerInspectorInputContent: View {
     @ObservedObject var controller: ComputerUseSessionController
     @Binding var text: String
     var isFocused: FocusState<Bool>.Binding
-    let keyboardRequested: Bool
+    let keyboardIsVisible: Bool
     let toggleKeyboard: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
             ComputerInspectorControls(
                 controller: controller,
-                keyboardRequested: keyboardRequested,
+                keyboardIsVisible: keyboardIsVisible,
                 focusKeyboard: toggleKeyboard
             )
             .padding(.top, 8)
@@ -1293,7 +1316,7 @@ private struct ComputerInspectorPreview: View {
 
 private struct ComputerInspectorControls: View {
     @ObservedObject var controller: ComputerUseSessionController
-    let keyboardRequested: Bool
+    let keyboardIsVisible: Bool
     let focusKeyboard: () -> Void
 
     var body: some View {
@@ -1301,7 +1324,7 @@ private struct ComputerInspectorControls: View {
             controlButton("cursorarrow.click", title: "Click") { controller.click() }
             controlButton("cursorarrow.click.2", title: "Right click") { controller.click(buttonMask: 4) }
             controlButton("keyboard", title: "Keyboard", action: focusKeyboard)
-                .accessibilityValue(keyboardRequested ? "Shown" : "Hidden")
+                .accessibilityValue(keyboardIsVisible ? "Shown" : "Hidden")
             controlButton("arrow.up.left.and.arrow.down.right", title: "Fit", requiresInputOwnership: false) {
                 controller.fitDesktop()
             }
