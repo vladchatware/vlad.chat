@@ -11,12 +11,12 @@ const modules = {
   "./_generated/server.ts": () => import("./_generated/server"),
 };
 
-async function setup(title = "New chat", hasOutput = true) {
+async function setup(title: string | null = "Untitled", hasOutput = true) {
   vi.useFakeTimers();
   const t = convexTest(schema, modules);
   agentTest.register(t);
   const userId = await t.run((ctx) => ctx.db.insert("users", {}));
-  const thread = await t.run((ctx) => ctx.runMutation(components.agent.threads.createThread, { userId, title }));
+  const thread = await t.run((ctx) => ctx.runMutation(components.agent.threads.createThread, { userId, ...(title === null ? {} : { title }) }));
   const runId = await t.run(async (ctx) => {
     const runId = await ctx.db.insert("agentRuns", {
       threadId: thread._id, userId, model: "test", searchEnabled: false,
@@ -43,8 +43,8 @@ afterEach(() => {
 });
 
 describe("canonical thread titles", () => {
-  it("schedules only after a completed turn and claims simultaneous/resumed triggers once", async () => {
-    const f = await setup();
+  it.each(["Untitled", "New chat", "Chat with Vlad", "", null])("schedules default %s only after completion and claims simultaneous/resumed triggers once", async (title) => {
+    const f = await setup(title);
     await f.t.mutation(internal.threads.scheduleThreadTitleForUser, { threadId: f.threadId, userId: f.userId });
     expect(await f.job()).toBeNull();
     await Promise.all([f.complete(), f.complete()]);
@@ -63,7 +63,7 @@ describe("canonical thread titles", () => {
   });
 
   it("does not schedule empty output or replace an existing manual title", async () => {
-    for (const [title, output] of [["New chat", false], ["My title", true]] as const) {
+    for (const [title, output] of [["Untitled", false], ["My title", true]] as const) {
       const f = await setup(title, output);
       await f.complete();
       expect(await f.job()).toBeNull();
@@ -77,10 +77,10 @@ describe("canonical thread titles", () => {
     const job = await f.job();
     await f.t.mutation(internal.threads.claimThreadTitle, { jobId: job!._id });
     await f.auth.mutation(api.threads.renameMobileThread, { threadId: f.threadId, title: "My title" });
-    await f.auth.mutation(api.threads.renameMobileThread, { threadId: f.threadId, title: "New chat" });
+    await f.auth.mutation(api.threads.renameMobileThread, { threadId: f.threadId, title: "Untitled" });
     await f.t.mutation(internal.threads.finishThreadTitle, { jobId: job!._id, result: { title: "Generated title", summary: "Generated summary" } });
     await f.complete();
-    expect((await f.metadata())?.title).toBe("New chat");
+    expect((await f.metadata())?.title).toBe("Untitled");
     expect((await f.job())?.status).toBe("canceled");
   });
 
@@ -106,7 +106,7 @@ describe("canonical thread titles", () => {
       await f.t.run((ctx) => ctx.runMutation(components.agent.threads.updateThread, { threadId: f.threadId, patch: { userId: "different-owner" } }));
       if (phase === "before generation") expect(await f.t.mutation(internal.threads.claimThreadTitle, { jobId: job!._id })).toBeNull();
       else await f.t.mutation(internal.threads.finishThreadTitle, { jobId: job!._id, result: { title: "Generated", summary: "Summary" } });
-      expect((await f.metadata())?.title).toBe("New chat");
+      expect((await f.metadata())?.title).toBe("Untitled");
       expect((await f.job())?.status).toBe("canceled");
     }
   });
@@ -119,7 +119,7 @@ describe("canonical thread titles", () => {
     await f.t.mutation(internal.threads.finishThreadTitle, { jobId: job!._id });
     await f.complete();
     expect(await f.t.mutation(internal.threads.claimThreadTitle, { jobId: job!._id })).toBeNull();
-    expect((await f.metadata())?.title).toBe("New chat");
+    expect((await f.metadata())?.title).toBe("Untitled");
     expect((await f.job())?.status).toBe("failed");
     expect(await f.t.run((ctx) => ctx.db.get(f.runId))).toMatchObject({ status: "completed" });
   });
@@ -135,7 +135,7 @@ describe("canonical thread titles", () => {
     expect(generate).toHaveBeenCalledTimes(1);
     expect(log).toHaveBeenCalledWith("Could not generate thread title", expect.any(Error));
     expect((await f.job())?.status).toBe("failed");
-    expect((await f.metadata())?.title).toBe("New chat");
+    expect((await f.metadata())?.title).toBe("Untitled");
     expect(await f.t.run((ctx) => ctx.db.get(f.runId))).toMatchObject({ status: "completed" });
   });
 

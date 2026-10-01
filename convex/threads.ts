@@ -102,7 +102,10 @@ export const getThreadDetails = query({
 // Title work is claimed and scheduled transactionally; it never awaits the model
 // on the response path. A failed attempt remains terminal for this thread.
 function isDefaultThreadTitle(title: string | undefined) {
-  return !title?.trim() || title.trim() === "New chat";
+  // iOS displays its stored "Untitled" placeholder as "New chat".
+  // The web default-thread factory uses "Chat with Vlad".
+  const normalized = title?.trim();
+  return !normalized || ["New chat", "Untitled", "Chat with Vlad"].includes(normalized);
 }
 
 async function scheduleThreadTitle(ctx: MutationCtx, run: Doc<"agentRuns">) {
