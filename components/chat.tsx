@@ -37,6 +37,7 @@ import { AlertCircleIcon, BarChart3Icon, CopyIcon, KeyRoundIcon, MessageCircleIc
 import { SiNotion } from '@icons-pack/react-simple-icons';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
+import { groupConsecutiveScreenshots, screenshotReference, type ScreenshotReference } from '@/lib/computer-use/screenshot-contract';
 import {
   Source,
   Sources,
@@ -59,6 +60,7 @@ import { api } from '@/convex/_generated/api';
 import { PROVIDER_MODELS, isModelEnabled } from '@/lib/provider';
 import { SUBSCRIPTION_GRANT_CREDITS } from '@/lib/billing';
 import posthog from 'posthog-js';
+import { ComputerScreenshotOutput } from '@/components/computer-screenshot-output';
 
 const models = PROVIDER_MODELS.map(({ id, name }) => ({ name, value: id }));
 
@@ -571,6 +573,23 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                 {(messages ?? []).map((message, messageIndex) => {
                   const messageKey = `${message.order}-${message.stepOrder}`
                   const parts = message.parts as ChatMessagePart[]
+                  const screenshotAt = (part: ChatMessagePart): ScreenshotReference | undefined => {
+                    const name = part.toolName ??
+                      (part.type.startsWith('tool-') ? part.type.slice(5) : part.type)
+                    if (name !== 'computer_screenshot' || part.state !== 'output-available') return undefined
+                    const reference = screenshotReference(part.output)
+                    if (!reference) return undefined
+                    if (reference.url.startsWith('/') && !reference.url.startsWith('//')) return reference
+                    return reference.url.startsWith('https://') ? reference : undefined
+                  }
+                  const screenshotGroups = new Map<number, ScreenshotReference[]>()
+                  const groupedScreenshotIndexes = new Set<number>()
+                  for (const group of groupConsecutiveScreenshots(parts.map(screenshotAt))) {
+                    screenshotGroups.set(group.startIndex, group.screenshots)
+                    for (let index = group.startIndex + 1; index < group.endIndex; index += 1) {
+                      groupedScreenshotIndexes.add(index)
+                    }
+                  }
                   const hasRenderableContent = parts.some((part) => {
                     if (part.type === 'source-url') {
                       return false
@@ -695,6 +714,11 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                       }
                       {
                         parts.map((part, partIndex) => {
+                          const screenshotGroup = screenshotGroups.get(partIndex)
+                          if (screenshotGroup) {
+                            return <ComputerScreenshotOutput key={`${messageKey}-${partIndex}`} screenshots={screenshotGroup} />
+                          }
+                          if (groupedScreenshotIndexes.has(partIndex)) return null
                           switch (part.type) {
                             case 'text':
                               return (

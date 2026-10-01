@@ -131,23 +131,30 @@ struct ChatListView: View {
             removeKeyboardObservers()
             viewModel.isScrollInteractionActive = false
         }
-        .onChange(of: messages.count) { oldCount, newCount in
-            if newCount > oldCount {
-                let newMessages = messages.suffix(newCount - oldCount)
-                let hasUserMessage = newMessages.contains { $0.role == .user }
-                let wasInitialLoad = oldCount == 0
+        .onChange(of: messages.map(\.id)) { oldIDs, newIDs in
+            guard newIDs.count > oldIDs.count else { return }
 
-                if hasUserMessage || wasInitialLoad {
-                    userHasScrolled = false
-                    viewModel.isScrollInteractionActive = false
-                    // Stay anchored at the bottom. Pinning the sent message to the
-                    // top created an empty viewport that the next stream update
-                    // immediately scrolled away from, which read as a vertical jump.
-                    scrollTrigger = UUID()
-                }
+            let appendedMessages: ArraySlice<Message>
+            if oldIDs.isEmpty {
+                appendedMessages = messages[...]
+            } else if let previousLastID = oldIDs.last,
+                      let previousLastIndex = newIDs.firstIndex(of: previousLastID) {
+                appendedMessages = messages.suffix(from: newIDs.index(after: previousLastIndex))
+            } else {
+                // A replaced/trimmed transcript cannot tell us that a new user
+                // message was appended; keep the reader's current position.
+                return
+            }
+
+            if oldIDs.isEmpty || appendedMessages.contains(where: { $0.role == .user }) {
+                userHasScrolled = false
+                viewModel.isScrollInteractionActive = false
+                // Follow the initial history and newly sent messages. Older
+                // history inserted ahead of the last known row stays in place.
+                scrollTrigger = UUID()
             }
         }
-        .onChange(of: viewModel.currentChat?.createdAt) { _, _ in
+        .onChange(of: viewModel.currentChat?.id) { _, _ in
             userHasScrolled = false
             viewModel.isScrollInteractionActive = false
 
@@ -160,11 +167,6 @@ struct ChatListView: View {
             if !(viewModel.currentChat?.isBlankChat ?? true) {
                 scrollTrigger = UUID()
             }
-        }
-        .onChange(of: viewModel.scrollToBottomTrigger) { _, _ in
-            userHasScrolled = false
-            viewModel.isScrollInteractionActive = false
-            scrollTrigger = UUID()
         }
         .onChange(of: viewModel.scrollToUserMessageTrigger) { _, _ in
             userHasScrolled = false

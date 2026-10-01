@@ -25,6 +25,35 @@ export type ScreenshotReference = {
   availability?: "available" | "unavailable";
 };
 
+export type ConsecutiveScreenshotGroup = {
+  startIndex: number;
+  endIndex: number;
+  screenshots: ScreenshotReference[];
+};
+
+/** Preserve order while grouping only adjacent successful screenshot calls. */
+export function groupConsecutiveScreenshots(
+  references: readonly (ScreenshotReference | undefined)[],
+): ConsecutiveScreenshotGroup[] {
+  const groups: ConsecutiveScreenshotGroup[] = [];
+  let index = 0;
+  while (index < references.length) {
+    const first = references[index];
+    if (!first) {
+      index += 1;
+      continue;
+    }
+    const startIndex = index;
+    const screenshots: ScreenshotReference[] = [];
+    while (index < references.length && references[index]) {
+      screenshots.push(references[index]!);
+      index += 1;
+    }
+    groups.push({ startIndex, endIndex: index, screenshots });
+  }
+  return groups;
+}
+
 /** Read intrinsic PNG/JPEG dimensions; never substitute a viewport guess. */
 export function screenshotDimensions(bytes: Uint8Array): { width: number; height: number } | undefined {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);

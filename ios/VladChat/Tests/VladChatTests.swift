@@ -258,6 +258,53 @@ struct VladChatTests {
         #expect(tool.computerResult?.hasScreenshot == true)
     }
 
+    @Test func durableScreenshotReferenceOverridesAuthenticatedCompatibilityURL() throws {
+        let output = #"{"ok":true,"op":"screenshot","screenshotUrl":"https://vlad.chat/api/computer-use/screenshots/cu_capture_first","screenshotId":"cu_capture_first"}"#
+        let payload: [String: Any] = [
+            "id": "call-1",
+            "name": "computer_screenshot",
+            "status": "completed",
+            "output": output,
+            "screenshot": [
+                "id": "cu_capture_first",
+                "url": "https://kindly-rat-915.convex.cloud/api/storage/immutable-image",
+                "mimeType": "image/png",
+                "width": 1280,
+                "height": 720,
+                "sessionId": String(repeating: "a", count: 32),
+                "createdAt": 123,
+                "size": 456,
+                "availability": "available",
+            ],
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload)
+        let tool = try JSONDecoder().decode(ResponseTool.self, from: data)
+
+        #expect(tool.computerResult?.screenshotUrl == "https://kindly-rat-915.convex.cloud/api/storage/immutable-image")
+        #expect(tool.computerResult?.screenshotId == "cu_capture_first")
+        #expect(tool.computerResult?.width == 1280)
+        #expect(tool.computerResult?.hasScreenshot == true)
+    }
+
+    @Test func unavailableDurableScreenshotDoesNotFallBackToExpiredCompatibilityURL() throws {
+        let payload: [String: Any] = [
+            "id": "call-2",
+            "name": "computer_screenshot",
+            "status": "completed",
+            "output": #"{"ok":true,"op":"screenshot","screenshotUrl":"https://vlad.chat/api/computer-use/screenshots/cu_missing","screenshotId":"cu_missing"}"#,
+            "screenshot": [
+                "id": "cu_missing",
+                "url": "",
+                "availability": "unavailable",
+            ],
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload)
+        let tool = try JSONDecoder().decode(ResponseTool.self, from: data)
+
+        #expect(tool.computerResult?.screenshotUrl == nil)
+        #expect(tool.computerResult?.screenshotId == "cu_missing")
+    }
+
     @Test func computerToolResultParsesMCPContentWrapper() {
         // Mirrors lib/computer-use/mcp-tools.ts mcpResult():
         // { content: [{ type: "text", text: JSON.stringify(result) }] }

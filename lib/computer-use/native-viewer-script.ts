@@ -83,12 +83,22 @@ export const NATIVE_VIEWER_HTML = String.raw`<!doctype html>
         publish("desktopName", { name: event.detail.name });
       });
 
-      const observer = new ResizeObserver(publishDesktop);
+      const observer = new ResizeObserver(() => {
+        // WKWebView bounds change when rotating or folding the iOS keyboard.
+        // Reapply scaling against the current screen bounds on every resize.
+        rfb.scaleViewport = true;
+        publishDesktop();
+      });
       observer.observe(screen);
 
       window.vladVNC = {
         pointer(x, y, mask) {
-          rfb._handleMouseButton(
+          if (rfb._rfbConnectionState !== "connected" || rfb.viewOnly) return;
+          // Native input already uses framebuffer coordinates and a complete
+          // button mask. _handleMouseButton consumes scaled DOM coordinates,
+          // and older packaged noVNC versions require separate down/bmask args.
+          RFB.messages.pointerEvent(
+            rfb._sock,
             Math.max(0, Math.min(rfb._fbWidth - 1, Math.round(x))),
             Math.max(0, Math.min(rfb._fbHeight - 1, Math.round(y))),
             mask,

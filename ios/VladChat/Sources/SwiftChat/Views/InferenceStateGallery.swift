@@ -474,6 +474,86 @@ struct SeededChatHistoryHarnessView: View {
     }
 }
 
+/// Applies real MobileChat snapshots through ChatViewModel's production mapper
+/// so same-thread subscription updates exercise the production scroll policy.
+struct ThreadSyncScrollHarnessView: View {
+    @ObservedObject var viewModel: ChatViewModel
+    @State private var updateNumber = 0
+    @State private var didSeed = false
+
+    var body: some View {
+        ChatContainer()
+            .safeAreaInset(edge: .top, spacing: 0) {
+                Button("Apply same-thread sync") {
+                    updateNumber += 1
+                    viewModel.applyUITestSnapshot(snapshot(updateNumber: updateNumber))
+                }
+                .accessibilityIdentifier("applySameThreadSyncFixture")
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .background(Color.chatBackground(isDarkMode: false))
+            }
+            .task {
+                guard !didSeed else { return }
+                didSeed = true
+                viewModel.applyUITestSnapshot(snapshot(updateNumber: 0))
+            }
+    }
+
+    private func snapshot(updateNumber: Int) -> MobileChat {
+        let history = (1...8).flatMap { index in
+            [
+                ChatMessage(
+                    id: "sync-history-user-\(index)", role: "user",
+                    text: "SYNC_HISTORY_USER_\(index) — Explain this earlier step in our conversation.",
+                    status: "completed", order: Double(index * 2),
+                    createdAt: Double(index * 2_000), response: nil,
+                    errorText: nil, attachments: nil
+                ),
+                ChatMessage(
+                    id: "sync-history-assistant-\(index)", role: "assistant",
+                    text: "SYNC_HISTORY_ASSISTANT_\(index) — This reply remains readable while the same thread receives more updates.",
+                    status: "completed", order: Double(index * 2 + 1),
+                    createdAt: Double(index * 2_000 + 1), response: nil,
+                    errorText: nil, attachments: nil
+                ),
+            ]
+        }
+        let userMessage = ChatMessage(
+            id: "sync-current-user", role: "user",
+            text: "Continue with the current explanation.", status: "completed",
+            order: 18, createdAt: 18_000, response: nil,
+            errorText: nil, attachments: nil
+        )
+        let responseText = "SYNC_CURRENT_RESPONSE — Update \(updateNumber). The active response grows while earlier thread history remains in place."
+        let assistantMessage = ChatMessage(
+            id: "sync-current-assistant", role: "assistant",
+            text: responseText, status: "streaming", order: 18,
+            createdAt: 18_001,
+            response: ResponseActivity(
+                phase: .responding,
+                tools: [],
+                parts: [ResponsePart(
+                    id: "sync-current-response-part", type: .text,
+                    text: responseText, state: .streaming,
+                    sourceId: nil, url: nil, title: nil, tool: nil
+                )]
+            ),
+            errorText: nil, attachments: nil
+        )
+        let threadId = "thread-sync-scroll-fixture"
+        return MobileChat(
+            threadId: threadId,
+            title: "Thread sync scroll fixture",
+            threads: [MobileThread(id: threadId, title: "Thread sync scroll fixture", createdAt: 1_000)],
+            messages: history + [userMessage, assistantMessage],
+            account: nil,
+            remainingMessages: nil,
+            computerViewer: nil
+        )
+    }
+}
+
 private struct InferenceStateFixture: Identifiable {
     let id: String
     let title: String

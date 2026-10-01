@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { UIDataTypes, UIMessagePart, UITools } from "ai";
 import { mergeMobileStreamText, projectStoredResponse, MAX_TOOL_OUTPUT_CHARS } from "./mobile-stream";
-import { screenshotDimensions, screenshotReference } from "./computer-use/screenshot-contract";
+import { groupConsecutiveScreenshots, screenshotDimensions, screenshotReference } from "./computer-use/screenshot-contract";
 
 const result = {
   ok: true, op: "screenshot", screenshotId: "cu_capture_first",
@@ -37,6 +37,19 @@ describe("V-113 client contract fixtures", () => {
     expect(first.tools[1].outputTruncated).toBe(true);
     expect(first.tools[1].screenshot?.url).toBe("https://example.test/second");
     expect(first.parts).toHaveLength(2);
+  });
+
+  it("groups only adjacent successful screenshots and preserves newest-last order", () => {
+    const first = screenshotReference(result)!;
+    const second = screenshotReference({ ...result, screenshotId: "cu_capture_second" })!;
+    const third = screenshotReference({ ...result, screenshotId: "cu_capture_third" })!;
+    const groups = groupConsecutiveScreenshots([first, second, undefined, third]);
+
+    expect(groups).toEqual([
+      { startIndex: 0, endIndex: 2, screenshots: [first, second] },
+      { startIndex: 3, endIndex: 4, screenshots: [third] },
+    ]);
+    expect(groups[0].screenshots.at(-1)?.id).toBe("cu_capture_second");
   });
 
   it("duplicate stream events keep one call and match stored replay", () => {

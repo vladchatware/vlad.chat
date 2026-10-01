@@ -212,6 +212,31 @@ final class VladChatUITests: XCTestCase {
         XCTAssertLessThan(abs(anchor.frame.minY - originalY), 24, "History insertion moved the visible text")
     }
 
+    func testSameThreadSyncDoesNotPullReaderToLatest() {
+        app.launchArguments = ["--ui-test-thread-sync-scroll"]
+        app.launch()
+
+        let table = app.tables.firstMatch
+        XCTAssertTrue(table.waitForExistence(timeout: 8))
+        let anchor = app.staticTexts.containing(
+            NSPredicate(format: "label CONTAINS %@", "SYNC_HISTORY_ASSISTANT_4")
+        ).firstMatch
+        XCTAssertTrue(anchor.waitForExistence(timeout: 8))
+        for _ in 0..<8 where !anchor.frame.intersects(table.frame) {
+            table.swipeDown()
+        }
+        XCTAssertTrue(anchor.frame.intersects(table.frame), "An earlier message must be visible before the same-thread snapshot arrives")
+        let originalY = anchor.frame.minY
+
+        app.buttons["applySameThreadSyncFixture"].tap()
+
+        XCTAssertTrue(app.staticTexts.containing(
+            NSPredicate(format: "label CONTAINS %@", "Update 1")
+        ).firstMatch.waitForExistence(timeout: 3))
+        XCTAssertTrue(anchor.frame.intersects(table.frame), "A same-thread snapshot should not jump the reader to the latest response")
+        XCTAssertLessThan(abs(anchor.frame.minY - originalY), 48, "A same-thread sync update moved the reader's viewport")
+    }
+
     func testThinkingPreviewRemainsBelowVisibleAnswerAfterCompletion() {
         app.launchArguments = ["--ui-test-thinking-label"]
         app.launch()
@@ -417,6 +442,11 @@ final class VladChatUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Collapse to preview"].waitForExistence(timeout: 5))
         let keyboard = app.buttons["Keyboard"]
         XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        keyboard.tap()
+        XCTAssertEqual(keyboard.value as? String, "Hidden")
+        let hiddenKeyboard = NSPredicate { _, _ in !self.app.keyboards.firstMatch.exists }
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: hiddenKeyboard, object: nil)], timeout: 5), .completed)
         keyboard.tap()
         XCTAssertTrue(app.textFields["Type to computer"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
@@ -445,6 +475,46 @@ final class VladChatUITests: XCTestCase {
         XCTAssertEqual(control.value as? String, "Released")
     }
 
+    func testInspectorControlsReachViewerAndKeyboardStaysHiddenAfterRotation() {
+        app.launchArguments = ["--ui-test-computer-viewer"]
+        XCUIDevice.shared.orientation = .portrait
+        defer { XCUIDevice.shared.orientation = .portrait }
+        app.launch()
+        let expand = app.buttons["computerExpandTarget"]
+        XCTAssertTrue(expand.waitForExistence(timeout: 5))
+        expand.tap()
+        let desktop = app.webViews["computerInspectorPreview"]
+        XCTAssertTrue(desktop.staticTexts["No input yet"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+
+        func assertReceived(_ event: String) {
+            let received = desktop.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", event)).firstMatch
+            XCTAssertTrue(received.waitForExistence(timeout: 5), "Viewer should receive \(event)")
+        }
+
+        app.buttons["Click"].tap()
+        assertReceived("Pointer: 640, 360, 1 | Pointer: 640, 360, 0")
+        app.buttons["Right click"].tap()
+        assertReceived("Pointer: 640, 360, 4 | Pointer: 640, 360, 0")
+        app.buttons["remoteKey_Escape"].tap()
+        assertReceived("Key: Escape, true | Key: Escape, false")
+        app.buttons["Fit"].tap()
+        assertReceived("Fit applied")
+
+        let keyboard = app.buttons["Keyboard"]
+        keyboard.tap()
+        XCTAssertEqual(keyboard.value as? String, "Hidden")
+        let keyboardHidden = NSPredicate { _, _ in !self.app.keyboards.firstMatch.exists }
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: keyboardHidden, object: nil)], timeout: 5), .completed)
+        XCUIDevice.shared.orientation = .landscapeLeft
+        XCTAssertEqual(keyboard.value as? String, "Hidden")
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: keyboardHidden, object: nil)], timeout: 5), .completed)
+        XCTAssertTrue(desktop.exists)
+        keyboard.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertEqual(keyboard.value as? String, "Shown")
+    }
+
     func testInspectorKeepsPreviewAndAccessoryVisibleWithKeyboardInBothOrientations() {
         app.launchArguments = ["--ui-test-computer-viewer"]
         XCUIDevice.shared.orientation = .portrait
@@ -468,6 +538,46 @@ final class VladChatUITests: XCTestCase {
             XCTAssertLessThanOrEqual(desktop.frame.maxY, escape.frame.minY)
             XCTAssertLessThanOrEqual(escape.frame.maxY, app.keyboards.firstMatch.frame.minY)
         }
+    }
+
+    func testProductionInspectorKeepsOneHostAndRenderedScreenAcrossRepeatedRotations() {
+        app.launchArguments = ["--ui-test-computer-production"]
+        XCUIDevice.shared.orientation = .portrait
+        defer { XCUIDevice.shared.orientation = .portrait }
+        app.launch()
+        let expand = app.buttons["computerExpandTarget"]
+        XCTAssertTrue(expand.waitForExistence(timeout: 5))
+        expand.tap()
+        let desktop = app.webViews["computerInspectorPreview"]
+        XCTAssertTrue(desktop.staticTexts["No input yet"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        app.buttons["Click"].tap()
+        let capture = desktop.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Pointer: 640, 360, 1")).firstMatch
+        XCTAssertTrue(capture.waitForExistence(timeout: 5))
+
+        for orientation in [UIDeviceOrientation.landscapeLeft, .portrait, .landscapeRight, .portrait] {
+            XCUIDevice.shared.orientation = orientation
+            XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+            XCTAssertTrue(capture.waitForExistence(timeout: 5), "Rotation must retain the loaded viewer document")
+            XCTAssertEqual(app.webViews.matching(identifier: "computerInspectorPreview").count, 1)
+            XCTAssertEqual(app.navigationBars.matching(identifier: "Computer").count, 1)
+            XCTAssertEqual(app.buttons.matching(identifier: "Collapse to preview").count, 1)
+            XCTAssertFalse(app.buttons["showChats"].isHittable)
+            XCTAssertGreaterThan(desktop.frame.height, 40, "The keyboard must leave usable remote screen space")
+            let keyboard = app.buttons["Keyboard"]
+            keyboard.tap()
+            let keyboardHidden = NSPredicate { _, _ in !self.app.keyboards.firstMatch.exists }
+            XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: keyboardHidden, object: nil)], timeout: 5), .completed)
+            XCTAssertTrue(capture.exists)
+            app.buttons["Fit"].tap()
+            let fit = desktop.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Fit applied")).firstMatch
+            XCTAssertTrue(fit.waitForExistence(timeout: 5))
+            keyboard.tap()
+            XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        }
+        app.buttons["Collapse to preview"].tap()
+        XCTAssertTrue(expand.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.navigationBars["Computer"].exists)
     }
 
     func testOpeningInspectorShowsLoadingWhileVNCConnects() {

@@ -16,7 +16,6 @@ final class ChatViewModel: ObservableObject {
     @Published var shouldFocusInput = false
     @Published var isScrollInteractionActive = false
     @Published var isAtBottom = true
-    @Published var scrollToBottomTrigger = UUID()
     @Published var scrollToUserMessageTrigger = UUID()
     @Published var isWebSearchEnabled = SettingsManager.shared.webSearchEnabled
     @Published var imageViewerImages: [Attachment] = []
@@ -720,8 +719,13 @@ final class ChatViewModel: ObservableObject {
         if let client {
             subscribeToAgentRunState(using: client, threadId: selectedId)
         }
-        scrollToBottomTrigger = UUID()
     }
+
+#if DEBUG
+    func applyUITestSnapshot(_ snapshot: MobileChat) {
+        enqueue(snapshot)
+    }
+#endif
 
     private func subscribeToAgentRunState(
         using client: ConvexClientWithAuth<ConvexAuthSession>,

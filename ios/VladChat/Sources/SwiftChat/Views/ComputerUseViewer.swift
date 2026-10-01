@@ -86,6 +86,7 @@ final class ComputerUseSessionController: NSObject, ObservableObject, WKNavigati
     @Published private(set) var canControl = false
     @Published private(set) var desktopSize = CGSize(width: 1280, height: 720)
     @Published private(set) var errorMessage: String?
+    @Published private(set) var inputErrorMessage: String?
     @Published private(set) var cursor = CGPoint(x: 0.5, y: 0.5)
 
     @Published private(set) var activeModifiers: Set<String> = []
@@ -153,7 +154,22 @@ final class ComputerUseSessionController: NSObject, ObservableObject, WKNavigati
         .art:after{content:"";position:absolute;inset:24% 22% 0;border-radius:48% 48% 0 0;background:linear-gradient(160deg,#c8bdab,#64705e)}
         </style></head><body><div class="browser"><i class="dot"></i><i class="dot"></i><i class="dot"></i><div class="url">linear.app/pricing</div></div>
         <main><nav><strong>linear</strong><span>Product　 Resources　 Pricing</span></nav><h1>Plan and build<br>your best work.</h1><p>A tool for teams who want to move with focus and clarity.</p><span class="cta">Start building →</span><div class="art"></div></main>
-        <script>window.webkit.messageHandlers.vnc.postMessage({type:'connected'});window.webkit.messageHandlers.vnc.postMessage({type:'desktop',width:1280,height:720});</script>
+        <div id="input-event" style="position:fixed;bottom:8px;left:8px;font-size:12px;background:white;padding:4px">No input yet</div>
+        <script>
+        const events = [];
+        const report = value => {
+          events.push(value);
+          document.getElementById('input-event').textContent = events.slice(-12).join(' | ');
+        };
+        window.vladVNC = {
+          pointer: (x, y, mask) => report('Pointer: ' + x + ', ' + y + ', ' + mask),
+          key: (keysym, code, down) => report('Key: ' + code + ', ' + down),
+          text: value => report('Text: ' + value),
+          fit: () => report('Fit applied')
+        };
+        window.webkit.messageHandlers.vnc.postMessage({type:'connected'});
+        window.webkit.messageHandlers.vnc.postMessage({type:'desktop',width:1280,height:720});
+        </script>
         </body></html>
         """
         webView.loadHTMLString(fixture, baseURL: URL(string: "https://fixture.invalid"))
@@ -176,6 +192,7 @@ final class ComputerUseSessionController: NSObject, ObservableObject, WKNavigati
         isExpanding = false
         state = .connecting
         errorMessage = nil
+        inputErrorMessage = nil
         presentation = .floating
         didAutoReconnect = false
         beginConnectionDeadline(message: "Computer did not connect in time. Retry to try again.")
@@ -241,6 +258,7 @@ final class ComputerUseSessionController: NSObject, ObservableObject, WKNavigati
         releasePointer()
         state = .connecting
         errorMessage = nil
+        inputErrorMessage = nil
         didAutoReconnect = false
         beginConnectionDeadline(message: "Computer did not reconnect in time. Retry to try again.")
         loadViewer(viewerURL)
@@ -262,6 +280,7 @@ final class ComputerUseSessionController: NSObject, ObservableObject, WKNavigati
         presentation = .hidden
         state = .idle
         errorMessage = nil
+        inputErrorMessage = nil
         webView.stopLoading()
         webView.loadHTMLString("", baseURL: nil)
     }
@@ -339,33 +358,49 @@ final class ComputerUseSessionController: NSObject, ObservableObject, WKNavigati
             let pressed = !activeModifiers.contains(key.code)
             if pressed { activeModifiers.insert(key.code) }
             else { activeModifiers.remove(key.code) }
-            webView.evaluateJavaScript("window.vladVNC?.key(\(key.keysym), \(Self.jsonString(key.code)), \(pressed));")
+            evaluateControlAction("window.vladVNC.key(\(key.keysym), \(Self.jsonString(key.code)), \(pressed));")
             return
         }
-        let source = "window.vladVNC?.key(\(key.keysym), \(Self.jsonString(key.code)), true); window.vladVNC?.key(\(key.keysym), \(Self.jsonString(key.code)), false);"
-        webView.evaluateJavaScript(source)
+        let source = "window.vladVNC.key(\(key.keysym), \(Self.jsonString(key.code)), true); window.vladVNC.key(\(key.keysym), \(Self.jsonString(key.code)), false);"
+        evaluateControlAction(source)
     }
 
     func releaseKeyboardModifiers() {
         for key in RemoteKey.accessory where activeModifiers.contains(key.code) {
-            webView.evaluateJavaScript("window.vladVNC?.key(\(key.keysym), \(Self.jsonString(key.code)), false);")
+            evaluateControlAction("window.vladVNC.key(\(key.keysym), \(Self.jsonString(key.code)), false);")
         }
         activeModifiers.removeAll()
     }
 
     func sendText(_ value: String) {
         guard canControl, state.canSendInput, !value.isEmpty else { return }
-        webView.evaluateJavaScript("window.vladVNC?.text(\(Self.jsonString(value))); ")
+        evaluateControlAction("window.vladVNC.text(\(Self.jsonString(value)));")
     }
 
     func fitDesktop() {
-        webView.evaluateJavaScript("if (window.vladVNC) window.vladVNC.fit();")
+        guard state.canSendInput else { return }
+        evaluateControlAction("window.vladVNC.fit();")
+    }
+
+    private func evaluateControlAction(_ source: String) {
+        guard state.canSendInput else { return }
+        let expectedSessionID = sessionID
+        let expectedNavigationID = activeNavigationID
+        webView.evaluateJavaScript("if (!window.vladVNC) throw new Error('Computer input bridge is unavailable'); \(source)") { [weak self] _, error in
+            guard let self,
+                  self.sessionID == expectedSessionID,
+                  self.activeNavigationID == expectedNavigationID,
+                  self.state.canSendInput else { return }
+            if error != nil {
+                self.inputErrorMessage = "Computer controls could not reach this session. Reconnect to try again."
+            }
+        }
     }
 
     private func sendPointer(mask: Int) {
         let x = Int((cursor.x * CGFloat(max(1, Int(desktopSize.width) - 1))).rounded())
         let y = Int((cursor.y * CGFloat(max(1, Int(desktopSize.height) - 1))).rounded())
-        webView.evaluateJavaScript("window.vladVNC?.pointer(\(x), \(y), \(mask));")
+        evaluateControlAction("window.vladVNC.pointer(\(x), \(y), \(mask));")
     }
 
     private func schedulePointerFlush() {
@@ -1066,29 +1101,37 @@ struct ComputerUseInspectorScreen: View {
     @State private var remoteText = ""
     @FocusState private var textFocused: Bool
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @State private var keyboardFocusRequest = 0
+    @State private var keyboardRequested = true
 
     var body: some View {
-        VStack(spacing: 0) {
-            GeometryReader { geometry in
+        GeometryReader { geometry in
+            let compactHeight = verticalSizeClass == .compact
+            // Changing layouts preserves the preview's identity and WKWebView.
+            // In landscape the keyboard must not push a vertical controls stack
+            // into the remote screen's entire remaining height.
+            let layout = compactHeight
+                ? AnyLayout(HStackLayout(alignment: .top, spacing: 12))
+                : AnyLayout(VStackLayout(spacing: 0))
+            layout {
                 ComputerInspectorPreview(controller: controller)
-                    .frame(maxWidth: geometry.size.width, maxHeight: geometry.size.height)
-                    .frame(width: geometry.size.width, height: geometry.size.height)
-            }
-            .padding(.horizontal, 12)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            ComputerInspectorControls(controller: controller) {
-                textFocused = true
+                ComputerInspectorInputPanel(
+                    controller: controller,
+                    text: $remoteText,
+                    isFocused: $textFocused,
+                    keyboardRequested: keyboardRequested,
+                    compactHeight: compactHeight
+                ) {
+                    keyboardRequested.toggle()
+                    textFocused = keyboardRequested && controller.canControl && controller.state.canSendInput
+                }
+                .frame(width: compactHeight ? min(300, geometry.size.width * 0.4) : nil)
             }
-            .padding(.horizontal, 12)
-            .padding(.top, 8)
-
-            ComputerInspectorKeyboard(
-                controller: controller,
-                text: $remoteText,
-                isFocused: $textFocused
-            )
         }
+        .padding(.horizontal, 12)
         .safeAreaInset(edge: .bottom, spacing: 0) {
             ComputerInspectorKeyAccessory(controller: controller)
         }
@@ -1120,7 +1163,7 @@ struct ComputerUseInspectorScreen: View {
                 return
             }
             guard controller.presentation == .inspector, scenePhase == .active else { return }
-            textFocused = controller.canControl && controller.state.canSendInput
+            textFocused = keyboardRequested && controller.canControl && controller.state.canSendInput
             controller.finishInspectorExpansion()
         }
         .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
@@ -1134,22 +1177,84 @@ struct ComputerUseInspectorScreen: View {
             if !focused { controller.releaseKeyboardModifiers() }
         }
         .onChange(of: controller.canControl) { _, canControl in
-            textFocused = canControl && controller.state.canSendInput
+            textFocused = keyboardRequested && canControl && controller.state.canSendInput
         }
         .onChange(of: controller.state) { _, state in
-            textFocused = controller.canControl && state.canSendInput
+            textFocused = keyboardRequested && controller.canControl && state.canSendInput
         }
         .onChange(of: scenePhase) { _, phase in
             if phase != .active {
                 textFocused = false
                 controller.releaseKeyboardModifiers()
             } else {
-                textFocused = controller.canControl && controller.state.canSendInput
+                textFocused = keyboardRequested && controller.canControl && controller.state.canSendInput
             }
         }
         .onDisappear {
             textFocused = false
             controller.releaseKeyboardModifiers()
+        }
+    }
+}
+
+private struct ComputerInspectorInputPanel: View {
+    @ObservedObject var controller: ComputerUseSessionController
+    @Binding var text: String
+    var isFocused: FocusState<Bool>.Binding
+    let keyboardRequested: Bool
+    let compactHeight: Bool
+    let toggleKeyboard: () -> Void
+
+    var body: some View {
+        let content = ComputerInspectorInputContent(
+            controller: controller,
+            text: $text,
+            isFocused: isFocused,
+            keyboardRequested: keyboardRequested,
+            toggleKeyboard: toggleKeyboard
+        )
+        if compactHeight {
+            ScrollView { content }
+                .scrollDismissesKeyboard(.never)
+        } else {
+            content
+        }
+    }
+}
+
+private struct ComputerInspectorInputContent: View {
+    @ObservedObject var controller: ComputerUseSessionController
+    @Binding var text: String
+    var isFocused: FocusState<Bool>.Binding
+    let keyboardRequested: Bool
+    let toggleKeyboard: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ComputerInspectorControls(
+                controller: controller,
+                keyboardRequested: keyboardRequested,
+                focusKeyboard: toggleKeyboard
+            )
+            .padding(.top, 8)
+            ComputerInspectorKeyboard(controller: controller, text: $text, isFocused: isFocused)
+            ComputerInspectorInputFailure(controller: controller)
+        }
+    }
+}
+
+private struct ComputerInspectorInputFailure: View {
+    @ObservedObject var controller: ComputerUseSessionController
+
+    var body: some View {
+        if let message = controller.inputErrorMessage {
+            VStack(spacing: 6) {
+                Text(message).font(.footnote)
+                Button("Reconnect") { controller.retry() }
+                    .disabled(controller.retryIsUnavailable)
+            }
+            .padding(8)
+            .accessibilityIdentifier("computerInputFailure")
         }
     }
 }
@@ -1188,6 +1293,7 @@ private struct ComputerInspectorPreview: View {
 
 private struct ComputerInspectorControls: View {
     @ObservedObject var controller: ComputerUseSessionController
+    let keyboardRequested: Bool
     let focusKeyboard: () -> Void
 
     var body: some View {
@@ -1195,11 +1301,14 @@ private struct ComputerInspectorControls: View {
             controlButton("cursorarrow.click", title: "Click") { controller.click() }
             controlButton("cursorarrow.click.2", title: "Right click") { controller.click(buttonMask: 4) }
             controlButton("keyboard", title: "Keyboard", action: focusKeyboard)
-            controlButton("arrow.up.left.and.arrow.down.right", title: "Fit") { controller.fitDesktop() }
+                .accessibilityValue(keyboardRequested ? "Shown" : "Hidden")
+            controlButton("arrow.up.left.and.arrow.down.right", title: "Fit", requiresInputOwnership: false) {
+                controller.fitDesktop()
+            }
         }
     }
 
-    private func controlButton(_ symbol: String, title: String, action: @escaping () -> Void) -> some View {
+    private func controlButton(_ symbol: String, title: String, requiresInputOwnership: Bool = true, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(spacing: 4) {
                 Image(systemName: symbol).font(.system(size: 15, weight: .medium))
@@ -1215,7 +1324,7 @@ private struct ComputerInspectorControls: View {
         }
         .buttonStyle(.plain)
         .tint(.primary)
-        .disabled(!controller.canControl || !controller.state.canSendInput)
+        .disabled(!controller.state.canSendInput || (requiresInputOwnership && !controller.canControl))
         .accessibilityLabel(title)
     }
 }
@@ -1286,16 +1395,21 @@ private struct ComputerInspectorKeyAccessory: View {
 
 #if DEBUG
 struct ComputerUseE2EHarnessView: View {
-    enum Scenario: Equatable { case sandboxResumeFailure, viewerFixture, viewerConnecting, viewerTimeout }
+    enum Scenario: Equatable { case sandboxResumeFailure, viewerFixture, viewerProduction, viewerConnecting, viewerTimeout }
     let scenario: Scenario
-    @StateObject private var controller = ComputerUseSessionController()
+    @StateObject private var viewModel = ChatViewModel()
     @State private var viewerPresentation: ComputerViewerPresentation = .hidden
+
+    private var controller: ComputerUseSessionController { viewModel.computerUseController }
 
     var body: some View {
         Group {
             if scenario == .sandboxResumeFailure {
                 ComputerUseSessionCard(tools: [failedOpenTool], isDarkMode: false)
                     .padding(24)
+            } else if scenario == .viewerProduction {
+                ChatContainer()
+                    .environmentObject(viewModel)
             } else {
                 NavigationStack {
                     ScrollView {
@@ -1359,7 +1473,7 @@ struct ComputerUseE2EHarnessView: View {
         }
         .task {
             switch scenario {
-            case .viewerFixture:
+            case .viewerFixture, .viewerProduction:
                 controller.loadUITestFixture()
             case .viewerConnecting:
                 controller.loadUITestFixture(isConnecting: true)

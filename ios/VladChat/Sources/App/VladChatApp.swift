@@ -21,12 +21,19 @@ struct VladChatApp: App {
         ProcessInfo.processInfo.arguments.contains("--ui-test-seeded-chat-history")
     }
 
+    private var isThreadSyncScrollUITest: Bool {
+        ProcessInfo.processInfo.arguments.contains("--ui-test-thread-sync-scroll")
+    }
+
     private var computerUseE2EScenario: ComputerUseE2EHarnessView.Scenario? {
         if ProcessInfo.processInfo.arguments.contains("--ui-test-computer-sandbox-failure") {
             return .sandboxResumeFailure
         }
         if ProcessInfo.processInfo.arguments.contains("--ui-test-computer-viewer") {
             return .viewerFixture
+        }
+        if ProcessInfo.processInfo.arguments.contains("--ui-test-computer-production") {
+            return .viewerProduction
         }
         if ProcessInfo.processInfo.arguments.contains("--ui-test-computer-viewer-connecting") {
             return .viewerConnecting
@@ -45,6 +52,9 @@ struct VladChatApp: App {
                 StreamingScrollE2EView(viewModel: chat)
             } else if isSeededChatHistoryUITest {
                 SeededChatHistoryHarnessView(viewModel: chat)
+                    .environmentObject(chat)
+            } else if isThreadSyncScrollUITest {
+                ThreadSyncScrollHarnessView(viewModel: chat)
                     .environmentObject(chat)
             } else if isThinkingLabelUITest {
                 ThinkingLabelE2EView(viewModel: chat)

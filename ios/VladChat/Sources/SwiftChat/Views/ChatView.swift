@@ -43,7 +43,7 @@ struct ChatContainer: View {
                     returnToChats: showChats
                 )
 
-                if inspectorOpen, horizontalSizeClass == .regular {
+                if inspectorOpen, usesInlineComputerInspector {
                     HStack(spacing: 0) {
                         canvas
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -106,7 +106,7 @@ struct ChatContainer: View {
     private var computerInspectorPresented: Binding<Bool> {
         Binding(
             get: {
-                horizontalSizeClass == .compact && computerViewerPresentation == .inspector
+                !usesInlineComputerInspector && computerViewerPresentation == .inspector
             },
             set: { isPresented in
                 if !isPresented, viewModel.computerUseController.presentation == .inspector {
@@ -114,6 +114,13 @@ struct ChatContainer: View {
                 }
             }
         )
+    }
+
+    // Large iPhones can become regular-width in landscape. Keep their active
+    // inspector in the same modal host rather than moving its WKWebView between
+    // the cover and split-view detail while the cover is being dismissed.
+    private var usesInlineComputerInspector: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad && horizontalSizeClass == .regular
     }
 
     /// Configure navigation bar appearance

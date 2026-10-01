@@ -196,6 +196,28 @@ struct ComputerToolResult: Codable, Equatable, Sendable {
     let code: ComputerErrorCode?
     let budget: ComputerBudgetStatus?
 
+    func applying(_ screenshot: MobileScreenshotReference) -> ComputerToolResult {
+        ComputerToolResult(
+            ok: ok,
+            op: op,
+            url: url,
+            title: title,
+            action: action,
+            screenshotUrl: screenshot.availability == .unavailable || screenshot.url.isEmpty ? nil : screenshot.url,
+            screenshotId: screenshot.id,
+            mimeType: screenshot.mimeType,
+            width: screenshot.width,
+            height: screenshot.height,
+            handoff: handoff,
+            sandboxName: sandboxName,
+            viewerUrl: viewerUrl,
+            nativeViewerUrl: nativeViewerUrl,
+            error: error,
+            code: code,
+            budget: budget
+        )
+    }
+
     var hasScreenshot: Bool {
         guard let screenshotUrl, !screenshotUrl.isEmpty else { return false }
         return URL(string: screenshotUrl) != nil
@@ -338,7 +360,27 @@ extension ResponseTool {
     }
 
     var computerResult: ComputerToolResult? {
-        ComputerToolResult.parse(from: output)
+        guard let screenshot else { return ComputerToolResult.parse(from: output) }
+        let result = ComputerToolResult.parse(from: output) ?? ComputerToolResult(
+            ok: status == .completed,
+            op: .screenshot,
+            url: nil,
+            title: title,
+            action: nil,
+            screenshotUrl: nil,
+            screenshotId: screenshot.id,
+            mimeType: screenshot.mimeType,
+            width: screenshot.width,
+            height: screenshot.height,
+            handoff: nil,
+            sandboxName: nil,
+            viewerUrl: nil,
+            nativeViewerUrl: nil,
+            error: errorText,
+            code: nil,
+            budget: nil
+        )
+        return result.applying(screenshot)
     }
 }
 

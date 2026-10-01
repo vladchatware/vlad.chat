@@ -19,6 +19,62 @@ struct ResponseTool: Codable, Equatable, Hashable, Identifiable, Sendable {
     let inputSummary: String?
     let outputTruncated: Bool?
     let errorText: String?
+    let screenshot: MobileScreenshotReference?
+
+    init(
+        id: String,
+        name: String,
+        status: Status,
+        output: String?,
+        title: String?,
+        inputSummary: String?,
+        outputTruncated: Bool?,
+        errorText: String?,
+        screenshot: MobileScreenshotReference? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.status = status
+        self.output = output
+        self.title = title
+        self.inputSummary = inputSummary
+        self.outputTruncated = outputTruncated
+        self.errorText = errorText
+        self.screenshot = screenshot
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        status = try container.decode(Status.self, forKey: .status)
+        output = try container.decodeIfPresent(String.self, forKey: .output)
+        title = try container.decodeIfPresent(String.self, forKey: .title)
+        inputSummary = try container.decodeIfPresent(String.self, forKey: .inputSummary)
+        outputTruncated = try container.decodeIfPresent(Bool.self, forKey: .outputTruncated)
+        errorText = try container.decodeIfPresent(String.self, forKey: .errorText)
+        screenshot = try container.decodeIfPresent(MobileScreenshotReference.self, forKey: .screenshot)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, status, output, title, inputSummary, outputTruncated, errorText, screenshot
+    }
+}
+
+struct MobileScreenshotReference: Codable, Equatable, Hashable, Sendable {
+    enum Availability: String, Codable, Hashable, Sendable {
+        case available, unavailable
+    }
+
+    let id: String
+    let url: String
+    let mimeType: String?
+    let width: Int?
+    let height: Int?
+    let sessionId: String?
+    let createdAt: Double?
+    let size: Int?
+    let availability: Availability?
 }
 
 struct ResponsePart: Codable, Equatable, Hashable, Identifiable, Sendable {
