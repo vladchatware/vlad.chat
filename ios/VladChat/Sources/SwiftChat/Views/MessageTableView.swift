@@ -17,6 +17,7 @@ struct MessageTableView: UIViewRepresentable {
     @ObservedObject var viewModel: ChatViewModel
     @Binding var isAtBottom: Bool
     @Binding var userHasScrolled: Bool
+    @Binding var showJumpToBottomButton: Bool
     let scrollTrigger: UUID
     let scrollToUserTrigger: UUID
     @Binding var tableOpacity: Double
@@ -593,7 +594,7 @@ struct MessageTableView: UIViewRepresentable {
         func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
             isDragging = false
             if !decelerate {
-                checkIfAtBottom()
+                checkIfAtBottom(userScrollEnded: true)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                     self.parent.viewModel.isScrollInteractionActive = false
                 }
@@ -601,7 +602,7 @@ struct MessageTableView: UIViewRepresentable {
         }
 
         func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
-            checkIfAtBottom()
+            checkIfAtBottom(userScrollEnded: true)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 self.parent.viewModel.isScrollInteractionActive = false
             }
@@ -737,6 +738,10 @@ struct MessageTableView: UIViewRepresentable {
         }
 
         func checkIfAtBottom() {
+            checkIfAtBottom(userScrollEnded: false)
+        }
+
+        private func checkIfAtBottom(userScrollEnded: Bool) {
             guard let tableView = tableView else { return }
             guard tableView.window != nil else { return }
             guard !readerPositionRestoreScheduled else { return }
@@ -749,13 +754,27 @@ struct MessageTableView: UIViewRepresentable {
             let distanceFromBottom = maxOffset - tableView.contentOffset.y
 
             let isVisible = distanceFromBottom <= Theme.Dimensions.bottomFollowTolerance
+            let isUserScrolling = isDragging || tableView.isDecelerating || userScrollEnded
+            let shouldShowJumpButton: Bool
+            if isUserScrolling {
+                shouldShowJumpButton = TranscriptScrollPolicy.shouldShowJumpToBottom(
+                    distanceFromBottom: distanceFromBottom,
+                    currentlyShown: parent.showJumpToBottomButton
+                )
+            } else if parent.showJumpToBottomButton,
+                      distanceFromBottom <= TranscriptScrollPolicy.jumpButtonHideThreshold {
+                shouldShowJumpButton = false
+            } else {
+                shouldShowJumpButton = parent.showJumpToBottomButton
+            }
 
-            if parent.isAtBottom != isVisible || (isVisible && parent.userHasScrolled) {
+            if parent.isAtBottom != isVisible ||
+                parent.showJumpToBottomButton != shouldShowJumpButton ||
+                (isVisible && parent.userHasScrolled) {
                 DispatchQueue.main.async {
                     self.parent.isAtBottom = isVisible
                     self.parent.viewModel.isAtBottom = isVisible
-                    // Starting a drag at the bottom must not immediately opt
-                    // the reader back into following before they move away.
+                    self.parent.showJumpToBottomButton = shouldShowJumpButton
                     if isVisible, !self.isDragging, !tableView.isDecelerating,
                        !self.readerPositionRestoreScheduled {
                         self.parent.userHasScrolled = false

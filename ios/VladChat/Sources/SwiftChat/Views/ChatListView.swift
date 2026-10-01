@@ -18,6 +18,7 @@ struct ChatListView: View {
 
     @State private var isAtBottom = true
     @State private var userHasScrolled = false
+    @State private var showJumpToBottomButton = false
     @State private var isKeyboardVisible = false
     @State private var keyboardHeight: CGFloat = 0
     @State private var scrollTrigger = UUID()
@@ -51,6 +52,7 @@ struct ChatListView: View {
             viewModel: viewModel,
             isAtBottom: $isAtBottom,
             userHasScrolled: $userHasScrolled,
+            showJumpToBottomButton: $showJumpToBottomButton,
             scrollTrigger: scrollTrigger,
             scrollToUserTrigger: scrollToUserTrigger,
             tableOpacity: $tableOpacity,
@@ -59,7 +61,7 @@ struct ChatListView: View {
         .opacity(tableOpacity)
         .background(Color.chatBackground(isDarkMode: isDarkMode))
         .overlay(alignment: .bottom) {
-            if userHasScrolled && !messages.isEmpty && !isKeyboardVisible {
+            if showJumpToBottomButton && !messages.isEmpty && !isKeyboardVisible {
                 Group {
                     if #available(iOS 26, *) {
                         Button(action: jumpToLatest) {
@@ -68,6 +70,7 @@ struct ChatListView: View {
                                 .frame(width: Constants.UI.scrollToBottomButtonSize, height: Constants.UI.scrollToBottomButtonSize)
                         }
                         .buttonStyle(.glass)
+                        .accessibilityIdentifier("jumpToLatestButton")
                         .clipShape(Circle())
                     } else {
                         Button(action: jumpToLatest) {
@@ -78,6 +81,7 @@ struct ChatListView: View {
                                 .background(Color.gray.opacity(0.8))
                                 .clipShape(Circle())
                         }
+                        .accessibilityIdentifier("jumpToLatestButton")
                     }
                 }
                 .padding(.bottom, 8)
@@ -148,6 +152,7 @@ struct ChatListView: View {
 
             if oldIDs.isEmpty || appendedMessages.contains(where: { $0.role == .user }) {
                 userHasScrolled = false
+                showJumpToBottomButton = false
                 viewModel.isScrollInteractionActive = false
                 // Follow the initial history and newly sent messages. Older
                 // history inserted ahead of the last known row stays in place.
@@ -156,6 +161,7 @@ struct ChatListView: View {
         }
         .onChange(of: viewModel.currentChat?.id) { _, _ in
             userHasScrolled = false
+            showJumpToBottomButton = false
             viewModel.isScrollInteractionActive = false
 
             // Never blank the table on an in-place refresh. The first server
@@ -202,6 +208,7 @@ struct ChatListView: View {
 
     private func jumpToLatest() {
         userHasScrolled = false
+        showJumpToBottomButton = false
         viewModel.isScrollInteractionActive = false
         scrollTrigger = UUID()
     }

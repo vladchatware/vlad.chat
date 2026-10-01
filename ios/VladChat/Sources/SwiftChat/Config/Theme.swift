@@ -92,3 +92,12 @@ enum Theme {
         static let springDampingHigh: Double = 0.9
     }
 }
+
+enum TranscriptScrollPolicy {
+    static let jumpButtonShowThreshold: CGFloat = 72
+    static let jumpButtonHideThreshold: CGFloat = 36
+
+    static func shouldShowJumpToBottom(distanceFromBottom: CGFloat, currentlyShown: Bool) -> Bool {
+        distanceFromBottom > (currentlyShown ? jumpButtonHideThreshold : jumpButtonShowThreshold)
+    }
+}

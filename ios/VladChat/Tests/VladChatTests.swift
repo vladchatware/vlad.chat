@@ -3,6 +3,15 @@ import Testing
 @testable import VladChat
 
 struct VladChatTests {
+    @Test func jumpToBottomButtonUsesSeparateShowAndHideThresholds() {
+        #expect(!TranscriptScrollPolicy.shouldShowJumpToBottom(distanceFromBottom: 60, currentlyShown: false))
+        #expect(!TranscriptScrollPolicy.shouldShowJumpToBottom(distanceFromBottom: 72, currentlyShown: false))
+        #expect(TranscriptScrollPolicy.shouldShowJumpToBottom(distanceFromBottom: 73, currentlyShown: false))
+        #expect(TranscriptScrollPolicy.shouldShowJumpToBottom(distanceFromBottom: 60, currentlyShown: true))
+        #expect(TranscriptScrollPolicy.shouldShowJumpToBottom(distanceFromBottom: 37, currentlyShown: true))
+        #expect(!TranscriptScrollPolicy.shouldShowJumpToBottom(distanceFromBottom: 36, currentlyShown: true))
+    }
+
     @Test func queuedGenerationResultDecodesWithoutMessageOrder() throws {
         let payload = """
         {
