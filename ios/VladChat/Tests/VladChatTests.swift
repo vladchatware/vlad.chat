@@ -21,6 +21,111 @@ struct VladChatTests {
         #expect(result.queued == true)
     }
 
+    @Test func regeneratedResponseAcknowledgesReusedOrder() {
+        for status in ["streaming", "success", "failed"] {
+            let snapshot = generationSnapshot([
+                generationMessage(id: "answer", role: "assistant", order: 0, status: status, createdAt: 2),
+            ])
+
+            #expect(snapshot.hasObservedLocalGeneration(
+                expectedOrder: 0,
+                previousMessages: previousGenerationMessages(),
+                optimisticText: "Hello"
+            ))
+        }
+    }
+
+    @Test func regeneratedPromptAcknowledgesReusedOrderBeforeActionReturns() {
+        let snapshot = generationSnapshot([
+            generationMessage(id: "user", role: "user", order: 0, createdAt: 2),
+        ])
+
+        #expect(snapshot.hasObservedLocalGeneration(
+            expectedOrder: nil,
+            previousMessages: previousGenerationMessages(),
+            optimisticText: "Hello"
+        ))
+    }
+
+    @Test func staleSnapshotCannotAcknowledgeRegeneration() {
+        let snapshot = generationSnapshot([
+            generationMessage(id: "user", role: "user", order: 0),
+            generationMessage(id: "answer", role: "assistant", order: 0),
+        ])
+        let expectedOrders: [Double?] = [nil, 0]
+
+        for order in expectedOrders {
+            #expect(!snapshot.hasObservedLocalGeneration(
+                expectedOrder: order,
+                previousMessages: previousGenerationMessages(),
+                optimisticText: "Hello"
+            ))
+        }
+    }
+
+    @Test func promptAloneDoesNotAcknowledgeResponseAfterActionReturns() {
+        let snapshot = generationSnapshot([
+            generationMessage(id: "user", role: "user", order: 0, createdAt: 2),
+        ])
+
+        #expect(!snapshot.hasObservedLocalGeneration(
+            expectedOrder: 0,
+            previousMessages: previousGenerationMessages(),
+            optimisticText: "Hello"
+        ))
+    }
+
+    @Test func responseBeforeExpectedOrderCannotAcknowledgeGeneration() {
+        let snapshot = generationSnapshot([
+            generationMessage(id: "other-answer", role: "assistant", order: 2),
+        ])
+
+        #expect(!snapshot.hasObservedLocalGeneration(
+            expectedOrder: 3,
+            previousMessages: [:],
+            optimisticText: "Hello"
+        ))
+    }
+
+    private func generationMessage(
+        id: String,
+        role: String,
+        order: Double,
+        status: String = "success",
+        createdAt: Double = 1
+    ) -> ChatMessage {
+        ChatMessage(
+            id: id,
+            role: role,
+            text: role == "user" ? "Hello" : "Completed answer",
+            status: status,
+            order: order,
+            createdAt: createdAt,
+            response: role == "assistant" ? ResponseActivity(phase: .complete, tools: []) : nil,
+            errorText: nil,
+            attachments: []
+        )
+    }
+
+    private func previousGenerationMessages() -> [String: ChatMessage] {
+        [
+            "user": generationMessage(id: "user", role: "user", order: 0),
+            "answer": generationMessage(id: "answer", role: "assistant", order: 0),
+        ]
+    }
+
+    private func generationSnapshot(_ messages: [ChatMessage]) -> MobileChat {
+        MobileChat(
+            threadId: "thread-regenerate",
+            title: "Reloaded chat",
+            threads: nil,
+            messages: messages,
+            account: nil,
+            remainingMessages: nil,
+            computerViewer: nil
+        )
+    }
+
     @MainActor
     @Test func modelCatalogStartsWithWebDefault() {
         #expect(AppConfig.shared.availableModels.first?.id == "zai/glm-5.3-flash")

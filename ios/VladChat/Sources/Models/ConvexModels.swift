@@ -178,6 +178,23 @@ struct MobileChat: Decodable, Equatable, Sendable {
     let account: MobileAccount?
     let remainingMessages: Double?
     let computerViewer: MobileComputerViewerSession?
+
+    func hasObservedLocalGeneration(
+        expectedOrder: Double?,
+        previousMessages: [String: ChatMessage],
+        optimisticText: String?
+    ) -> Bool {
+        messages.contains { message in
+            // Regeneration reuses orders and UI row IDs. Creation time separates
+            // the replacement from stale snapshots of the deleted response.
+            guard previousMessages[message.id]?.createdAt != message.createdAt else { return false }
+            if let expectedOrder {
+                return !message.isUser && message.order >= expectedOrder
+            }
+            guard let optimisticText else { return false }
+            return message.isUser && message.text == optimisticText
+        }
+    }
 }
 
 struct MobileComputerViewerSession: Decodable, Equatable, Sendable {

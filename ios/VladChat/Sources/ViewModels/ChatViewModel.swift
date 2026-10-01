@@ -51,12 +51,12 @@ final class ChatViewModel: ObservableObject {
     private var activeGenerationID: UUID?
     private var localGenerationActive = false
     private var localGenerationExpectedOrder: Double?
-    private var localGenerationPreviousMaxOrder: Double?
+    private var localGenerationPreviousMessages: [String: ChatMessage] = [:]
     private var localGenerationMessageID: String?
     private var hasStarted = false
     private var selectedThreadId: String?
     private var supportsMobileThreads = false
-    private var messageOrders: [String: Double] = [:]
+    private var serverMessages: [String: ChatMessage] = [:]
     private var streamingChunkers: [String: StreamingMarkdownChunker] = [:]
     private var streamingContent: [String: String] = [:]
 
@@ -133,7 +133,7 @@ final class ChatViewModel: ObservableObject {
         isLoading = true
         localGenerationActive = true
         localGenerationExpectedOrder = nil
-        localGenerationPreviousMaxOrder = messageOrders.values.max()
+        localGenerationPreviousMessages = serverMessages
         localGenerationMessageID = localAssistantID
         activeGenerationID = generationID
         let modelID = currentModel.id
@@ -171,7 +171,7 @@ final class ChatViewModel: ObservableObject {
                 if let order = result.order, hasObservedLocalGeneration(order: order) {
                     localGenerationActive = false
                     localGenerationExpectedOrder = nil
-                    localGenerationPreviousMaxOrder = nil
+                    localGenerationPreviousMessages.removeAll()
                     localGenerationMessageID = nil
                     isLoading = hasActiveObservedResponse(order: order)
                 }
@@ -180,7 +180,7 @@ final class ChatViewModel: ObservableObject {
                 guard activeGenerationID == generationID else { return }
                 localGenerationActive = false
                 localGenerationExpectedOrder = nil
-                localGenerationPreviousMaxOrder = nil
+                localGenerationPreviousMessages.removeAll()
                 localGenerationMessageID = nil
                 activeGenerationID = nil
                 removeMessage(id: optimistic.id)
@@ -206,7 +206,7 @@ final class ChatViewModel: ObservableObject {
         activeGenerationID = nil
         localGenerationActive = false
         localGenerationExpectedOrder = nil
-        localGenerationPreviousMaxOrder = nil
+        localGenerationPreviousMessages.removeAll()
         localGenerationMessageID = nil
         isLoading = false
         guard let client, let threadId = currentChat?.id else { return }
@@ -480,7 +480,7 @@ final class ChatViewModel: ObservableObject {
         if let threadId {
             subscribeToAgentRunState(using: client, threadId: threadId)
         }
-        messageOrders = [:]
+        serverMessages = [:]
         streamingChunkers = [:]
         streamingContent = [:]
         subscriptionTask = Task { [weak self] in
@@ -583,7 +583,7 @@ final class ChatViewModel: ObservableObject {
         if hasObservedLocalGeneration(in: mobileChat, order: localGenerationExpectedOrder) {
             localGenerationActive = false
             localGenerationExpectedOrder = nil
-            localGenerationPreviousMaxOrder = nil
+            localGenerationPreviousMessages.removeAll()
             localGenerationMessageID = nil
         }
 
@@ -601,11 +601,11 @@ final class ChatViewModel: ObservableObject {
         }
 
         let previousMessagesByOrder = (currentChat?.messages ?? []).reduce(into: [Double: Message]()) { result, message in
-            guard message.role == .assistant, let order = messageOrders[message.id] else { return }
+            guard message.role == .assistant, let order = serverMessages[message.id]?.order else { return }
             result[order] = message
         }
-        messageOrders = Dictionary(
-            uniqueKeysWithValues: mobileChat.messages.map { ($0.id, $0.order) }
+        serverMessages = Dictionary(
+            uniqueKeysWithValues: mobileChat.messages.map { ($0.id, $0) }
         )
         var activeMessageIds = Set<String>()
         var mapped = mobileChat.messages.map { item in
@@ -900,13 +900,15 @@ final class ChatViewModel: ObservableObject {
             $0.role == .user && $0.id.hasPrefix("optimistic-")
         })?.content,
         let serverUser = mobileChat.messages.last(where: {
-            $0.isUser && $0.text == optimisticText
+            $0.isUser && $0.text == optimisticText &&
+                localGenerationPreviousMessages[$0.id]?.createdAt != $0.createdAt
         }) else {
             return false
         }
 
         return mobileChat.messages.contains {
-            !$0.isUser && $0.order > serverUser.order
+            !$0.isUser && $0.order >= serverUser.order &&
+                localGenerationPreviousMessages[$0.id]?.createdAt != $0.createdAt
         }
     }
 
@@ -920,38 +922,29 @@ final class ChatViewModel: ObservableObject {
     }
 
     private func hasObservedLocalGeneration(order: Double) -> Bool {
-        let previousMaxOrder = localGenerationPreviousMaxOrder ?? -.infinity
         return currentChat?.messages.contains { message in
             guard message.role != .user,
-                  let messageOrder = messageOrders[message.id] else { return false }
-            return messageOrder >= order && messageOrder > previousMaxOrder
+                  let serverMessage = serverMessages[message.id],
+                  localGenerationPreviousMessages[message.id]?.createdAt != serverMessage.createdAt else { return false }
+            return serverMessage.order >= order
         } ?? false
     }
 
     private func hasObservedLocalGeneration(in mobileChat: MobileChat, order: Double?) -> Bool {
-        if let order {
-            let previousMaxOrder = localGenerationPreviousMaxOrder ?? -.infinity
-            return mobileChat.messages.contains { message in
-                !message.isUser && message.order >= order && message.order > previousMaxOrder
-            }
-        }
-
-        let previousMaxOrder = localGenerationPreviousMaxOrder ?? -.infinity
-        guard let optimisticText = currentChat?.messages.last(where: {
+        let optimisticText = currentChat?.messages.last(where: {
             $0.role == .user && $0.id.hasPrefix("optimistic-")
-        })?.content else {
-            return false
-        }
-
-        return mobileChat.messages.contains {
-            $0.isUser && $0.text == optimisticText && $0.order > previousMaxOrder
-        }
+        })?.content
+        return mobileChat.hasObservedLocalGeneration(
+            expectedOrder: order,
+            previousMessages: localGenerationPreviousMessages,
+            optimisticText: optimisticText
+        )
     }
 
     private func hasActiveObservedResponse(order: Double) -> Bool {
         currentChat?.messages.contains(where: { (message: Message) in
             guard message.role != .user,
-                  let messageOrder = messageOrders[message.id],
+                  let messageOrder = serverMessages[message.id]?.order,
                   messageOrder >= order else { return false }
             if message.isStreaming { return true }
             guard let phase = message.responseActivity?.phase else { return false }
@@ -999,7 +992,7 @@ final class ChatViewModel: ObservableObject {
               messages.indices.contains(index),
               let client,
               let threadId = currentChat?.id,
-              let order = messageOrders[messages[index].id] else { return }
+              let order = serverMessages[messages[index].id]?.order else { return }
 
         isLoading = true
         localGenerationActive = true
@@ -1025,7 +1018,7 @@ final class ChatViewModel: ObservableObject {
                 pendingImageThumbnails = composingThumbnails
             } catch {
                 localGenerationActive = false
-                localGenerationPreviousMaxOrder = nil
+                localGenerationPreviousMessages.removeAll()
                 localGenerationMessageID = nil
                 isLoading = false
                 attachmentError = Self.userFacingMessage(for: error)
