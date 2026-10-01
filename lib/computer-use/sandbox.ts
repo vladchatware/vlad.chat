@@ -725,6 +725,7 @@ export async function runComputerOp(
   meta: Record<string, unknown>;
   png: Buffer | null;
   sandboxName: string;
+  sessionId: string;
   viewerUrl?: string;
   nativeViewerUrl?: string;
   budget: ReturnType<typeof budgetStatus>;
@@ -839,6 +840,7 @@ export async function runComputerOp(
       meta,
       png,
       sandboxName: session.sandboxName,
+      sessionId: session.sessionId,
       viewerUrl: session.viewerUrl,
       nativeViewerUrl: session.nativeViewerUrl,
       budget: budgetStatus(session),
@@ -901,6 +903,7 @@ export async function runComputerOp(
       meta,
       png,
       sandboxName: session.sandboxName,
+      sessionId: session.sessionId,
       viewerUrl: session.viewerUrl,
       nativeViewerUrl: session.nativeViewerUrl,
       budget: budgetStatus(session),
@@ -938,6 +941,7 @@ export async function runComputerOp(
         },
         png: null,
         sandboxName: session.sandboxName,
+        sessionId: session.sessionId,
         viewerUrl: session.viewerUrl,
         nativeViewerUrl: session.nativeViewerUrl,
           budget: budgetStatus(session),
@@ -958,6 +962,7 @@ export async function runComputerOp(
     meta: runMeta.meta,
     png: null,
     sandboxName: session.sandboxName,
+    sessionId: session.sessionId,
     viewerUrl: session.viewerUrl,
     nativeViewerUrl: session.nativeViewerUrl,
     budget: budgetStatus(session),

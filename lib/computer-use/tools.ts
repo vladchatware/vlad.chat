@@ -85,17 +85,23 @@ async function attachShot(
   png: Buffer | null,
   base: ComputerToolResult,
   budget?: ComputerBudgetStatus,
+  capture?: { threadId?: string; sessionId: string },
 ): Promise<ComputerToolResult> {
   const withBudget = budget ? { ...base, budget } : base;
-  if (!png || png.length === 0) return withBudget;
-  const artifact = await putScreenshot(sessionKey, png);
+  if (!png || png.length === 0) {
+    if (base.op === "screenshot") throw new Error("Screenshot capture returned no image.");
+    return withBudget;
+  }
+  const artifact = await putScreenshot(sessionKey, png, capture);
   return {
     ...withBudget,
     screenshotId: artifact.id,
     screenshotUrl: screenshotPublicUrl(artifact.id),
     mimeType: artifact.contentType,
-    width: 640,
-    height: 400,
+    screenshotSessionId: artifact.sessionId,
+    screenshotCreatedAt: artifact.createdAt,
+    width: artifact.width,
+    height: artifact.height,
   };
 }
 
@@ -142,12 +148,12 @@ export async function runComputerToolOp(
         return { ok: false, op: "open", code: "runtime", error: "url is required" };
       }
       try {
-        const { meta, png, sandboxName, viewerUrl, nativeViewerUrl, budget } = await runComputerOp(
+        const { meta, png, sandboxName, sessionId, viewerUrl, nativeViewerUrl, budget } = await runComputerOp(
           sessionKey,
           { op: "open", url },
           threadId,
         );
-        return attachShot(
+        return await attachShot(
           sessionKey,
           png,
           {
@@ -164,6 +170,7 @@ export async function runComputerToolOp(
               : {}),
           },
           mapBudget(budget),
+          { threadId, sessionId },
         );
       } catch (error) {
         return failCap("open", error);
@@ -171,12 +178,12 @@ export async function runComputerToolOp(
     }
     case "screenshot": {
       try {
-        const { meta, png, sandboxName, viewerUrl, nativeViewerUrl, budget } = await runComputerOp(
+        const { meta, png, sandboxName, sessionId, viewerUrl, nativeViewerUrl, budget } = await runComputerOp(
           sessionKey,
           { op: "screenshot" },
           threadId,
         );
-        return attachShot(
+        return await attachShot(
           sessionKey,
           png,
           {
@@ -190,6 +197,7 @@ export async function runComputerToolOp(
             nativeViewerUrl,
           },
           mapBudget(budget),
+          { threadId, sessionId },
         );
       } catch (error) {
         return failCap("screenshot", error);
@@ -219,12 +227,12 @@ export async function runComputerToolOp(
         };
       }
       try {
-        const { meta, png, sandboxName, viewerUrl, nativeViewerUrl, budget } = await runComputerOp(
+        const { meta, png, sandboxName, sessionId, viewerUrl, nativeViewerUrl, budget } = await runComputerOp(
           sessionKey,
           { op: "act", action },
           threadId,
         );
-        return attachShot(
+        return await attachShot(
           sessionKey,
           png,
           {
@@ -238,6 +246,7 @@ export async function runComputerToolOp(
             nativeViewerUrl,
           },
           mapBudget(budget),
+          { threadId, sessionId },
         );
       } catch (error) {
         return failCap("act", error);
@@ -256,7 +265,7 @@ export async function runComputerToolOp(
         },
       };
       try {
-        const { meta, png, sandboxName, viewerUrl, nativeViewerUrl, budget } = await runComputerOp(
+        const { meta, png, sandboxName, sessionId, viewerUrl, nativeViewerUrl, budget } = await runComputerOp(
           sessionKey,
           { op: "screenshot" },
           threadId,
@@ -273,6 +282,7 @@ export async function runComputerToolOp(
             nativeViewerUrl,
           },
           mapBudget(budget),
+          { threadId, sessionId },
         );
       } catch {
         /* handoff still valid without shot */

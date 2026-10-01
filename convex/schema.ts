@@ -112,12 +112,26 @@ export default defineSchema({
     artifactId: v.string(),
     storageId: v.id("_storage"),
     sessionKey: v.string(),
+    // Capture identity is immutable; sessionKey alone is only the user key.
+    threadId: v.optional(v.string()),
+    sessionId: v.optional(v.string()),
+    width: v.optional(v.number()),
+    height: v.optional(v.number()),
+    digest: v.optional(v.string()),
+    retained: v.optional(v.literal(true)),
+    runId: v.optional(v.id("agentRuns")),
+    order: v.optional(v.number()),
+    stepNumber: v.optional(v.number()),
+    toolCallId: v.optional(v.string()),
+    resultJson: v.optional(v.string()),
     contentType: v.union(v.literal("image/jpeg"), v.literal("image/png")),
     size: v.number(),
     createdAt: v.number(),
     expiresAt: v.number(),
   })
     .index("byArtifactId", ["artifactId"])
+    .index("byRunToolCall", ["runId", "toolCallId"])
+    .index("byRetentionAndExpiry", ["retained", "expiresAt"])
     .index("byExpiresAt", ["expiresAt"]),
   computerUseSessions: defineTable({
     sessionKey: v.string(),

@@ -49,6 +49,7 @@ beforeEach(() => {
     meta: { url: "https://example.com", title: "Example" },
     png,
     sandboxName: "vision-test",
+    sessionId: "a".repeat(32),
     viewerUrl: "https://vision-test.vercel.run/vnc.html",
     budget,
   });
@@ -111,6 +112,17 @@ function expectModelPixels(model: MockLanguageModelV4) {
 }
 
 describe("computer-use vision content", () => {
+  it("reports capture upload failure and empty capture as explicit tool failures", async () => {
+    const tools = createComputerUseTools({ userId: "vision-test", chatId: "thread-test" });
+    vi.mocked(runComputerOp).mockResolvedValueOnce({ meta: {}, png: null, sandboxName: "test", sessionId: "a".repeat(32), budget });
+    const empty = await tools.computer_screenshot.execute!({}, { toolCallId: "empty", messages: [], context: {} });
+    expect(empty).toMatchObject({ ok: false, op: "screenshot", error: "Screenshot capture returned no image." });
+    vi.stubEnv("NEXT_PUBLIC_CONVEX_URL", "https://test.convex.cloud");
+    vi.stubEnv("COMPUTER_USE_STORAGE_SECRET", "test-secret");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("Unavailable", { status: 503 }));
+    const failed = await tools.computer_screenshot.execute!({}, { toolCallId: "upload-fail", messages: [], context: {} });
+    expect(failed).toMatchObject({ ok: false, op: "screenshot", error: expect.stringContaining("upload failed (503)") });
+  });
   it("carries stored pixels beside unchanged mobile JSON", async () => {
     const result = await screenshotResult();
     const mcp = await computerToolMcpResult(result);

@@ -1,4 +1,5 @@
 import { isToolUIPart } from "ai";
+import { screenshotReference, type ScreenshotReference } from "./computer-use/screenshot-contract";
 import type {
   UIMessageChunk,
   UIMessagePart,
@@ -32,6 +33,8 @@ export type MobileTool = {
   output?: string;
   outputTruncated?: boolean;
   errorText?: string;
+  /** Capture metadata is independent of the bounded output preview. */
+  screenshot?: ScreenshotReference;
 };
 
 export type MobileTextPart = {
@@ -348,11 +351,13 @@ function summarizeToolInput(input: unknown, name?: string): string | undefined {
   return scalarFields ? scalarFields.slice(0, 500) : undefined;
 }
 
-function toolOutputFields(output: unknown): Pick<MobileTool, "output" | "outputTruncated"> {
+function toolOutputFields(output: unknown, name?: string): Pick<MobileTool, "output" | "outputTruncated" | "screenshot"> {
   const text = toolOutputText(output);
+  const screenshot = name === "computer_screenshot" ? screenshotReference(output) : undefined;
   return {
     output: truncateToolOutput(text),
     outputTruncated: text.length > MAX_TOOL_OUTPUT_CHARS,
+    ...(screenshot ? { screenshot } : {}),
   };
 }
 
@@ -439,7 +444,7 @@ function applyPart(state: OrderState, part: UIMessageChunk) {
         id: part.toolCallId,
         name: state.tools.get(part.toolCallId)?.name ?? "Tool",
         status: part.preliminary ? "running" : "completed",
-        ...toolOutputFields(part.output),
+        ...toolOutputFields(part.output, part.preliminary ? undefined : state.tools.get(part.toolCallId)?.name),
       });
       state.phase = part.preliminary ? "tool" : state.text ? "responding" : "tool";
       break;
@@ -553,7 +558,7 @@ function projectStoredPart(state: OrderState, part: MobileUIMessagePart) {
           inputSummary: hasInput
             ? summarizeToolInput(toolPart.input, toolName(toolPart))
             : undefined,
-          ...(hasOutput ? toolOutputFields(output) : {}),
+          ...(hasOutput ? toolOutputFields(output, status === "completed" ? toolName(toolPart) : undefined) : {}),
           errorText: hasError ? toolPart.errorText : undefined,
         });
         if (status !== "failed" && state.phase !== "failed" && state.phase !== "stopped") {

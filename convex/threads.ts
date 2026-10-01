@@ -34,7 +34,8 @@ import {
   hasCodeModeTools,
 } from "@/lib/computer-use/skill";
 import { signCodeModeGrant } from "@/lib/computer-use/code-mode";
-import { getActiveLiveSessionForThread } from "./computerUseScreenshots";
+import { getActiveLiveSessionForThread, screenshotForThread } from "./computerUseScreenshots";
+import { retainedScreenshotTool } from "@/lib/computer-use/retained-screenshot-tool";
 import { isModelEnabled, isPremiumModel } from "@/lib/provider";
 import { z } from "zod/v3";
 import {
@@ -1017,6 +1018,35 @@ export const runAgentStep = internalAction({
       run.threadId,
       codeModeGrant,
     );
+    const screenshotTool = tools.computer_screenshot;
+    if (screenshotTool?.execute) {
+      const replay = async (record: Doc<"computerUseScreenshots">) => {
+        const blob = await ctx.storage.get(record.storageId);
+        if (!blob || !record.resultJson) throw new Error("Retained screenshot bytes are unavailable.");
+        const bytes = new Uint8Array(await blob.arrayBuffer());
+        let binary = "";
+        for (const byte of bytes) binary += String.fromCharCode(byte);
+        return { content: [
+          { type: "text" as const, text: record.resultJson },
+          { type: "image" as const, data: btoa(binary), mimeType: record.contentType },
+        ] };
+      };
+      tools.computer_screenshot = retainedScreenshotTool(screenshotTool, {
+        replay: async (toolCallId) => {
+          const prior = await ctx.runQuery(internal.computerUseScreenshots.retainedForToolCall, {
+            runId, stepNumber, toolCallId,
+          });
+          return prior ? replay(prior) : null;
+        },
+        retain: async (artifactId, toolCallId, resultJson) => {
+          const retained = await ctx.runMutation(internal.computerUseScreenshots.retainForToolCall, {
+            runId, stepNumber, toolCallId, artifactId, resultJson,
+          });
+          if (!retained) throw new Error("Screenshot was not retained.");
+          return replay(retained);
+        },
+      });
+    }
     const notionInstruction = notionConn
       ? userNotionInstruction(notionConn.workspaceName)
       : "";
@@ -1667,6 +1697,14 @@ const mobileToolValidator = v.object({
   output: v.optional(v.string()),
   outputTruncated: v.optional(v.boolean()),
   errorText: v.optional(v.string()),
+  screenshot: v.optional(v.object({
+    id: v.string(), url: v.string(),
+    mimeType: v.optional(v.union(v.literal("image/png"), v.literal("image/jpeg"))),
+    width: v.optional(v.number()), height: v.optional(v.number()),
+    sessionId: v.optional(v.string()), createdAt: v.optional(v.number()),
+    size: v.optional(v.number()),
+    availability: v.optional(v.union(v.literal("available"), v.literal("unavailable"))),
+  })),
 });
 
 const mobileResponsePartValidator = v.union(
@@ -1901,6 +1939,31 @@ export const getMobileChat = query({
         attachments: [],
       }),
     );
+
+    // Resolve durable bytes using this authorized transcript's canonical call IDs.
+    for (const message of mobileMessages) {
+      if (!message.response) continue;
+      const tools = await Promise.all(message.response.tools.map(async (tool) => {
+        if (!tool.screenshot) return tool;
+        const record = await screenshotForThread(ctx, threadId, tool.screenshot.id);
+        const screenshot = record && record.toolCallId === tool.id && record.order === message.order
+          ? {
+              id: record.id, url: record.url, mimeType: record.mimeType,
+              sessionId: record.sessionId, createdAt: record.createdAt,
+              size: record.size, availability: "available" as const,
+              ...(record.width === undefined ? {} : { width: record.width }),
+              ...(record.height === undefined ? {} : { height: record.height }),
+            }
+          : { id: tool.screenshot.id, url: "", availability: "unavailable" as const };
+        return { ...tool, screenshot };
+      }));
+      const byId = new Map(tools.map((tool) => [tool.id, tool]));
+      message.response = {
+        ...message.response, tools,
+        parts: message.response.parts.map((part) => part.type === "tool"
+          ? { ...part, tool: byId.get(part.tool.id) ?? part.tool } : part),
+      };
+    }
 
     return {
       threadId,

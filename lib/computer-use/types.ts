@@ -52,6 +52,9 @@ export type ComputerToolResult = {
   action?: string;
   screenshotUrl?: string;
   screenshotId?: string;
+  /** Concrete sandbox identity and capture time, never the live viewer identity. */
+  screenshotSessionId?: string;
+  screenshotCreatedAt?: number;
   mimeType?: "image/png" | "image/jpeg";
   width?: number;
   height?: number;

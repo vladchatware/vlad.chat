@@ -1,5 +1,6 @@
 import type { ComputerSession } from "./types";
 import { COMPUTER_USE_MAX_TTL_MS } from "./limits";
+import { screenshotDimensions } from "./screenshot-contract";
 
 export type ScreenshotArtifact = {
   id: string;
@@ -7,6 +8,10 @@ export type ScreenshotArtifact = {
   createdAt: number;
   sessionKey: string;
   contentType: "image/png" | "image/jpeg";
+  threadId?: string;
+  sessionId?: string;
+  width?: number;
+  height?: number;
 };
 
 type StoredScreenshot = ScreenshotArtifact & { expiresAt: number };
@@ -87,6 +92,7 @@ function localArtifact(id: string): StoredScreenshot | undefined {
 export async function putScreenshot(
   sessionKey: string,
   png: Buffer,
+  capture: Pick<ScreenshotArtifact, "threadId" | "sessionId" | "width" | "height"> = {},
 ): Promise<ScreenshotArtifact> {
   if (png.length === 0 || png.length > MAX_SCREENSHOT_BYTES) {
     throw new Error("Screenshot is empty or exceeds the 1 MB storage limit.");
@@ -102,6 +108,8 @@ export async function putScreenshot(
     createdAt,
     sessionKey,
     contentType,
+    ...capture,
+    ...screenshotDimensions(png),
   };
   const config = screenshotStorageConfig();
 
@@ -118,6 +126,10 @@ export async function putScreenshot(
       "Content-Type": artifact.contentType,
       "X-Computer-Use-Artifact": id,
       "X-Computer-Use-Session": sessionKey,
+      ...(capture.threadId ? { "X-Computer-Use-Thread": capture.threadId } : {}),
+      ...(capture.sessionId ? { "X-Computer-Use-Session-Id": capture.sessionId } : {}),
+      ...(artifact.width ? { "X-Computer-Use-Width": String(artifact.width) } : {}),
+      ...(artifact.height ? { "X-Computer-Use-Height": String(artifact.height) } : {}),
     },
     body: new Uint8Array(png),
     cache: "no-store",
