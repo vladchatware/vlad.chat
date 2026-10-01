@@ -689,6 +689,51 @@ final class VladChatUITests: XCTestCase {
         XCTAssertFalse(app.navigationBars["Computer"].exists)
     }
 
+    func testRegularWidthInspectorDoesNotDuplicateSystemSidebarControl() {
+        XCUIDevice.shared.orientation = .portrait
+        defer { XCUIDevice.shared.orientation = .portrait }
+        app.launchArguments = ["--ui-test-computer-production"]
+        app.launch()
+
+        let expand = app.buttons["computerExpandTarget"]
+        XCTAssertTrue(expand.waitForExistence(timeout: 5))
+        expand.tap()
+
+        let desktop = app.webViews["computerInspectorPreview"]
+        XCTAssertTrue(desktop.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["showChats"].exists, "Regular-width NavigationSplitView supplies its own sidebar control")
+        let showSidebar = app.buttons.matching(NSPredicate(format: "label == %@", "Show Sidebar"))
+        XCTAssertEqual(showSidebar.count, 1)
+        XCTAssertEqual(app.webViews.matching(identifier: "computerInspectorPreview").count, 1)
+
+        showSidebar.firstMatch.tap()
+        let hideSidebar = app.buttons["Hide Sidebar"]
+        XCTAssertTrue(hideSidebar.waitForExistence(timeout: 5), "The single native sidebar control must open the chat sidebar")
+        hideSidebar.tap()
+        XCTAssertTrue(showSidebar.firstMatch.waitForExistence(timeout: 5), "The native sidebar control must close the chat sidebar")
+
+        let hierarchy = XCTAttachment(string: app.debugDescription)
+        hierarchy.name = "Regular-width Computer inspector accessibility tree"
+        hierarchy.lifetime = .keepAlways
+        add(hierarchy)
+
+        let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        screenshot.name = "Regular-width Computer inspector"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+
+        for orientation in [UIDeviceOrientation.landscapeLeft, .portrait, .landscapeRight, .portrait] {
+            XCUIDevice.shared.orientation = orientation
+            XCTAssertTrue(desktop.waitForExistence(timeout: 5), "Rotation must preserve the inline inspector")
+            XCTAssertFalse(app.buttons["showChats"].exists, "Rotation must not mount a second custom sidebar control")
+            let showSidebar = app.buttons.matching(NSPredicate(format: "label == %@", "Show Sidebar"))
+            XCTAssertEqual(showSidebar.count, 1, "Rotation must retain exactly one native sidebar control")
+            XCTAssertEqual(app.webViews.matching(identifier: "computerInspectorPreview").count, 1)
+            XCTAssertTrue(app.buttons["Click"].isHittable)
+            XCTAssertTrue(app.buttons["Fit"].isHittable)
+        }
+    }
+
     func testOpeningInspectorShowsLoadingWhileVNCConnects() {
         app.launchArguments = ["--ui-test-computer-viewer-connecting"]
         app.launch()

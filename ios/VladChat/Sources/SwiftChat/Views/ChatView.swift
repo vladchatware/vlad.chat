@@ -38,6 +38,7 @@ struct ChatContainer: View {
                     viewModel: viewModel,
                     messageText: $messageText,
                     isAccountPromptPresented: $isAccountPromptPresented,
+                    showsCustomChatsButton: horizontalSizeClass == .compact,
                     onShowChats: showChats,
                     onOpenAccount: { isAccountSheetPresented = true },
                     returnToChats: showChats
@@ -163,6 +164,7 @@ private struct ChatCanvasColumn: View {
     @ObservedObject var viewModel: ChatViewModel
     @Binding var messageText: String
     @Binding var isAccountPromptPresented: Bool
+    let showsCustomChatsButton: Bool
     let onShowChats: () -> Void
     let onOpenAccount: () -> Void
     let returnToChats: () -> Void
@@ -183,13 +185,15 @@ private struct ChatCanvasColumn: View {
             .navigationBarBackButtonHidden(true)
             .applySystemGlassToolbarIfAvailable()
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button(action: onShowChats) {
-                        Image(systemName: "sidebar.left")
+                if showsCustomChatsButton {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button(action: onShowChats) {
+                            Image(systemName: "sidebar.left")
+                        }
+                        .accessibilityLabel("Chats")
+                        .accessibilityHint("Shows your chat list")
+                        .accessibilityIdentifier("showChats")
                     }
-                    .accessibilityLabel("Chats")
-                    .accessibilityHint("Shows your chat list")
-                    .accessibilityIdentifier("showChats")
                 }
 
                 ToolbarItem(placement: .principal) {
