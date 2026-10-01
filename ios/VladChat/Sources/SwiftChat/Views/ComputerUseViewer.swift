@@ -1094,7 +1094,7 @@ struct ComputerUseInspectorScreen: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(uiColor: .systemBackground))
-        .navigationTitle("Inspector")
+        .navigationTitle("Computer")
         .navigationBarTitleDisplayMode(.inline)
         .tint(.primary)
         .toolbar {

@@ -389,7 +389,7 @@ final class VladChatUITests: XCTestCase {
         XCTAssertEqual(sessionState.label, "Session: live", "Opening the inspector must preserve the live computer session")
         XCTAssertFalse(chatCanvas.isHittable, "The chat should be covered by the inspector modal")
         XCTAssertFalse(app.buttons["showChats"].isHittable, "The inspector modal should block the chat navigation control")
-        XCTAssertTrue(app.navigationBars["Inspector"].exists)
+        XCTAssertTrue(app.navigationBars["Computer"].exists)
         XCTAssertTrue(app.webViews["computerInspectorPreview"].exists)
         let trackpad = app.descendants(matching: .any)
             .matching(identifier: "computerTrackpad")
@@ -407,7 +407,7 @@ final class VladChatUITests: XCTestCase {
         XCTAssertEqual(sessionState.label, "Session: live", "Collapsing the inspector must preserve the live computer session")
         XCTAssertTrue(chatCanvas.isHittable)
         XCTAssertTrue(app.buttons["showChats"].isHittable)
-        XCTAssertFalse(app.navigationBars["Inspector"].exists)
+        XCTAssertFalse(app.navigationBars["Computer"].exists)
         XCTAssertFalse(app.buttons["Collapse to preview"].exists)
         XCTAssertTrue(expandTarget.isHittable)
         XCTAssertLessThanOrEqual(preview.frame.width, 300)
@@ -479,7 +479,7 @@ final class VladChatUITests: XCTestCase {
 
         app.buttons["computerExpandTarget"].tap()
 
-        XCTAssertTrue(app.navigationBars["Inspector"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["Computer"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.webViews["computerInspectorPreview"].exists)
         XCTAssertTrue(
             app.descendants(matching: .any)["computerInspectorLoading"].waitForExistence(timeout: 2),
@@ -494,7 +494,7 @@ final class VladChatUITests: XCTestCase {
 
         XCTAssertTrue(app.descendants(matching: .any)["computerOpeningIndicator"].waitForExistence(timeout: 5))
         app.buttons["computerExpandTarget"].tap()
-        XCTAssertTrue(app.navigationBars["Inspector"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["Computer"].waitForExistence(timeout: 5))
         let loading = app.descendants(matching: .any)["computerInspectorLoading"]
         let failure = app.descendants(matching: .any)["computerConnectionFailed"]
         XCTAssertTrue(loading.exists || failure.exists, "Inspector must show either connection progress or its bounded failure state")
