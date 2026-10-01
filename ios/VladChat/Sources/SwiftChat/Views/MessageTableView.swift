@@ -116,6 +116,16 @@ struct MessageTableView: UIViewRepresentable {
         context.coordinator.lastShowsWaitingRow = showsWaitingRow
         let isLoadingChanged = context.coordinator.lastIsLoading != isLoading
         let isCompletingStream = isLoadingChanged && !isLoading
+        let completionAppendsText: Bool
+        if isCompletingStream,
+           let lastMessage = messages.last,
+           let wrapper = context.coordinator.messageWrappers[lastMessage.id] {
+            let previousText = wrapper.message.content
+            completionAppendsText = lastMessage.content != previousText &&
+                lastMessage.content.hasPrefix(previousText)
+        } else {
+            completionAppendsText = false
+        }
         context.coordinator.lastIsLoading = isLoading
 
         if isDarkModeChanged {
@@ -163,8 +173,8 @@ struct MessageTableView: UIViewRepresentable {
         if isLoadingChanged && !isLoading {
             // Final Markdown rendering can change the self-sizing row after the
             // stream ends. Stop the streaming follower here so that this layout
-            // pass preserves the reader's viewport instead of starting a second
-            // animated trip to the new bottom.
+            // pass preserves the reader's viewport. Only newly appended text
+            // should resume following after the terminal layout settles.
             context.coordinator.stopFollowingLatest()
 
             // Streaming just ended - update the last message wrapper to reflect final state (including any errors)
@@ -191,6 +201,12 @@ struct MessageTableView: UIViewRepresentable {
                     context.coordinator.updateContentInset()
                     tableView.layoutIfNeeded()
                     tableView.contentOffset.y = currentOffset
+                }
+                // A terminal snapshot can also deliver the final text chunk.
+                // Follow that new content; a Markdown-only reflow above keeps
+                // the reader's viewport, and manual scrolling still opts out.
+                if completionAppendsText {
+                    context.coordinator.scheduleFollowLatestIfNeeded()
                 }
             }
         }
@@ -577,6 +593,7 @@ struct MessageTableView: UIViewRepresentable {
         func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
             isDragging = false
             if !decelerate {
+                checkIfAtBottom()
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                     self.parent.viewModel.isScrollInteractionActive = false
                 }
@@ -584,6 +601,7 @@ struct MessageTableView: UIViewRepresentable {
         }
 
         func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+            checkIfAtBottom()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 self.parent.viewModel.isScrollInteractionActive = false
             }
@@ -721,6 +739,7 @@ struct MessageTableView: UIViewRepresentable {
         func checkIfAtBottom() {
             guard let tableView = tableView else { return }
             guard tableView.window != nil else { return }
+            guard !readerPositionRestoreScheduled else { return }
 
             let inset = tableView.adjustedContentInset
             let maxOffset = max(
@@ -735,7 +754,10 @@ struct MessageTableView: UIViewRepresentable {
                 DispatchQueue.main.async {
                     self.parent.isAtBottom = isVisible
                     self.parent.viewModel.isAtBottom = isVisible
-                    if isVisible {
+                    // Starting a drag at the bottom must not immediately opt
+                    // the reader back into following before they move away.
+                    if isVisible, !self.isDragging, !tableView.isDecelerating,
+                       !self.readerPositionRestoreScheduled {
                         self.parent.userHasScrolled = false
                     }
                 }

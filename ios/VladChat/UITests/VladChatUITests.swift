@@ -173,9 +173,12 @@ final class VladChatUITests: XCTestCase {
         ).firstMatch
         XCTAssertTrue(finalSegment.waitForExistence(timeout: 20), "The final streamed text never arrived")
 
-        let sendButton = app.buttons["sendMessageButton"]
-        XCTAssertTrue(sendButton.waitForExistence(timeout: 10), "The response should finish after the final text arrives")
-        XCTAssertTrue(sendButton.isEnabled)
+        let dictationButton = app.buttons["dictationButton"]
+        XCTAssertTrue(dictationButton.waitForExistence(timeout: 10), "The response should finish after the final text arrives")
+        XCTAssertTrue(dictationButton.isEnabled)
+        // The final Markdown row resolves its height asynchronously. Check the
+        // viewport after that layout has settled, not only at stream completion.
+        Thread.sleep(forTimeInterval: 1.2)
         XCTAssertTrue(finalSegment.frame.intersects(table.frame), "Final text must stay visible at the end of the seeded-history stream")
         XCTAssertLessThanOrEqual(finalSegment.frame.maxY, table.frame.maxY + 4, "Scroll stopped before the final message text")
     }
@@ -191,15 +194,20 @@ final class VladChatUITests: XCTestCase {
         ).firstMatch
         XCTAssertTrue(anchor.waitForExistence(timeout: 5))
 
+        // Opt out of automatic following even if the target is already visible.
+        table.swipeDown()
         for _ in 0..<6 where !anchor.frame.intersects(table.frame) {
             table.swipeDown()
         }
         XCTAssertTrue(anchor.frame.intersects(table.frame), "Target text must be visible before history is inserted")
         let originalY = anchor.frame.minY
 
-        app.buttons["insertHistoryRowFixture"].tap()
+        let insertButton = app.buttons["insertHistoryRowFixture"]
+        insertButton.tap()
 
-        XCTAssertTrue(app.staticTexts["A newly arrived older history message."].waitForExistence(timeout: 2))
+        // The inserted row is above the viewport and need not have a cell yet.
+        expectation(for: NSPredicate(format: "isEnabled == false"), evaluatedWith: insertButton)
+        waitForExpectations(timeout: 2)
         XCTAssertTrue(anchor.frame.intersects(table.frame), "History insertion must not displace the reader's message")
         XCTAssertLessThan(abs(anchor.frame.minY - originalY), 24, "History insertion moved the visible text")
     }
