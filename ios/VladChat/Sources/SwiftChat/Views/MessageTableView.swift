@@ -156,7 +156,6 @@ struct MessageTableView: UIViewRepresentable {
                 let showArchiveSeparator = messages.count - 1 == archivedMessagesStartIndex && archivedMessagesStartIndex > 0
 
                 let coordinator = context.coordinator
-                coordinator.invalidateHeight(for: lastMessage.id)
                 let didUpdate = wrapper.update(
                     message: lastMessage,
                     isDarkMode: isDarkMode,
@@ -166,8 +165,12 @@ struct MessageTableView: UIViewRepresentable {
                     showArchiveSeparator: showArchiveSeparator,
                     messageIndex: messages.count - 1
                 )
-                if didUpdate && !isCompletingStream {
-                    coordinator.scheduleFollowLatestIfNeeded()
+                if didUpdate {
+                    if userHasScrolled {
+                        coordinator.scheduleReaderPositionRestoreIfNeeded()
+                    } else if !isCompletingStream {
+                        coordinator.scheduleFollowLatestIfNeeded()
+                    }
                 }
             }
         }
@@ -302,6 +305,12 @@ struct MessageTableView: UIViewRepresentable {
         private var followLatestDisplayLink: CADisplayLink?
         private lazy var followLatestDisplayLinkTarget = FollowLatestDisplayLinkTarget(coordinator: self)
 
+        private struct ReaderAnchor {
+            let id: String
+            let viewportY: CGFloat
+            let distanceFromCenter: CGFloat
+        }
+
         private static let followLatestResponse: TimeInterval = 0.2
         private static let maximumFollowLatestSpeed: CGFloat = 1_800
 
@@ -372,21 +381,8 @@ struct MessageTableView: UIViewRepresentable {
             guard let tableView else { return }
             guard parent.userHasScrolled,
                   !readerPositionRestoreScheduled,
-                  let visibleRows = tableView.indexPathsForVisibleRows?.sorted(by: { $0.row < $1.row }) else {
-                tableView.reloadData()
-                renderedMessageSequence = parent.messages.map(\.id)
-                return
-            }
-
-            let viewportCenterY = tableView.bounds.midY
-            let anchors = visibleRows.compactMap { indexPath -> (id: String, viewportY: CGFloat, distanceFromCenter: CGFloat)? in
-                guard renderedMessageSequence.indices.contains(indexPath.row) else { return nil }
-                let messageID = renderedMessageSequence[indexPath.row]
-                let rowRect = tableView.rectForRow(at: indexPath)
-                let viewportY = rowRect.minY - tableView.contentOffset.y
-                return (messageID, viewportY, abs(rowRect.midY - tableView.contentOffset.y - viewportCenterY))
-            }.sorted { $0.distanceFromCenter < $1.distanceFromCenter }
-            guard !anchors.isEmpty else {
+                  let anchors = readerAnchors(in: tableView),
+                  !anchors.isEmpty else {
                 tableView.reloadData()
                 renderedMessageSequence = parent.messages.map(\.id)
                 return
@@ -397,24 +393,84 @@ struct MessageTableView: UIViewRepresentable {
             renderedMessageSequence = parent.messages.map(\.id)
             DispatchQueue.main.async { [weak self, weak tableView] in
                 guard let self, let tableView else { return }
-                self.readerPositionRestoreScheduled = false
+                defer { self.readerPositionRestoreScheduled = false }
                 guard self.parent.userHasScrolled, !tableView.isDragging, !tableView.isDecelerating else { return }
                 tableView.layoutIfNeeded()
+                self.restoreReaderPosition(from: anchors, in: tableView)
+                self.recordVisibleRowHeights(in: tableView)
+            }
+        }
 
-                guard let anchor = anchors.first(where: { item in
-                    self.parent.messages.contains(where: { $0.id == item.id })
-                }),
-                let row = self.parent.messages.firstIndex(where: { $0.id == anchor.id }) else { return }
+        /// Self-sizing hosting cells publish height changes after their model
+        /// updates. Keep the visible message at the same viewport coordinate
+        /// while UIKit resolves that new height.
+        func scheduleReaderPositionRestoreIfNeeded() {
+            guard let tableView,
+                  parent.userHasScrolled,
+                  !readerPositionRestoreScheduled,
+                  let anchors = readerAnchors(in: tableView),
+                  !anchors.isEmpty else { return }
 
-                let rowTop = tableView.rectForRow(at: IndexPath(row: row, section: 0)).minY
-                let minimumOffset = -tableView.adjustedContentInset.top
-                let maximumOffset = max(
-                    minimumOffset,
-                    tableView.contentSize.height - tableView.bounds.height + tableView.adjustedContentInset.bottom
-                )
-                let targetOffset = min(max(rowTop - anchor.viewportY, minimumOffset), maximumOffset)
+            readerPositionRestoreScheduled = true
+            DispatchQueue.main.async { [weak self, weak tableView] in
+                guard let self, let tableView else { return }
+                defer { self.readerPositionRestoreScheduled = false }
+                guard self.parent.userHasScrolled, !tableView.isDragging, !tableView.isDecelerating else { return }
+
                 UIView.performWithoutAnimation {
-                    tableView.setContentOffset(CGPoint(x: tableView.contentOffset.x, y: targetOffset), animated: false)
+                    tableView.beginUpdates()
+                    tableView.endUpdates()
+                    tableView.layoutIfNeeded()
+                    self.restoreReaderPosition(from: anchors, in: tableView)
+                }
+                self.recordVisibleRowHeights(in: tableView)
+            }
+        }
+
+        private func readerAnchors(in tableView: UITableView) -> [ReaderAnchor]? {
+            guard let visibleRows = tableView.indexPathsForVisibleRows?.sorted(by: { $0.row < $1.row }) else {
+                return nil
+            }
+            let viewportCenterY = tableView.bounds.midY
+            return visibleRows.compactMap { indexPath -> ReaderAnchor? in
+                guard renderedMessageSequence.indices.contains(indexPath.row) else { return nil }
+                let messageID = renderedMessageSequence[indexPath.row]
+                let rowRect = tableView.rectForRow(at: indexPath)
+                return ReaderAnchor(
+                    id: messageID,
+                    viewportY: rowRect.minY - tableView.contentOffset.y,
+                    distanceFromCenter: abs(rowRect.midY - tableView.contentOffset.y - viewportCenterY)
+                )
+            }.sorted { $0.distanceFromCenter < $1.distanceFromCenter }
+        }
+
+        private func restoreReaderPosition(from anchors: [ReaderAnchor], in tableView: UITableView) {
+            guard let anchor = anchors.first(where: { item in
+                parent.messages.contains(where: { $0.id == item.id })
+            }),
+            let row = parent.messages.firstIndex(where: { $0.id == anchor.id }) else { return }
+
+            let rowTop = tableView.rectForRow(at: IndexPath(row: row, section: 0)).minY
+            let minimumOffset = -tableView.adjustedContentInset.top
+            let maximumOffset = max(
+                minimumOffset,
+                tableView.contentSize.height - tableView.bounds.height + tableView.adjustedContentInset.bottom
+            )
+            let targetOffset = min(max(rowTop - anchor.viewportY, minimumOffset), maximumOffset)
+            tableView.setContentOffset(
+                CGPoint(x: tableView.contentOffset.x, y: targetOffset),
+                animated: false
+            )
+        }
+
+        private func recordVisibleRowHeights(in tableView: UITableView) {
+            guard let visibleRows = tableView.indexPathsForVisibleRows else { return }
+            for indexPath in visibleRows {
+                let height = tableView.rectForRow(at: indexPath).height
+                guard height > 0 else { continue }
+                heightCache[indexPath] = height
+                if parent.messages.indices.contains(indexPath.row) {
+                    messageHeightCache[parent.messages[indexPath.row].id] = height
                 }
             }
         }
@@ -680,6 +736,7 @@ struct MessageTableView: UIViewRepresentable {
                     // remaining distance to the newest text.
                     tableView.setContentOffset(visibleOffset, animated: false)
                 }
+                self.recordVisibleRowHeights(in: tableView)
 
                 guard self.followLatestDisplayLink == nil else { return }
                 let displayLink = CADisplayLink(
@@ -807,14 +864,6 @@ struct MessageTableView: UIViewRepresentable {
             userScrollDisplacementAtDragStart = 0
         }
 
-        func invalidateHeight(for messageID: String) {
-            messageHeightCache[messageID] = nil
-            heightCache = heightCache.filter { entry in
-                let indexPath = entry.key
-                guard indexPath.row < parent.messages.count else { return true }
-                return parent.messages[indexPath.row].id != messageID
-            }
-        }
     }
 
     private final class FollowLatestDisplayLinkTarget: NSObject {
