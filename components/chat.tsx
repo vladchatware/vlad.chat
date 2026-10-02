@@ -315,6 +315,7 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
     try {
       const result = await generateReply({
         prompt,
+        requestId: crypto.randomUUID(),
         model,
         searchEnabled,
         threadId: activeThreadId ?? undefined,

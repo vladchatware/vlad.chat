@@ -195,6 +195,7 @@ export default defineSchema({
   agentRuns: defineTable({
     threadId: v.string(),
     userId: v.id("users"),
+    requestId: v.optional(v.string()),
     promptMessageId: v.optional(v.string()),
     order: v.optional(v.number()),
     queuedPrompt: v.optional(vMessage),
@@ -227,6 +228,7 @@ export default defineSchema({
   })
     .index("byThread", ["threadId", "createdAt"])
     .index("byThreadAndStatus", ["threadId", "status", "createdAt"])
+    .index("byThreadAndRequest", ["threadId", "requestId"])
     .index("byUser", ["userId", "createdAt"]),
   agentRunSteering: defineTable({
     runId: v.id("agentRuns"),

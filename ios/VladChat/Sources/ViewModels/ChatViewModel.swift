@@ -154,6 +154,7 @@ final class ChatViewModel: ObservableObject {
                 }
                 var arguments: [String: ConvexEncodable?] = [
                     "prompt": text,
+                    "requestId": generationID.uuidString,
                     "model": modelID,
                     "searchEnabled": searchEnabled,
                 ]

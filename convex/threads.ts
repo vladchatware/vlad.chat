@@ -455,6 +455,17 @@ export const getAgentRunInternal = internalQuery({
   handler: async (ctx, { runId }) => ctx.db.get(runId),
 });
 
+export const getAgentRunByRequest = internalQuery({
+  args: { threadId: v.string(), requestId: v.string() },
+  handler: async (ctx, { threadId, requestId }) =>
+    ctx.db
+      .query("agentRuns")
+      .withIndex("byThreadAndRequest", (q) =>
+        q.eq("threadId", threadId).eq("requestId", requestId),
+      )
+      .unique(),
+});
+
 export const getAgentRunSteeringForStep = internalQuery({
   args: { steeringIds: v.array(v.id("agentRunSteering")) },
   handler: async (ctx, { steeringIds }) =>
@@ -465,12 +476,31 @@ export const createAgentRunWithPrompt = internalMutation({
   args: {
     threadId: v.string(),
     userId: v.id("users"),
+    requestId: v.optional(v.string()),
     prompt: vMessage,
     fileIds: v.optional(v.array(v.string())),
     model: v.string(),
     searchEnabled: v.boolean(),
   },
   handler: async (ctx, args) => {
+    if (args.requestId) {
+      const existingRun = await ctx.db
+        .query("agentRuns")
+        .withIndex("byThreadAndRequest", (q) =>
+          q.eq("threadId", args.threadId).eq("requestId", args.requestId),
+        )
+        .unique();
+      if (existingRun) {
+        return {
+          runId: existingRun._id,
+          promptMessageId: existingRun.promptMessageId,
+          order: existingRun.order,
+          queued: existingRun.status === "queued",
+          duplicate: true,
+        };
+      }
+    }
+
     const [runningRun, stopRequestedRun, pausedRun, queuedRun] = await Promise.all([
       ctx.db
         .query("agentRuns")
@@ -513,6 +543,7 @@ export const createAgentRunWithPrompt = internalMutation({
     const runId = await ctx.db.insert("agentRuns", {
       threadId: args.threadId,
       userId: args.userId,
+      requestId: args.requestId,
       promptMessageId: savedPrompt?.messageId,
       order: savedPrompt?.message.order,
       queuedPrompt: queued ? args.prompt : undefined,
@@ -530,6 +561,7 @@ export const createAgentRunWithPrompt = internalMutation({
       promptMessageId: savedPrompt?.messageId,
       order: savedPrompt?.message.order,
       queued,
+      duplicate: false,
     };
   },
 });
@@ -2071,6 +2103,7 @@ export const getUIMessages = query({
 export const generateReply = action({
   args: {
     prompt: v.string(),
+    requestId: v.optional(v.string()),
     model: v.string(),
     searchEnabled: v.optional(v.boolean()),
     threadId: v.optional(v.string()),
@@ -2078,7 +2111,7 @@ export const generateReply = action({
   },
   handler: async (
     ctx,
-    { prompt, model, searchEnabled = false, threadId: requestedThreadId, attachments = [] },
+    { prompt, requestId, model, searchEnabled = false, threadId: requestedThreadId, attachments = [] },
   ) => {
     let preparedRunId: Id<"agentRuns"> | undefined;
     try {
@@ -2090,6 +2123,9 @@ export const generateReply = action({
     const text = prompt.trim();
     if (!text && attachments.length === 0) {
       throw new ConvexError("Your message is empty. Please type something first.");
+    }
+    if (requestId !== undefined && (!requestId.trim() || requestId.length > 128)) {
+      throw new ConvexError("Invalid message request ID.");
     }
 
     // usageGate (above) already enforced tier eligibility and subscription
@@ -2105,6 +2141,25 @@ export const generateReply = action({
     const threadId =
       requestedThreadId ?? (await getOrCreateDefaultThread(ctx, userId));
 
+    if (requestId) {
+      const existingRun = await ctx.runQuery(
+        internal.threads.getAgentRunByRequest,
+        { threadId, requestId },
+      );
+      if (existingRun) {
+        await Promise.allSettled(
+          attachments.map(({ storageId }) => ctx.storage.delete(storageId)),
+        );
+        return {
+          threadId,
+          order: existingRun.order,
+          promptMessageId: existingRun.promptMessageId,
+          runId: existingRun._id,
+          queued: existingRun.status === "queued",
+        };
+      }
+    }
+
     const modelPrompt = await mobileModelPrompt(ctx, text, attachments);
     const promptMessage: ModelMessage = modelPrompt.kind === "attachments"
       ? modelPrompt.prompt[0]
@@ -2114,6 +2169,7 @@ export const generateReply = action({
       {
         threadId,
         userId,
+        requestId,
         prompt: promptMessage,
         fileIds: modelPrompt.kind === "attachments"
           ? modelPrompt.fileIds
@@ -2128,7 +2184,7 @@ export const generateReply = action({
       attachments.map(({ storageId }) => ctx.storage.delete(storageId)),
     );
 
-    if (!prepared.queued) {
+    if (!prepared.duplicate && !prepared.queued) {
       // Queue admission must not depend on current usage. Recheck when the
       // queued run reaches the front; immediate runs gate before starting.
       await ctx.runMutation(api.users.usageGate, { model });
