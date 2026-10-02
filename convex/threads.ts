@@ -777,26 +777,29 @@ export const agentRunWorkflow = workflow.define({
   args: { runId: v.id("agentRuns") },
   returns: v.null(),
   handler: async (step, { runId }): Promise<null> => {
+    // These small state operations share the workflow transaction to avoid a
+    // workpool dispatch and workflow resume for each operation.
     await step.runMutation(internal.threads.attachAgentRunWorkflow, {
       runId,
       workflowId: step.workflowId,
-    });
+    }, { inline: true });
 
     const pauseForRequestedStop = async () => {
       const currentRun = await step.runQuery(
         internal.threads.getAgentRunInternal,
         { runId },
+        { inline: true },
       );
       if (currentRun?.status !== "stopRequested") return false;
       await step.runMutation(internal.threads.setAgentRunStatus, {
         runId,
         status: "paused",
-      });
+      }, { inline: true });
       await step.awaitEvent({ name: "resume" });
       await step.runMutation(internal.threads.setAgentRunStatus, {
         runId,
         status: "running",
-      });
+      }, { inline: true });
       return true;
     };
 
@@ -805,30 +808,31 @@ export const agentRunWorkflow = workflow.define({
       while (!claimed) {
         const run = await step.runQuery(internal.threads.getAgentRunInternal, {
           runId,
-        });
+        }, { inline: true });
         if (!run || ["completed", "failed"].includes(run.status)) return null;
         if (run.status === "stopRequested") {
           await step.runMutation(internal.threads.setAgentRunStatus, {
             runId,
             status: "paused",
-          });
+          }, { inline: true });
           await step.awaitEvent({ name: "resume" });
           await step.runMutation(internal.threads.setAgentRunStatus, {
             runId,
             status: "running",
-          });
+          }, { inline: true });
           continue;
         }
         if (run.status !== "running") return null;
         claimed = await step.runMutation(internal.threads.claimAgentRunStep, {
           runId,
           stepNumber,
-        });
+        }, { inline: true });
       }
 
       const claimedRun = await step.runQuery(
         internal.threads.getAgentRunInternal,
         { runId },
+        { inline: true },
       );
       let attempt = claimedRun?.inFlightStep === stepNumber
         ? claimedRun.inFlightAttempt ?? 1
@@ -848,6 +852,7 @@ export const agentRunWorkflow = workflow.define({
           let currentRun = await step.runQuery(
             internal.threads.getAgentRunInternal,
             { runId },
+            { inline: true },
           );
           if (
             currentRun?.status === "stopRequested" &&
@@ -857,6 +862,7 @@ export const agentRunWorkflow = workflow.define({
             currentRun = await step.runQuery(
               internal.threads.getAgentRunInternal,
               { runId },
+              { inline: true },
             );
           }
           if (
@@ -870,11 +876,13 @@ export const agentRunWorkflow = workflow.define({
           let nextAttempt = await step.runMutation(
             internal.threads.advanceAgentRunStepAttempt,
             { runId, stepNumber, expectedAttempt: attempt },
+            { inline: true },
           );
           if (nextAttempt === null) {
             currentRun = await step.runQuery(
               internal.threads.getAgentRunInternal,
               { runId },
+              { inline: true },
             );
             if (
               currentRun?.status === "stopRequested" &&
@@ -884,6 +892,7 @@ export const agentRunWorkflow = workflow.define({
               nextAttempt = await step.runMutation(
                 internal.threads.advanceAgentRunStepAttempt,
                 { runId, stepNumber, expectedAttempt: attempt },
+                { inline: true },
               );
             }
           }
@@ -895,7 +904,7 @@ export const agentRunWorkflow = workflow.define({
         runId,
         stepNumber,
         ...result,
-      });
+      }, { inline: true });
 
       const stopped = await pauseForRequestedStop();
       if (stopped) {
@@ -903,6 +912,7 @@ export const agentRunWorkflow = workflow.define({
           await step.runMutation(
             internal.threads.completeAgentRunIfRunning,
             { runId },
+            { inline: true },
           );
           return null;
         }
@@ -913,6 +923,7 @@ export const agentRunWorkflow = workflow.define({
         const completed = await step.runMutation(
           internal.threads.completeAgentRunIfRunning,
           { runId },
+          { inline: true },
         );
         if (completed) return null;
 
@@ -923,11 +934,13 @@ export const agentRunWorkflow = workflow.define({
           await step.runMutation(
             internal.threads.completeAgentRunIfRunning,
             { runId },
+            { inline: true },
           );
         }
         const currentRun = await step.runQuery(
           internal.threads.getAgentRunInternal,
           { runId },
+          { inline: true },
         );
         if (
           currentRun?.status === "running" &&
@@ -1297,7 +1310,7 @@ export const runAgentStep = internalAction({
       usageObject.outputTokens !== undefined;
     if (hasUsage || finalStep.providerMetadata || toolCallItems.length > 0) {
       try {
-        await ctx.runAction(internal.posthog.captureLlmGeneration, {
+        await ctx.scheduler.runAfter(0, internal.posthog.captureLlmGeneration, {
           distinctId: String(run.userId),
           traceId: `${run.threadId}:${order}:${stepNumber}`,
           threadId: run.threadId,
