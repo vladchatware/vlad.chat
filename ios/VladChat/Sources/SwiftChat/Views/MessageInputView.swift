@@ -17,7 +17,11 @@ struct MessageInputView: View {
         static let defaultHeight: CGFloat = 72
         static let minimumHeight: CGFloat = 72
         static let maximumHeight: CGFloat = 180
+        static let controlGap: CGFloat = 8
+        static let controlEdgeInset: CGFloat = 8
     }
+
+    private static let placeholderText = "Message"
 
     @Binding var messageText: String
     @ObservedObject var viewModel: ChatViewModel
@@ -123,7 +127,7 @@ struct MessageInputView: View {
 
                     CustomTextEditor(text: $messageText,
                                      textHeight: $textHeight,
-                                     placeholderText: viewModel.currentChat?.messages.isEmpty ?? true ? "Ask anything" : "Message",
+                                     placeholderText: Self.placeholderText,
                                      shouldFocusInput: viewModel.shouldFocusInput,
                                      isLoading: viewModel.isLoading,
                                      onFocusHandled: { viewModel.shouldFocusInput = false },
@@ -134,13 +138,13 @@ struct MessageInputView: View {
                         .accessibilityHint("Spoken words appear in this message field.")
 
                     HStack(spacing: 0) {
-                        HStack(spacing: 8) {
+                        HStack(spacing: Layout.controlGap) {
                             attachButton
                             modelPickerButton
                             webSearchButton
                         }
-                        .padding(.leading, 8)
-                        Spacer(minLength: 8)
+                        .padding(.leading, Layout.controlEdgeInset)
+                        Spacer(minLength: Layout.controlGap)
                         composerActionButton
                     }
                     .padding(.vertical, 8)
@@ -164,7 +168,7 @@ struct MessageInputView: View {
 
                     CustomTextEditor(text: $messageText,
                                      textHeight: $textHeight,
-                                     placeholderText: viewModel.currentChat?.messages.isEmpty ?? true ? "Ask anything" : "Message",
+                                     placeholderText: Self.placeholderText,
                                      shouldFocusInput: viewModel.shouldFocusInput,
                                      isLoading: viewModel.isLoading,
                                      onFocusHandled: { viewModel.shouldFocusInput = false },
@@ -175,13 +179,13 @@ struct MessageInputView: View {
                         .accessibilityHint("Spoken words appear in this message field.")
 
                     HStack(spacing: 0) {
-                        HStack(spacing: 8) {
+                        HStack(spacing: Layout.controlGap) {
                             attachButton
                             modelPickerButton
                             webSearchButton
                         }
-                        .padding(.leading, 8)
-                        Spacer(minLength: 8)
+                        .padding(.leading, Layout.controlEdgeInset)
+                        Spacer(minLength: Layout.controlGap)
                         composerActionButton
                     }
                     .padding(.vertical, 8)
@@ -207,9 +211,9 @@ struct MessageInputView: View {
                 || hasDraftContent
                 || dictationService.isActive,
             isDarkMode: isDarkMode,
-            surfaceAlignment: .bottomTrailing
+            surfaceAlignment: .bottom
         ))
-        .padding(.trailing, 8)
+        .padding(.trailing, Layout.controlEdgeInset)
         .disabled(isAgentRunActionPending)
         .accessibilityLabel(composerActionLabel)
         .accessibilityValue(
@@ -309,7 +313,7 @@ struct MessageInputView: View {
         .buttonStyle(ComposerIconButtonStyle(
             isProminent: false,
             isDarkMode: isDarkMode,
-            surfaceAlignment: .bottomLeading
+            surfaceAlignment: .bottom
         ))
         .disabled(viewModel.isLoading || viewModel.isProcessingAttachment)
     }
