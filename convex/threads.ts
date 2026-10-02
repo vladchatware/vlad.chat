@@ -556,6 +556,15 @@ export const createAgentRunWithPrompt = internalMutation({
       createdAt: now,
       updatedAt: now,
     });
+
+    // A fresh submit is explicit intent to continue this thread. Admit it to
+    // the FIFO queue first, then resume the paused run so it can finish and
+    // hand control to the newly queued run. Keeping both changes in this
+    // mutation prevents a submitted prompt from being stranded behind a pause.
+    if (pausedRun && !runningRun && !stopRequestedRun) {
+      await resumePausedAgentRun(ctx, pausedRun);
+    }
+
     return {
       runId,
       promptMessageId: savedPrompt?.messageId,
@@ -1396,6 +1405,26 @@ async function requestAgentRunStop(ctx: MutationCtx, run: Doc<"agentRuns">) {
   return "stopRequested" as const;
 }
 
+async function resumePausedAgentRun(
+  ctx: MutationCtx,
+  run: Doc<"agentRuns">,
+) {
+  if (run.status === "running") return "running" as const;
+  if (run.status === "stopRequested") return "stopRequested" as const;
+  if (run.status !== "paused" || !run.workflowId) {
+    throw new ConvexError("No paused agent run is ready to resume.");
+  }
+  await sendEvent(ctx, components.workflow, {
+    workflowId: run.workflowId as WorkflowId,
+    name: "resume",
+  });
+  await ctx.db.patch(run._id, {
+    status: "running",
+    updatedAt: Date.now(),
+  });
+  return "running" as const;
+}
+
 async function startNextQueuedAgentRunForThread(
   ctx: MutationCtx,
   threadId: string,
@@ -1654,24 +1683,8 @@ export const resumeThread = mutation({
     if (!run) {
       throw new ConvexError("No paused agent run is ready to resume.");
     }
-    if (run.status === "running") {
-      return { status: "running" as const, runId: run._id };
-    }
-    if (run.status === "stopRequested") {
-      return { status: "stopRequested" as const, runId: run._id };
-    }
-    if (run.status !== "paused" || !run.workflowId) {
-      throw new ConvexError("No paused agent run is ready to resume.");
-    }
-    await sendEvent(ctx, components.workflow, {
-      workflowId: run.workflowId as WorkflowId,
-      name: "resume",
-    });
-    await ctx.db.patch(run._id, {
-      status: "running",
-      updatedAt: Date.now(),
-    });
-    return { status: "running" as const, runId: run._id };
+    const status = await resumePausedAgentRun(ctx, run);
+    return { status, runId: run._id };
   },
 });
 
