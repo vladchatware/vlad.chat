@@ -192,6 +192,19 @@ export default defineSchema({
     originalTitle: v.optional(v.string()),
     status: v.union(v.literal("pending"), v.literal("generating"), v.literal("completed"), v.literal("failed"), v.literal("canceled")),
   }).index("byThread", ["threadId"]),
+  agentActivities: defineTable({
+    userId: v.id("users"),
+    runId: v.id("agentRuns"),
+    activityId: v.string(),
+    pushToken: v.string(),
+    environment: v.union(v.literal("sandbox"), v.literal("production")),
+    revision: v.number(),
+    lastTimestamp: v.number(),
+    expiresAt: v.number(),
+  })
+    .index("byUser", ["userId"])
+    .index("byUserActivity", ["userId", "activityId"])
+    .index("byRun", ["runId"]),
   agentRuns: defineTable({
     threadId: v.string(),
     userId: v.id("users"),

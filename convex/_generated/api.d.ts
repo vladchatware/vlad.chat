@@ -10,6 +10,8 @@
 
 import type * as agents_prompts from "../agents/prompts.js";
 import type * as agents_simple from "../agents/simple.js";
+import type * as agentActivities from "../agentActivities.js";
+import type * as agentActivityPush from "../agentActivityPush.js";
 import type * as apiKeys from "../apiKeys.js";
 import type * as auth from "../auth.js";
 import type * as billing from "../billing.js";
@@ -35,6 +37,8 @@ import type {
 declare const fullApi: ApiFromModules<{
   "agents/prompts": typeof agents_prompts;
   "agents/simple": typeof agents_simple;
+  agentActivities: typeof agentActivities;
+  agentActivityPush: typeof agentActivityPush;
   apiKeys: typeof apiKeys;
   auth: typeof auth;
   billing: typeof billing;
