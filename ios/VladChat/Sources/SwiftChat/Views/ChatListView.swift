@@ -26,6 +26,7 @@ struct ChatListView: View {
     @State private var tableOpacity = 1.0
     @State private var keyboardObserverTokens: [NSObjectProtocol] = []
     @State private var didDismissNearLimitPrompt = false
+    @State private var composerTop: CGFloat?
 
     private var messages: [Message] {
         viewModel.messages
@@ -56,8 +57,10 @@ struct ChatListView: View {
             scrollTrigger: scrollTrigger,
             scrollToUserTrigger: scrollToUserTrigger,
             tableOpacity: $tableOpacity,
-            keyboardHeight: keyboardHeight
+            keyboardHeight: keyboardHeight,
+            composerTop: composerTop
         )
+        .modifier(TranscriptScrollSurfaceModifier())
         .opacity(tableOpacity)
         .background(Color.chatBackground(isDarkMode: isDarkMode))
         .overlay(alignment: .bottom) {
@@ -88,46 +91,20 @@ struct ChatListView: View {
                 .transition(.opacity)
             }
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            VStack(spacing: shouldShowAccountPrompt ? 12 : 0) {
-                if shouldShowAccountPrompt {
-                    AccountPromptView(viewModel: viewModel, onDismiss: dismissAccountPrompt)
-                        .frame(maxWidth: 600)
-                        .padding(.horizontal, 16)
-                        .frame(maxWidth: .infinity)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
-
-                MessageInputView(
-                    messageText: $messageText,
-                    viewModel: viewModel,
-                    isKeyboardVisible: isKeyboardVisible
-                )
-                .environmentObject(viewModel)
-                .if(UIDevice.current.userInterfaceIdiom == .pad) { view in
-                    HStack {
-                        Spacer()
-                        view.frame(maxWidth: 600)
-                        Spacer()
-                    }
-                }
-            }
-            .animation(.easeInOut(duration: 0.22), value: shouldShowAccountPrompt)
-            .background {
-                GeometryReader { proxy in
-                    Color.clear.preference(
-                        key: ComputerComposerTopPreferenceKey.self,
-                        value: proxy.frame(in: .global).minY
-                    )
-                }
-            }
-        }
+        .modifier(ComposerBarModifier(bar: ChatComposerBar(
+            viewModel: viewModel,
+            messageText: $messageText,
+            isAccountPromptVisible: shouldShowAccountPrompt,
+            isKeyboardVisible: isKeyboardVisible,
+            onDismissAccountPrompt: dismissAccountPrompt
+        )))
         .overlayPreferenceValue(ComputerComposerTopPreferenceKey.self) { composerTop in
             ComputerUseViewerOverlay(
                 controller: viewModel.computerUseController,
                 composerTop: composerTop
             )
         }
+        .onPreferenceChange(ComputerComposerTopPreferenceKey.self) { composerTop = $0 }
         .onAppear {
             setupKeyboardObservers()
         }
@@ -220,4 +197,71 @@ struct ChatListView: View {
         isAccountPromptPresented = false
     }
 
+}
+
+private struct ChatComposerBar: View {
+    @ObservedObject var viewModel: ChatViewModel
+    @Binding var messageText: String
+    let isAccountPromptVisible: Bool
+    let isKeyboardVisible: Bool
+    let onDismissAccountPrompt: () -> Void
+
+    var body: some View {
+        VStack(spacing: isAccountPromptVisible ? 12 : 0) {
+            if isAccountPromptVisible {
+                AccountPromptView(viewModel: viewModel, onDismiss: onDismissAccountPrompt)
+                    .frame(maxWidth: 600)
+                    .padding(.horizontal, 16)
+                    .frame(maxWidth: .infinity)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+
+            MessageInputView(
+                messageText: $messageText,
+                viewModel: viewModel,
+                isKeyboardVisible: isKeyboardVisible
+            )
+            .environmentObject(viewModel)
+            .if(UIDevice.current.userInterfaceIdiom == .pad) { view in
+                HStack {
+                    Spacer()
+                    view.frame(maxWidth: 600)
+                    Spacer()
+                }
+            }
+        }
+        .animation(.easeInOut(duration: 0.22), value: isAccountPromptVisible)
+        .background {
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: ComputerComposerTopPreferenceKey.self,
+                    value: proxy.frame(in: .global).minY
+                )
+            }
+        }
+    }
+}
+
+private struct TranscriptScrollSurfaceModifier: ViewModifier {
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(iOS 26, *) {
+            content.ignoresSafeArea(.container, edges: .bottom)
+        } else {
+            content
+        }
+    }
+}
+
+private struct ComposerBarModifier<Bar: View>: ViewModifier {
+    let bar: Bar
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(iOS 26, *) {
+            content.safeAreaBar(edge: .bottom, spacing: 0) { bar }
+        } else {
+            content.safeAreaInset(edge: .bottom, spacing: 0) { bar }
+        }
+    }
 }

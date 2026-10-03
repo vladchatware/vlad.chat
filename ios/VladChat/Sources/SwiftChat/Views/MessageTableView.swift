@@ -10,7 +10,116 @@ import SwiftUI
 import Combine
 import QuartzCore
 
-struct MessageTableView: UIViewRepresentable {
+/// Owns the transcript's safe area and the material beneath its floating composer.
+final class MessageTableViewController: UIViewController {
+    let tableView: UITableView
+    var composerTop: CGFloat? {
+        didSet {
+            if isViewLoaded, composerTop != oldValue { view.setNeedsLayout() }
+        }
+    }
+    var isDarkMode: Bool {
+        didSet {
+            if isViewLoaded, isDarkMode != oldValue { view.setNeedsLayout() }
+        }
+    }
+    private let bottomBlur = UIVisualEffectView()
+    private let bottomBlurMask = CAGradientLayer()
+    private var bottomBlurAnimator: UIViewPropertyAnimator?
+
+    init(tableView: UITableView, composerTop: CGFloat?, isDarkMode: Bool) {
+        self.tableView = tableView
+        self.composerTop = composerTop
+        self.isDarkMode = isDarkMode
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func loadView() {
+        let container = UIView()
+        container.backgroundColor = .clear
+        tableView.frame = container.bounds
+        tableView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        container.addSubview(tableView)
+
+        view = container
+
+        guard #available(iOS 26, *) else { return }
+        bottomBlur.isUserInteractionEnabled = false
+        bottomBlurMask.colors = [
+            UIColor.clear.cgColor,
+            UIColor.black.cgColor,
+            UIColor.black.cgColor,
+        ]
+        bottomBlurMask.locations = [0, 0.8, 1]
+        bottomBlurMask.startPoint = CGPoint(x: 0.5, y: 0)
+        bottomBlurMask.endPoint = CGPoint(x: 0.5, y: 1)
+        bottomBlur.layer.mask = bottomBlurMask
+        container.addSubview(bottomBlur)
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        guard #available(iOS 26, *), bottomBlurAnimator == nil else { return }
+        // Configure the partial effect after attachment to its window; UIKit
+        // can rebuild material effects when an unattached view first appears.
+        let animator = UIViewPropertyAnimator(duration: 1, curve: .linear) { [bottomBlur] in
+            bottomBlur.effect = UIBlurEffect(style: .regular)
+        }
+        animator.startAnimation()
+        animator.pauseAnimation()
+        animator.fractionComplete = 0.2
+        bottomBlurAnimator = animator
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        updateComposerSafeArea()
+        updateBottomBlur()
+    }
+
+    func updateComposerSafeArea() {
+        guard #available(iOS 26, *), isViewLoaded, let window = view.window else { return }
+        let overlap = composerTop.map { top in
+            max(0, view.convert(view.bounds, to: window).maxY - top)
+        } ?? 0
+        let systemBottomInset = max(0, view.safeAreaInsets.bottom - additionalSafeAreaInsets.bottom)
+        let bottomInset = max(0, overlap - systemBottomInset)
+        if abs(additionalSafeAreaInsets.bottom - bottomInset) > 0.5 {
+            additionalSafeAreaInsets.bottom = bottomInset
+        }
+    }
+
+    private func updateBottomBlur() {
+        guard #available(iOS 26, *), let window = view.window, let composerTop else {
+            bottomBlur.isHidden = true
+            return
+        }
+        // Begin the soft material at zero at the composer's top. A single
+        // restrained pass avoids compounding tint beneath the composer glass.
+        tableView.bottomEdgeEffect.isHidden = true
+        let composerY = view.convert(CGPoint(x: 0, y: composerTop), from: window).y
+        let startY = max(0, composerY)
+        let height = max(0, view.bounds.height - startY)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        bottomBlur.isHidden = height == 0
+        bottomBlur.frame = CGRect(x: 0, y: startY, width: view.bounds.width, height: height)
+        bottomBlurMask.frame = bottomBlur.bounds
+        CATransaction.commit()
+    }
+
+    func stopBottomBlurAnimations() {
+        bottomBlurAnimator?.stopAnimation(true)
+        bottomBlurAnimator = nil
+    }
+
+}
+
+struct MessageTableView: UIViewControllerRepresentable {
     let archivedMessagesStartIndex: Int
     let isDarkMode: Bool
     let isLoading: Bool
@@ -22,12 +131,13 @@ struct MessageTableView: UIViewRepresentable {
     let scrollToUserTrigger: UUID
     @Binding var tableOpacity: Double
     let keyboardHeight: CGFloat
+    var composerTop: CGFloat? = nil
 
     private var messages: [Message] {
         viewModel.messages
     }
 
-    func makeUIView(context: Context) -> UITableView {
+    func makeUIViewController(context: Context) -> MessageTableViewController {
         let tableView = UITableView(frame: .zero, style: .plain)
         tableView.backgroundColor = .clear
         tableView.separatorStyle = .none
@@ -41,16 +151,24 @@ struct MessageTableView: UIViewRepresentable {
         tableView.contentInsetAdjustmentBehavior = .automatic
         tableView.clipsToBounds = false
 
+        if #available(iOS 26, *) {
+            tableView.bottomEdgeEffect.style = .soft
+        }
+
         if #available(iOS 15.0, *) {
             tableView.isPrefetchingEnabled = true
         }
 
         context.coordinator.tableView = tableView
 
-        return tableView
+        return MessageTableViewController(tableView: tableView, composerTop: composerTop, isDarkMode: isDarkMode)
     }
 
-    func updateUIView(_ tableView: UITableView, context: Context) {
+    func updateUIViewController(_ controller: MessageTableViewController, context: Context) {
+        let tableView = controller.tableView
+        controller.composerTop = composerTop
+        controller.isDarkMode = isDarkMode
+        controller.updateComposerSafeArea()
         context.coordinator.parent = self
 
         let keyboardHeightChanged = context.coordinator.lastKeyboardHeight != keyboardHeight
@@ -268,6 +386,10 @@ struct MessageTableView: UIViewRepresentable {
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
+    }
+
+    static func dismantleUIViewController(_ controller: MessageTableViewController, coordinator: Coordinator) {
+        controller.stopBottomBlurAnimations()
     }
 
     class Coordinator: NSObject, UITableViewDelegate, UITableViewDataSource {
