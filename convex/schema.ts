@@ -232,6 +232,8 @@ export default defineSchema({
     .index("byUser", ["userId", "createdAt"]),
   agentRunSteering: defineTable({
     runId: v.id("agentRuns"),
+    threadId: v.optional(v.string()),
+    order: v.optional(v.number()),
     requestId: v.string(),
     text: v.string(),
     status: v.union(v.literal("pending"), v.literal("applied")),
@@ -239,6 +241,7 @@ export default defineSchema({
     appliedAt: v.optional(v.number()),
   })
     .index("byRun", ["runId", "createdAt"])
+    .index("byThreadAndCreatedAt", ["threadId", "createdAt"])
     .index("byRunAndStatus", ["runId", "status", "createdAt"])
     .index("byRunAndRequest", ["runId", "requestId"]),
   agentRunSteps: defineTable({

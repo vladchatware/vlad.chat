@@ -47,7 +47,9 @@ import {
 import { createMCPClient } from "@ai-sdk/mcp";
 import {
   attachCodeRunProgress,
+  mergeMobileSteeringMessages,
   mergeMobileStreamText,
+  normalizeUserStopResponse,
   projectStoredResponse,
 } from "@/lib/mobile-stream";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -1653,6 +1655,8 @@ export const steerThread = mutation({
     const now = Date.now();
     const steeringId = await ctx.db.insert("agentRunSteering", {
       runId: run._id,
+      threadId,
+      order: run.order,
       requestId,
       text,
       status: "pending",
@@ -1929,20 +1933,65 @@ export const getMobileChat = query({
       }
     }
 
+    const threadRuns = await ctx.db
+      .query("agentRuns")
+      .withIndex("byThread", (q) => q.eq("threadId", threadId))
+      .order("desc")
+      .take(100);
+    const indexedSteeringNotes = await ctx.db
+      .query("agentRunSteering")
+      .withIndex("byThreadAndCreatedAt", (q) => q.eq("threadId", threadId))
+      .order("asc")
+      .take(100);
+    const steeringRun = threadRuns.find((run) =>
+      run.status === "running" || run.status === "stopRequested" || run.status === "paused"
+    ) ?? threadRuns[0];
+    const legacySteeringNotes = steeringRun
+      ? await ctx.db
+          .query("agentRunSteering")
+          .withIndex("byRun", (q) => q.eq("runId", steeringRun._id))
+          .order("asc")
+          .take(MAX_STEERING_PER_RUN)
+      : [];
+    const steeringNotesById = new Map(
+      [...indexedSteeringNotes, ...legacySteeringNotes].map((note) => [note._id, note]),
+    );
+    const steeringNotes = [...steeringNotesById.values()]
+      .sort((left, right) => left.createdAt - right.createdAt);
+    const runsByOrder = new Map<number, Doc<"agentRuns">>();
+    for (const run of threadRuns) {
+      if (run.order !== undefined) runsByOrder.set(run.order, run);
+    }
     const messages = result.page.map((message) => {
-      const errorText = errorsByMessageID.get(message.id);
+      const storedErrorText = errorsByMessageID.get(message.id);
+      const run = runsByOrder.get(message.order);
+      const normalized = message.role === "assistant"
+        ? normalizeUserStopResponse(
+            message.status,
+            storedErrorText,
+            run !== undefined && (
+              run.status === "stopRequested" ||
+              run.status === "paused" ||
+              run.continueAfterStop === true
+            ),
+          )
+        : { status: message.status, errorText: storedErrorText };
       const response = message.role === "assistant"
-        ? projectStoredResponse(message.parts, message.status, errorText)
+        ? projectStoredResponse(
+            message.parts,
+            normalized.status,
+            normalized.errorText,
+          )
         : undefined;
       return {
         id: message.key,
         role: message.role,
         text: message.text,
-        status: message.status,
+        status: normalized.status,
         order: message.order,
         createdAt: message._creationTime,
         ...(response ? { response } : {}),
-        ...(errorText ? { errorText } : {}),
+        ...(normalized.errorText ? { errorText: normalized.errorText } : {}),
         attachments: message.parts.flatMap((part, index) =>
           part.type === "file" && part.url
             ? [{
@@ -2023,13 +2072,29 @@ export const getMobileChat = query({
       };
     }
 
+    const visibleSteeringNotes = steeringNotes.flatMap((note) => {
+      const run = threadRuns.find((candidate) => candidate._id === note.runId);
+      const order = note.order ?? run?.order;
+      if (order === undefined) return [];
+      return [{
+        id: note._id,
+        text: note.text,
+        order,
+        createdAt: note.createdAt,
+      }];
+    });
+    const transcriptMessages = mergeMobileSteeringMessages(
+      mobileMessages,
+      visibleSteeringNotes,
+    );
+
     return {
       threadId,
       title: metadata.title ?? "Untitled",
       threads,
       messages: latestCodeRun
-        ? attachCodeRunProgress(mobileMessages, latestCodeRun)
-        : mobileMessages,
+        ? attachCodeRunProgress(transcriptMessages, latestCodeRun)
+        : transcriptMessages,
       account: user ? mobileAccount(user) : null,
       remainingMessages: user?.isAnonymous ? (user.trialMessages ?? 0) : null,
       computerViewer: liveComputerSessionForThread,
