@@ -18,9 +18,27 @@ final class AgentLiveActivityController {
     private var subscriptions: [String: Task<Void, Never>] = [:]
     private var activityObservers: [String: Task<Void, Never>] = [:]
     private var reconciliation: Task<Void, Never>?
+    private var availabilityTask: Task<Void, Never>?
+    private var pushEnabled = false
+    private var pushTasks: [String: Task<Void, Never>] = [:]
 
     func connect(_ client: ConvexClientWithAuth<ConvexAuthSession>) {
         self.client = client
+        availabilityTask?.cancel()
+        availabilityTask = Task { [weak self] in
+            do {
+                for try await available in client.subscribe(
+                    to: "agentActivities:pushAvailable", yielding: Bool.self
+                ).values {
+                    guard !Task.isCancelled else { return }
+                    self?.pushEnabled = available
+                    break
+                }
+            } catch {
+                guard !Task.isCancelled else { return }
+                self?.logger.error("Live Activity push availability could not be checked")
+            }
+        }
         for activity in Activity<AgentActivityAttributes>.activities {
             if activity.activityState == .ended || activity.activityState == .dismissed { continue }
             readyRuns.insert(activity.attributes.runId)
@@ -67,6 +85,8 @@ final class AgentLiveActivityController {
     }
 
     func reset() async {
+        availabilityTask?.cancel()
+        pushEnabled = false
         subscriptions.values.forEach { $0.cancel() }
         delays.values.forEach { $0.cancel() }
         activityObservers.values.forEach { $0.cancel() }
@@ -80,6 +100,9 @@ final class AgentLiveActivityController {
         reconciliation?.cancel()
         await reconciliation?.value
         reconciliation = nil
+        for activityId in Array(pushTasks.keys) {
+            await stopPushUpdates(activityId: activityId)
+        }
         for activity in Activity<AgentActivityAttributes>.activities {
             await activity.end(nil, dismissalPolicy: .immediate)
         }
@@ -107,6 +130,7 @@ final class AgentLiveActivityController {
         for activity in activities where activity.attributes.runId != state?.runId || content == nil || content?.phase.isTerminal == true {
             activityObservers.removeValue(forKey: activity.id)?.cancel()
             await activity.end(content.map { ActivityContent(state: $0, staleDate: nil) }, dismissalPolicy: .immediate)
+            await stopPushUpdates(activityId: activity.id)
         }
         guard !Task.isCancelled else { return }
         // An update may have arrived while ending the previous run.
@@ -157,7 +181,7 @@ final class AgentLiveActivityController {
             let activity = try Activity.request(
                 attributes: AgentActivityAttributes(threadId: threadId, runId: runId),
                 content: ActivityContent(state: content, staleDate: Date().addingTimeInterval(120)),
-                pushType: nil
+                pushType: pushEnabled ? .token : nil
             )
             watch(activity)
             subscribe(threadId: threadId)
@@ -168,6 +192,7 @@ final class AgentLiveActivityController {
 
     private func watch(_ activity: Activity<AgentActivityAttributes>) {
         guard activityObservers[activity.id] == nil else { return }
+        startPushUpdates(activity)
         activityObservers[activity.id] = Task { [weak self] in
             for await state in activity.activityStateUpdates {
                 guard !Task.isCancelled, let self else { return }
@@ -175,9 +200,63 @@ final class AgentLiveActivityController {
                     dismissedRuns.insert(activity.attributes.runId)
                     subscriptions.removeValue(forKey: activity.attributes.threadId)?.cancel()
                     activityObservers.removeValue(forKey: activity.id)
+                    await stopPushUpdates(activityId: activity.id)
                     return
                 }
             }
+        }
+    }
+
+    private func startPushUpdates(_ activity: Activity<AgentActivityAttributes>) {
+        guard let client, pushTasks[activity.id] == nil else { return }
+        let environment = Bundle.main.object(forInfoDictionaryKey: "APNSEnvironment") as? String
+        guard environment == "development" || environment == "production" else { return }
+        pushTasks[activity.id] = Task { [weak self] in
+            if let token = activity.pushToken {
+                await self?.register(token, for: activity, using: client, environment: environment)
+            }
+            for await token in activity.pushTokenUpdates {
+                guard !Task.isCancelled else { return }
+                await self?.register(token, for: activity, using: client, environment: environment)
+            }
+        }
+    }
+
+    private func register(
+        _ token: Data, for activity: Activity<AgentActivityAttributes>,
+        using client: ConvexClientWithAuth<ConvexAuthSession>, environment: String?
+    ) async {
+        let hexadecimalToken = token.map { String(format: "%02x", $0) }.joined()
+        for attempt in 0..<4 {
+            guard !Task.isCancelled else { return }
+            do {
+                let accepted: Bool = try await client.mutation("agentActivities:register", with: [
+                    "runId": activity.attributes.runId,
+                    "activityId": activity.id,
+                    "pushToken": hexadecimalToken,
+                    "environment": environment == "production" ? "production" : "sandbox",
+                ])
+                if !accepted { logger.error("Live Activity push server is not configured") }
+                return
+            } catch {
+                guard !Task.isCancelled else { return }
+                logger.error("Live Activity token registration failed")
+                try? await Task.sleep(for: .seconds(1 << attempt))
+            }
+        }
+    }
+
+    private func stopPushUpdates(activityId: String) async {
+        if let task = pushTasks.removeValue(forKey: activityId) {
+            task.cancel()
+            await task.value
+        }
+        guard let client else { return }
+        do {
+            let _: String? = try await client.mutation("agentActivities:unregister", with: ["activityId": activityId])
+        } catch {
+            // Registration expiration bounds retention if the network is down.
+            logger.error("Live Activity token cleanup could not reach the server")
         }
     }
 

@@ -1,3 +1,4 @@
+import { patchAgentRun } from "./agentActivities";
 import { v } from "convex/values";
 import { internalMutation, internalQuery, mutation, MutationCtx, query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
@@ -515,7 +516,7 @@ export const settleAgentRunStep = internalMutation({
         if (trialMessages > 0) {
           await ctx.db.patch(user._id, { trialMessages: trialMessages - 1 });
         }
-        await ctx.db.patch(run._id, { anonymousMessageBilled: true });
+        await patchAgentRun(ctx, run._id, { anonymousMessageBilled: true });
       }
     } else {
       await recordUsage(ctx, run.userId, {
@@ -542,7 +543,7 @@ export const settleAgentRunStep = internalMutation({
       providerMetadata: args.providerMetadata,
       createdAt: Date.now(),
     });
-    await ctx.db.patch(run._id, {
+    await patchAgentRun(ctx, run._id, {
       stepCount: args.stepNumber,
       inFlightAttempt: undefined,
       inFlightStep: undefined,

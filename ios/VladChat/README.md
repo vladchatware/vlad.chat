@@ -81,11 +81,40 @@ and clears them on logout or conversation deletion. An activity older than its
 freshness deadline shows an outdated-status hint. Tapping opens its conversation
 after the authenticated chat list loads.
 
-App subscriptions update activities while the process runs. Delivery after iOS
-suspends the process requires the APNs server slice; native subscriptions alone
-cannot guarantee background completion. For deterministic simulator inspection,
+App subscriptions update activities while the process runs. Configured APNs
+delivery updates and ends them after iOS suspends the process. For deterministic simulator inspection,
 launch a Debug build with `--ui-test-agent-activity`. It uses the production
 controller and widget with synthetic lifecycle states and no backend traffic.
+
+### Background delivery setup
+
+Enable **Push Notifications** on the `chat.vlad.ios` App ID in Apple Developer,
+then regenerate provisioning profiles. The app target includes the capability
+and `aps-environment`; Debug uses `development`, Release uses `production`.
+ActivityKit supplies its own per-activity tokens; notification-alert permission
+and `registerForRemoteNotifications()` are not needed for these updates.
+
+Create an APNs token signing key in Apple Developer. Configure the backend with:
+
+- `APNS_KEY_ID`: the APNs key ID.
+- `APNS_TEAM_ID`: the Apple Developer team ID.
+- `APNS_PRIVATE_KEY`: the `.p8` contents, kept outside the repository.
+- `APNS_BUNDLE_ID`: optional, defaults to `chat.vlad.ios`.
+
+The authenticated availability query enables push token requests only when the
+three signing values exist. Without configuration, local activities still work
+and show outdated status after two minutes without an update. Token registration
+verifies run ownership, replaces rotated tokens, expires registrations after
+eight hours, and unregisters on dismissal/logout. Run lifecycle mutations
+schedule coalesced, versioned deliveries, rather than polling. HTTP/2 requests
+use the `liveactivity` topic; updates use priority 5 and terminal ends priority 10.
+
+Before shipping, use a provisioned iPhone build to verify sandbox token
+registration, model/tool updates while the app is suspended, stop/pause/resume,
+and completion/failure removing the activity. Repeat with a production-signed
+TestFlight build. Mock transport tests and unsigned simulator fixtures do not
+verify APNs credentials, provisioning, or actual remote delivery. No backend
+deployment is performed by adding this code.
 
 ## SwiftChat source
 

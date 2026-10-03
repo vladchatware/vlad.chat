@@ -35,6 +35,8 @@ targets:
       SystemCapabilities:
         com.apple.SignInWithApple:
           enabled: 1
+        com.apple.Push:
+          enabled: 1
     entitlements:
       path: VladChat.entitlements
       properties:
@@ -42,6 +44,7 @@ targets:
           - Default
         keychain-access-groups:
           - $(AppIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)
+        aps-environment: $(VLAD_APNS_ENVIRONMENT)
     sources:
       - path: Sources
       - path: Resources
@@ -56,6 +59,11 @@ targets:
         INFOPLIST_FILE: Resources/Info.plist
         PRODUCT_BUNDLE_IDENTIFIER: chat.vlad.ios
         PRODUCT_NAME: VladChat
+      configs:
+        Debug:
+          VLAD_APNS_ENVIRONMENT: development
+        Release:
+          VLAD_APNS_ENVIRONMENT: production
     dependencies:
       - target: VladAgentLiveActivity
         embed: true

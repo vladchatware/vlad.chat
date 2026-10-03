@@ -37,6 +37,8 @@
 	<true/>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
+	<key>APNSEnvironment</key>
+	<string>$(VLAD_APNS_ENVIRONMENT)</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Vlad uses the camera when you attach a photo.</string>
 	<key>NSMicrophoneUsageDescription</key>

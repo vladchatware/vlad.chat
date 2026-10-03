@@ -1,4 +1,5 @@
 import { api, components, internal } from "./_generated/api";
+import { patchAgentRun } from "./agentActivities";
 
 import { ConvexError, v } from "convex/values";
 import {
@@ -540,7 +541,7 @@ export const attachAgentRunWorkflow = internalMutation({
   handler: async (ctx, { runId, workflowId }) => {
     const run = await ctx.db.get(runId);
     if (!run) throw new ConvexError("Agent run not found.");
-    await ctx.db.patch(runId, { workflowId, updatedAt: Date.now() });
+    await patchAgentRun(ctx, runId, { workflowId, updatedAt: Date.now() });
     return null;
   },
 });
@@ -565,7 +566,7 @@ export const claimAgentRunStep = internalMutation({
       .withIndex("byRun", (q) => q.eq("runId", runId))
       .order("asc")
       .take(MAX_STEERING_PER_RUN);
-    await ctx.db.patch(runId, {
+    await patchAgentRun(ctx, runId, {
       inFlightStep: stepNumber,
       attemptCount: run.attemptCount + 1,
       inFlightAttempt: 1,
@@ -612,7 +613,7 @@ export const advanceAgentRunStepAttempt = internalMutation({
       });
     }
     const nextAttempt = expectedAttempt + 1;
-    await ctx.db.patch(runId, {
+    await patchAgentRun(ctx, runId, {
       attemptCount: run.attemptCount + 1,
       inFlightAttempt: nextAttempt,
       inFlightStreamId: undefined,
@@ -639,7 +640,7 @@ export const setAgentRunStepPhase = internalMutation({
     ) {
       return false;
     }
-    await ctx.db.patch(runId, { inFlightPhase: phase, updatedAt: Date.now() });
+    await patchAgentRun(ctx, runId, { inFlightPhase: phase, updatedAt: Date.now() });
     return true;
   },
 });
@@ -661,7 +662,7 @@ export const setAgentRunStream = internalMutation({
     ) {
       return false;
     }
-    await ctx.db.patch(runId, {
+    await patchAgentRun(ctx, runId, {
       inFlightStreamId: streamId,
       inFlightStepOrder: stepOrder,
       updatedAt: Date.now(),
@@ -695,7 +696,7 @@ export const setAgentRunStatus = internalMutation({
       return null;
     }
     const now = Date.now();
-    await ctx.db.patch(runId, {
+    await patchAgentRun(ctx, runId, {
       status,
       updatedAt: now,
       ...(status === "completed" || status === "failed"
@@ -722,7 +723,7 @@ export const completeAgentRunIfRunning = internalMutation({
     if (pendingSteering) {
       if (run.stepCount >= MAX_AGENT_STEPS) {
         const now = Date.now();
-        await ctx.db.patch(runId, {
+        await patchAgentRun(ctx, runId, {
           status: "failed",
           lastError: "The run reached its step limit with unapplied steering. Send that direction as a new message.",
           updatedAt: now,
@@ -732,7 +733,7 @@ export const completeAgentRunIfRunning = internalMutation({
       return false;
     }
     const now = Date.now();
-    await ctx.db.patch(runId, {
+    await patchAgentRun(ctx, runId, {
       status: "completed",
       updatedAt: now,
       completedAt: now,
@@ -924,7 +925,7 @@ export const agentRunWorkflowCompleted = internalMutation({
     if (result.kind === "success") {
       if (run.status !== "failed") {
         const now = Date.now();
-        await ctx.db.patch(runId, {
+        await patchAgentRun(ctx, runId, {
           status: "completed",
           updatedAt: now,
           completedAt: now,
@@ -933,7 +934,7 @@ export const agentRunWorkflowCompleted = internalMutation({
       }
     } else {
       const error = result.kind === "failed" ? result.error : "Workflow canceled.";
-      await ctx.db.patch(runId, {
+      await patchAgentRun(ctx, runId, {
         status: "failed",
         lastError: error,
         updatedAt: Date.now(),
@@ -1336,7 +1337,7 @@ async function findActiveAgentRun(
 
 async function requestAgentRunStop(ctx: MutationCtx, run: Doc<"agentRuns">) {
   if (run.status !== "running") return run.status;
-  await ctx.db.patch(run._id, {
+  await patchAgentRun(ctx, run._id, {
     status: "stopRequested",
     updatedAt: Date.now(),
   });
@@ -1365,7 +1366,7 @@ async function startNextQueuedAgentRunForThread(
     .first();
   if (!nextRun) return null;
   if (!nextRun.queuedPrompt) {
-    await ctx.db.patch(nextRun._id, {
+    await patchAgentRun(ctx, nextRun._id, {
       status: "failed",
       lastError: "Queued prompt was missing.",
       completedAt: Date.now(),
@@ -1385,7 +1386,7 @@ async function startNextQueuedAgentRunForThread(
       model: nextRun.model,
     });
   } catch (error) {
-    await ctx.db.patch(nextRun._id, {
+    await patchAgentRun(ctx, nextRun._id, {
       status: "failed",
       lastError: error instanceof Error
         ? error.message
@@ -1410,7 +1411,7 @@ async function startNextQueuedAgentRunForThread(
       : undefined,
     skipEmbeddings: true,
   });
-  await ctx.db.patch(nextRun._id, {
+  await patchAgentRun(ctx, nextRun._id, {
     promptMessageId: savedPrompt.messageId,
     order: savedPrompt.message.order,
     queuedPrompt: undefined,
@@ -1431,7 +1432,7 @@ async function startNextQueuedAgentRunForThread(
       },
     );
   } catch (error) {
-    await ctx.db.patch(nextRun._id, {
+    await patchAgentRun(ctx, nextRun._id, {
       status: "failed",
       lastError: error instanceof Error
         ? error.message
@@ -1584,7 +1585,7 @@ export const steerThread = mutation({
       status: "pending",
       createdAt: now,
     });
-    await ctx.db.patch(run._id, { updatedAt: now });
+    await patchAgentRun(ctx, run._id, { updatedAt: now });
     return { status: "pending" as const, runId: run._id, steeringId };
   },
 });
@@ -1622,7 +1623,7 @@ export const resumeThread = mutation({
       workflowId: run.workflowId as WorkflowId,
       name: "resume",
     });
-    await ctx.db.patch(run._id, {
+    await patchAgentRun(ctx, run._id, {
       status: "running",
       updatedAt: Date.now(),
     });
