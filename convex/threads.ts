@@ -47,7 +47,9 @@ import {
 import { createMCPClient } from "@ai-sdk/mcp";
 import {
   attachCodeRunProgress,
+  mergeMobileSteeringMessages,
   mergeMobileStreamText,
+  normalizeUserStopResponse,
   projectStoredResponse,
 } from "@/lib/mobile-stream";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -455,6 +457,17 @@ export const getAgentRunInternal = internalQuery({
   handler: async (ctx, { runId }) => ctx.db.get(runId),
 });
 
+export const getAgentRunByRequest = internalQuery({
+  args: { threadId: v.string(), requestId: v.string() },
+  handler: async (ctx, { threadId, requestId }) =>
+    ctx.db
+      .query("agentRuns")
+      .withIndex("byThreadAndRequest", (q) =>
+        q.eq("threadId", threadId).eq("requestId", requestId),
+      )
+      .unique(),
+});
+
 export const getAgentRunSteeringForStep = internalQuery({
   args: { steeringIds: v.array(v.id("agentRunSteering")) },
   handler: async (ctx, { steeringIds }) =>
@@ -465,12 +478,31 @@ export const createAgentRunWithPrompt = internalMutation({
   args: {
     threadId: v.string(),
     userId: v.id("users"),
+    requestId: v.optional(v.string()),
     prompt: vMessage,
     fileIds: v.optional(v.array(v.string())),
     model: v.string(),
     searchEnabled: v.boolean(),
   },
   handler: async (ctx, args) => {
+    if (args.requestId) {
+      const existingRun = await ctx.db
+        .query("agentRuns")
+        .withIndex("byThreadAndRequest", (q) =>
+          q.eq("threadId", args.threadId).eq("requestId", args.requestId),
+        )
+        .unique();
+      if (existingRun) {
+        return {
+          runId: existingRun._id,
+          promptMessageId: existingRun.promptMessageId,
+          order: existingRun.order,
+          queued: existingRun.status === "queued",
+          duplicate: true,
+        };
+      }
+    }
+
     const [runningRun, stopRequestedRun, pausedRun, queuedRun] = await Promise.all([
       ctx.db
         .query("agentRuns")
@@ -513,6 +545,7 @@ export const createAgentRunWithPrompt = internalMutation({
     const runId = await ctx.db.insert("agentRuns", {
       threadId: args.threadId,
       userId: args.userId,
+      requestId: args.requestId,
       promptMessageId: savedPrompt?.messageId,
       order: savedPrompt?.message.order,
       queuedPrompt: queued ? args.prompt : undefined,
@@ -525,11 +558,21 @@ export const createAgentRunWithPrompt = internalMutation({
       createdAt: now,
       updatedAt: now,
     });
+
+    // A fresh submit is explicit intent to continue this thread. Admit it to
+    // the FIFO queue first, then resume the paused run so it can finish and
+    // hand control to the newly queued run. Keeping both changes in this
+    // mutation prevents a submitted prompt from being stranded behind a pause.
+    if (pausedRun && !runningRun && !stopRequestedRun) {
+      await resumePausedAgentRun(ctx, pausedRun);
+    }
+
     return {
       runId,
       promptMessageId: savedPrompt?.messageId,
       order: savedPrompt?.message.order,
       queued,
+      duplicate: false,
     };
   },
 });
@@ -745,26 +788,29 @@ export const agentRunWorkflow = workflow.define({
   args: { runId: v.id("agentRuns") },
   returns: v.null(),
   handler: async (step, { runId }): Promise<null> => {
+    // These small state operations share the workflow transaction to avoid a
+    // workpool dispatch and workflow resume for each operation.
     await step.runMutation(internal.threads.attachAgentRunWorkflow, {
       runId,
       workflowId: step.workflowId,
-    });
+    }, { inline: true });
 
     const pauseForRequestedStop = async () => {
       const currentRun = await step.runQuery(
         internal.threads.getAgentRunInternal,
         { runId },
+        { inline: true },
       );
       if (currentRun?.status !== "stopRequested") return false;
       await step.runMutation(internal.threads.setAgentRunStatus, {
         runId,
         status: "paused",
-      });
+      }, { inline: true });
       await step.awaitEvent({ name: "resume" });
       await step.runMutation(internal.threads.setAgentRunStatus, {
         runId,
         status: "running",
-      });
+      }, { inline: true });
       return true;
     };
 
@@ -773,30 +819,31 @@ export const agentRunWorkflow = workflow.define({
       while (!claimed) {
         const run = await step.runQuery(internal.threads.getAgentRunInternal, {
           runId,
-        });
+        }, { inline: true });
         if (!run || ["completed", "failed"].includes(run.status)) return null;
         if (run.status === "stopRequested") {
           await step.runMutation(internal.threads.setAgentRunStatus, {
             runId,
             status: "paused",
-          });
+          }, { inline: true });
           await step.awaitEvent({ name: "resume" });
           await step.runMutation(internal.threads.setAgentRunStatus, {
             runId,
             status: "running",
-          });
+          }, { inline: true });
           continue;
         }
         if (run.status !== "running") return null;
         claimed = await step.runMutation(internal.threads.claimAgentRunStep, {
           runId,
           stepNumber,
-        });
+        }, { inline: true });
       }
 
       const claimedRun = await step.runQuery(
         internal.threads.getAgentRunInternal,
         { runId },
+        { inline: true },
       );
       let attempt = claimedRun?.inFlightStep === stepNumber
         ? claimedRun.inFlightAttempt ?? 1
@@ -816,6 +863,7 @@ export const agentRunWorkflow = workflow.define({
           let currentRun = await step.runQuery(
             internal.threads.getAgentRunInternal,
             { runId },
+            { inline: true },
           );
           if (
             currentRun?.status === "stopRequested" &&
@@ -825,6 +873,7 @@ export const agentRunWorkflow = workflow.define({
             currentRun = await step.runQuery(
               internal.threads.getAgentRunInternal,
               { runId },
+              { inline: true },
             );
           }
           if (
@@ -838,11 +887,13 @@ export const agentRunWorkflow = workflow.define({
           let nextAttempt = await step.runMutation(
             internal.threads.advanceAgentRunStepAttempt,
             { runId, stepNumber, expectedAttempt: attempt },
+            { inline: true },
           );
           if (nextAttempt === null) {
             currentRun = await step.runQuery(
               internal.threads.getAgentRunInternal,
               { runId },
+              { inline: true },
             );
             if (
               currentRun?.status === "stopRequested" &&
@@ -852,6 +903,7 @@ export const agentRunWorkflow = workflow.define({
               nextAttempt = await step.runMutation(
                 internal.threads.advanceAgentRunStepAttempt,
                 { runId, stepNumber, expectedAttempt: attempt },
+                { inline: true },
               );
             }
           }
@@ -863,7 +915,7 @@ export const agentRunWorkflow = workflow.define({
         runId,
         stepNumber,
         ...result,
-      });
+      }, { inline: true });
 
       const stopped = await pauseForRequestedStop();
       if (stopped) {
@@ -871,6 +923,7 @@ export const agentRunWorkflow = workflow.define({
           await step.runMutation(
             internal.threads.completeAgentRunIfRunning,
             { runId },
+            { inline: true },
           );
           return null;
         }
@@ -881,6 +934,7 @@ export const agentRunWorkflow = workflow.define({
         const completed = await step.runMutation(
           internal.threads.completeAgentRunIfRunning,
           { runId },
+          { inline: true },
         );
         if (completed) return null;
 
@@ -891,11 +945,13 @@ export const agentRunWorkflow = workflow.define({
           await step.runMutation(
             internal.threads.completeAgentRunIfRunning,
             { runId },
+            { inline: true },
           );
         }
         const currentRun = await step.runQuery(
           internal.threads.getAgentRunInternal,
           { runId },
+          { inline: true },
         );
         if (
           currentRun?.status === "running" &&
@@ -1265,7 +1321,7 @@ export const runAgentStep = internalAction({
       usageObject.outputTokens !== undefined;
     if (hasUsage || finalStep.providerMetadata || toolCallItems.length > 0) {
       try {
-        await ctx.runAction(internal.posthog.captureLlmGeneration, {
+        await ctx.scheduler.runAfter(0, internal.posthog.captureLlmGeneration, {
           distinctId: String(run.userId),
           traceId: `${run.threadId}:${order}:${stepNumber}`,
           threadId: run.threadId,
@@ -1349,6 +1405,26 @@ async function requestAgentRunStop(ctx: MutationCtx, run: Doc<"agentRuns">) {
     });
   }
   return "stopRequested" as const;
+}
+
+async function resumePausedAgentRun(
+  ctx: MutationCtx,
+  run: Doc<"agentRuns">,
+) {
+  if (run.status === "running") return "running" as const;
+  if (run.status === "stopRequested") return "stopRequested" as const;
+  if (run.status !== "paused" || !run.workflowId) {
+    throw new ConvexError("No paused agent run is ready to resume.");
+  }
+  await sendEvent(ctx, components.workflow, {
+    workflowId: run.workflowId as WorkflowId,
+    name: "resume",
+  });
+  await ctx.db.patch(run._id, {
+    status: "running",
+    updatedAt: Date.now(),
+  });
+  return "running" as const;
 }
 
 async function startNextQueuedAgentRunForThread(
@@ -1579,6 +1655,8 @@ export const steerThread = mutation({
     const now = Date.now();
     const steeringId = await ctx.db.insert("agentRunSteering", {
       runId: run._id,
+      threadId,
+      order: run.order,
       requestId,
       text,
       status: "pending",
@@ -1609,24 +1687,8 @@ export const resumeThread = mutation({
     if (!run) {
       throw new ConvexError("No paused agent run is ready to resume.");
     }
-    if (run.status === "running") {
-      return { status: "running" as const, runId: run._id };
-    }
-    if (run.status === "stopRequested") {
-      return { status: "stopRequested" as const, runId: run._id };
-    }
-    if (run.status !== "paused" || !run.workflowId) {
-      throw new ConvexError("No paused agent run is ready to resume.");
-    }
-    await sendEvent(ctx, components.workflow, {
-      workflowId: run.workflowId as WorkflowId,
-      name: "resume",
-    });
-    await ctx.db.patch(run._id, {
-      status: "running",
-      updatedAt: Date.now(),
-    });
-    return { status: "running" as const, runId: run._id };
+    const status = await resumePausedAgentRun(ctx, run);
+    return { status, runId: run._id };
   },
 });
 
@@ -1871,20 +1933,65 @@ export const getMobileChat = query({
       }
     }
 
+    const threadRuns = await ctx.db
+      .query("agentRuns")
+      .withIndex("byThread", (q) => q.eq("threadId", threadId))
+      .order("desc")
+      .take(100);
+    const indexedSteeringNotes = await ctx.db
+      .query("agentRunSteering")
+      .withIndex("byThreadAndCreatedAt", (q) => q.eq("threadId", threadId))
+      .order("asc")
+      .take(100);
+    const steeringRun = threadRuns.find((run) =>
+      run.status === "running" || run.status === "stopRequested" || run.status === "paused"
+    ) ?? threadRuns[0];
+    const legacySteeringNotes = steeringRun
+      ? await ctx.db
+          .query("agentRunSteering")
+          .withIndex("byRun", (q) => q.eq("runId", steeringRun._id))
+          .order("asc")
+          .take(MAX_STEERING_PER_RUN)
+      : [];
+    const steeringNotesById = new Map(
+      [...indexedSteeringNotes, ...legacySteeringNotes].map((note) => [note._id, note]),
+    );
+    const steeringNotes = [...steeringNotesById.values()]
+      .sort((left, right) => left.createdAt - right.createdAt);
+    const runsByOrder = new Map<number, Doc<"agentRuns">>();
+    for (const run of threadRuns) {
+      if (run.order !== undefined) runsByOrder.set(run.order, run);
+    }
     const messages = result.page.map((message) => {
-      const errorText = errorsByMessageID.get(message.id);
+      const storedErrorText = errorsByMessageID.get(message.id);
+      const run = runsByOrder.get(message.order);
+      const normalized = message.role === "assistant"
+        ? normalizeUserStopResponse(
+            message.status,
+            storedErrorText,
+            run !== undefined && (
+              run.status === "stopRequested" ||
+              run.status === "paused" ||
+              run.continueAfterStop === true
+            ),
+          )
+        : { status: message.status, errorText: storedErrorText };
       const response = message.role === "assistant"
-        ? projectStoredResponse(message.parts, message.status, errorText)
+        ? projectStoredResponse(
+            message.parts,
+            normalized.status,
+            normalized.errorText,
+          )
         : undefined;
       return {
         id: message.key,
         role: message.role,
         text: message.text,
-        status: message.status,
+        status: normalized.status,
         order: message.order,
         createdAt: message._creationTime,
         ...(response ? { response } : {}),
-        ...(errorText ? { errorText } : {}),
+        ...(normalized.errorText ? { errorText: normalized.errorText } : {}),
         attachments: message.parts.flatMap((part, index) =>
           part.type === "file" && part.url
             ? [{
@@ -1965,13 +2072,29 @@ export const getMobileChat = query({
       };
     }
 
+    const visibleSteeringNotes = steeringNotes.flatMap((note) => {
+      const run = threadRuns.find((candidate) => candidate._id === note.runId);
+      const order = note.order ?? run?.order;
+      if (order === undefined) return [];
+      return [{
+        id: note._id,
+        text: note.text,
+        order,
+        createdAt: note.createdAt,
+      }];
+    });
+    const transcriptMessages = mergeMobileSteeringMessages(
+      mobileMessages,
+      visibleSteeringNotes,
+    );
+
     return {
       threadId,
       title: metadata.title ?? "Untitled",
       threads,
       messages: latestCodeRun
-        ? attachCodeRunProgress(mobileMessages, latestCodeRun)
-        : mobileMessages,
+        ? attachCodeRunProgress(transcriptMessages, latestCodeRun)
+        : transcriptMessages,
       account: user ? mobileAccount(user) : null,
       remainingMessages: user?.isAnonymous ? (user.trialMessages ?? 0) : null,
       computerViewer: liveComputerSessionForThread,
@@ -2071,6 +2194,7 @@ export const getUIMessages = query({
 export const generateReply = action({
   args: {
     prompt: v.string(),
+    requestId: v.optional(v.string()),
     model: v.string(),
     searchEnabled: v.optional(v.boolean()),
     threadId: v.optional(v.string()),
@@ -2078,7 +2202,7 @@ export const generateReply = action({
   },
   handler: async (
     ctx,
-    { prompt, model, searchEnabled = false, threadId: requestedThreadId, attachments = [] },
+    { prompt, requestId, model, searchEnabled = false, threadId: requestedThreadId, attachments = [] },
   ) => {
     let preparedRunId: Id<"agentRuns"> | undefined;
     try {
@@ -2090,6 +2214,9 @@ export const generateReply = action({
     const text = prompt.trim();
     if (!text && attachments.length === 0) {
       throw new ConvexError("Your message is empty. Please type something first.");
+    }
+    if (requestId !== undefined && (!requestId.trim() || requestId.length > 128)) {
+      throw new ConvexError("Invalid message request ID.");
     }
 
     // usageGate (above) already enforced tier eligibility and subscription
@@ -2105,6 +2232,25 @@ export const generateReply = action({
     const threadId =
       requestedThreadId ?? (await getOrCreateDefaultThread(ctx, userId));
 
+    if (requestId) {
+      const existingRun = await ctx.runQuery(
+        internal.threads.getAgentRunByRequest,
+        { threadId, requestId },
+      );
+      if (existingRun) {
+        await Promise.allSettled(
+          attachments.map(({ storageId }) => ctx.storage.delete(storageId)),
+        );
+        return {
+          threadId,
+          order: existingRun.order,
+          promptMessageId: existingRun.promptMessageId,
+          runId: existingRun._id,
+          queued: existingRun.status === "queued",
+        };
+      }
+    }
+
     const modelPrompt = await mobileModelPrompt(ctx, text, attachments);
     const promptMessage: ModelMessage = modelPrompt.kind === "attachments"
       ? modelPrompt.prompt[0]
@@ -2114,6 +2260,7 @@ export const generateReply = action({
       {
         threadId,
         userId,
+        requestId,
         prompt: promptMessage,
         fileIds: modelPrompt.kind === "attachments"
           ? modelPrompt.fileIds
@@ -2128,7 +2275,7 @@ export const generateReply = action({
       attachments.map(({ storageId }) => ctx.storage.delete(storageId)),
     );
 
-    if (!prepared.queued) {
+    if (!prepared.duplicate && !prepared.queued) {
       // Queue admission must not depend on current usage. Recheck when the
       // queued run reaches the front; immediate runs gate before starting.
       await ctx.runMutation(api.users.usageGate, { model });

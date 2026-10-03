@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   MAX_TOOL_OUTPUT_CHARS,
+  mergeMobileSteeringMessages,
   mergeMobileStreamText,
+  normalizeUserStopResponse,
   projectStoredResponse,
   type MobileResponse,
   type MobileMessage,
@@ -409,6 +411,38 @@ describe("projectStoredResponse", () => {
     });
   });
 
+  it("projects an intentional user stop as stopped without an error", () => {
+    const response = projectStoredResponse(
+      [{ type: "text", text: "Partial answer" }],
+      "stopped",
+    );
+
+    expect(response).toMatchObject({
+      phase: "stopped",
+      parts: [{ type: "text", text: "Partial answer" }],
+    });
+    expect(response.errorText).toBeUndefined();
+  });
+
+  it("recognizes only stop reasons emitted by our controls", () => {
+    expect(normalizeUserStopResponse("failed", "User requested Stop.")).toEqual({
+      status: "stopped",
+      errorText: undefined,
+    });
+    expect(normalizeUserStopResponse("failed", "async abort", true)).toEqual({
+      status: "stopped",
+      errorText: undefined,
+    });
+    expect(normalizeUserStopResponse("failed", "async abort", false)).toEqual({
+      status: "failed",
+      errorText: "async abort",
+    });
+    expect(normalizeUserStopResponse("failed", "Provider failed", true)).toEqual({
+      status: "failed",
+      errorText: "Provider failed",
+    });
+  });
+
   it("does not let a successful message status hide a stored tool error", () => {
     const parts: UIMessagePart<UIDataTypes, UITools>[] = [
       {
@@ -489,5 +523,27 @@ describe("projectStoredResponse", () => {
       phase: "tool",
       tools: [{ id: "call-1", status: "running" }],
     });
+  });
+});
+
+describe("mergeMobileSteeringMessages", () => {
+  it("shows persisted steering as visible user turns after the run prompt", () => {
+    const result = mergeMobileSteeringMessages(
+      [
+        { ...pendingMessage, id: "user", role: "user", text: "Explain this", status: "success", order: 3, createdAt: 10 },
+        { ...pendingMessage, id: "assistant-before", role: "assistant", text: "Partial response", status: "success", order: 3, createdAt: 11 },
+        { ...pendingMessage, id: "assistant-after", role: "assistant", text: "Steered response", status: "success", order: 3, createdAt: 25 },
+        { ...pendingMessage, id: "next", role: "user", text: "Next prompt", status: "success", order: 4, createdAt: 30 },
+      ],
+      [{ id: "note-1", text: "Focus on the iOS state", order: 3, createdAt: 20 }],
+    );
+
+    expect(result.map(({ id, role, text }) => [id, role, text])).toEqual([
+      ["user", "user", "Explain this"],
+      ["assistant-before", "assistant", "Partial response"],
+      ["steering-note-1", "user", "Focus on the iOS state"],
+      ["assistant-after", "assistant", "Steered response"],
+      ["next", "user", "Next prompt"],
+    ]);
   });
 });
