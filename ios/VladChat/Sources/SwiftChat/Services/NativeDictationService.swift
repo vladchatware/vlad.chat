@@ -36,11 +36,11 @@ final class NativeDictationService: ObservableObject {
             if #available(iOS 26.0, *) {
                 let session = SystemDictationSession()
                 session.onTranscript = { [weak self] transcript in
-                    guard let self, self.isActive else { return }
+                    guard let self, self.startID == currentStartID, self.isActive else { return }
                     self.draftText = Self.append(transcript, to: self.originalDraft)
                 }
                 session.onFailure = { [weak self] error in
-                    guard let self, self.isActive else { return }
+                    guard let self, self.startID == currentStartID, self.isActive else { return }
                     self.errorMessage = "Dictation stopped: \(error.localizedDescription)"
                     self.finish()
                 }
@@ -57,7 +57,7 @@ final class NativeDictationService: ObservableObject {
                 }
                 try await requestSpeechAuthorization()
                 guard startID == currentStartID else { throw CancellationError() }
-                try startLegacyDictation(using: recognizer)
+                try startLegacyDictation(using: recognizer, startID: currentStartID)
             }
 
             isStarting = false
@@ -78,7 +78,7 @@ final class NativeDictationService: ObservableObject {
         }
     }
 
-    private func startLegacyDictation(using recognizer: SFSpeechRecognizer) throws {
+    private func startLegacyDictation(using recognizer: SFSpeechRecognizer, startID: UUID) throws {
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.taskHint = .dictation
         request.shouldReportPartialResults = true
@@ -117,7 +117,7 @@ final class NativeDictationService: ObservableObject {
             let failureMessage = error?.localizedDescription
 
             Task { @MainActor [weak self] in
-                guard let self, self.isActive else { return }
+                guard let self, self.startID == startID, self.isActive else { return }
                 if let recognizedText {
                     self.draftText = Self.append(recognizedText, to: self.originalDraft)
                 }
@@ -156,7 +156,7 @@ final class NativeDictationService: ObservableObject {
         deactivateAudioSession()
     }
 
-    func cancel() {
+    func cancel(preservingDraft draft: String? = nil) {
         guard isActive else { return }
         startID = UUID()
         if #available(iOS 26.0, *), let systemDictation {
@@ -175,7 +175,12 @@ final class NativeDictationService: ObservableObject {
         isRecording = false
         isFinalizing = false
         isStarting = false
-        draftText = originalDraft
+        if let draft {
+            originalDraft = draft
+            draftText = draft
+        } else {
+            draftText = originalDraft
+        }
         deactivateAudioSession()
     }
 

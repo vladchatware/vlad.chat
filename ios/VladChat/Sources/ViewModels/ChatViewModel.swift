@@ -32,10 +32,24 @@ final class ChatViewModel: ObservableObject {
     @Published var usageSummary: MobileUsageSummary?
     @Published private(set) var agentRunStatus: AgentRunStatus?
     @Published private(set) var isResumingAgentRun = false
+    @Published private(set) var isQueueSubmissionPending = false
+    @Published private(set) var isSteeringAgentRun = false
+    @Published private(set) var queuedAgentRuns: [QueuedAgentRun] = []
     @Published var isLinkingAccount = false
     @Published var isLoggingOut = false
 
-    var messages: [Message] { currentChat?.messages ?? [] }
+    var messages: [Message] {
+        let transcript = currentChat?.messages ?? []
+        let queued = queuedAgentRuns.map { run in
+            Message(
+                id: "queued-\(run.runId)",
+                role: .user,
+                content: run.text.isEmpty ? "\(Int(run.attachmentCount)) attachment(s) queued" : run.text,
+                timestamp: Date(timeIntervalSince1970: run.createdAt / 1_000)
+            )
+        }
+        return transcript + queued
+    }
 
     private var client: ConvexClientWithAuth<ConvexAuthSession>?
     private var authProvider: ConvexAnonymousAuthProvider?
@@ -237,6 +251,85 @@ final class ChatViewModel: ObservableObject {
                     with: ["threadId": threadId]
                 )
                 agentRunStatus = result.status
+            } catch {
+                attachmentError = Self.userFacingMessage(for: error)
+            }
+        }
+    }
+
+    func queueMessage(text rawText: String, onAccepted: @escaping () -> Void) {
+        guard !isQueueSubmissionPending else { return }
+        let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let outgoingAttachments = pendingAttachments
+        guard !text.isEmpty || !outgoingAttachments.isEmpty else { return }
+        guard let client else {
+            attachmentError = "Vlad is still connecting."
+            return
+        }
+
+        let threadId = supportsMobileThreads ? selectedThreadId : nil
+        let requestId = UUID().uuidString
+        let attachmentIDs = outgoingAttachments.map(\.id)
+        isQueueSubmissionPending = true
+        isProcessingAttachment = !outgoingAttachments.isEmpty
+        Task { [weak self] in
+            guard let self else { return }
+            defer {
+                isQueueSubmissionPending = false
+                isProcessingAttachment = false
+            }
+            do {
+                var uploadedAttachments: [UploadedAttachment] = []
+                for attachment in outgoingAttachments {
+                    uploadedAttachments.append(
+                        try await AttachmentUploadService.upload(attachment, using: client)
+                    )
+                }
+                var arguments: [String: ConvexEncodable?] = [
+                    "prompt": text,
+                    "requestId": requestId,
+                    "model": currentModel.id,
+                    "searchEnabled": isWebSearchEnabled,
+                ]
+                if let threadId { arguments["threadId"] = threadId }
+                if !uploadedAttachments.isEmpty {
+                    arguments["attachments"] = uploadedAttachments.map(\.convexValue)
+                }
+                let _: GenerationResult = try await client.action(
+                    "threads:generateReply",
+                    with: arguments
+                )
+                if pendingAttachments.map(\.id) == attachmentIDs {
+                    pendingAttachments = []
+                    pendingImageThumbnails = [:]
+                }
+                onAccepted()
+            } catch {
+                attachmentError = Self.userFacingMessage(for: error)
+            }
+        }
+    }
+
+    func steerAgentRun(instruction rawInstruction: String, onAccepted: @escaping () -> Void) {
+        guard !isSteeringAgentRun,
+              let client,
+              let threadId = supportsMobileThreads ? selectedThreadId : nil else { return }
+        let instruction = rawInstruction.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !instruction.isEmpty else { return }
+        isSteeringAgentRun = true
+        Task { [weak self] in
+            guard let self else { return }
+            defer { isSteeringAgentRun = false }
+            do {
+                let _: SteerThreadResult = try await client.mutation(
+                    "threads:steerThread",
+                    with: [
+                        "threadId": threadId,
+                        "requestId": UUID().uuidString,
+                        "instruction": instruction,
+                    ]
+                )
+                onAccepted()
             } catch {
                 attachmentError = Self.userFacingMessage(for: error)
             }
@@ -752,6 +845,7 @@ final class ChatViewModel: ObservableObject {
                         guard !Task.isCancelled else { return }
                         guard self?.agentRunSubscriptionThreadId == threadId else { return }
                         self?.agentRunStatus = state?.status
+                        self?.queuedAgentRuns = state?.queuedRuns ?? []
                         retryDelay = 1_000_000_000
                         if self?.attachmentError?.hasPrefix("Run state sync failed:") == true {
                             self?.attachmentError = nil
