@@ -8,7 +8,7 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    CURRENT_PROJECT_VERSION: 1
+    CURRENT_PROJECT_VERSION: 25
     MARKETING_VERSION: 0.1.0
     SUPPORTS_MACCATALYST: NO
     TARGETED_DEVICE_FAMILY: "1,2"
@@ -40,9 +40,12 @@ targets:
       properties:
         com.apple.developer.applesignin:
           - Default
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)
     sources:
       - path: Sources
       - path: Resources
+      - path: Shared
     configFiles:
       Debug: Config/Base.xcconfig
       Release: Config/Release.xcconfig
@@ -54,6 +57,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: chat.vlad.ios
         PRODUCT_NAME: VladChat
     dependencies:
+      - target: VladAgentLiveActivity
+        embed: true
       - package: ConvexMobile
         product: ConvexMobile
       - package: Textual
@@ -63,7 +68,23 @@ targets:
     scheme:
       testTargets:
         - VladChatTests
+        - VladChatUITests
       storeKitConfiguration: Configuration.storekit
+  VladAgentLiveActivity:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: LiveActivity
+        excludes:
+          - Info.plist
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: chat.vlad.ios.agent-activity
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_FILE: LiveActivity/Info.plist
+        APPLICATION_EXTENSION_API_ONLY: YES
+        SKIP_INSTALL: YES
   VladChatTests:
     type: bundle.unit-test
     platform: iOS
@@ -72,6 +93,17 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: chat.vlad.ios.tests
+        GENERATE_INFOPLIST_FILE: YES
+    dependencies:
+      - target: VladChat
+  VladChatUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: UITests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: chat.vlad.ios.uitests
         GENERATE_INFOPLIST_FILE: YES
     dependencies:
       - target: VladChat

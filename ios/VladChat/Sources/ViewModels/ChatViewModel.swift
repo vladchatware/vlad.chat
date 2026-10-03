@@ -38,6 +38,8 @@ final class ChatViewModel: ObservableObject {
     var messages: [Message] { currentChat?.messages ?? [] }
 
     private var client: ConvexClientWithAuth<ConvexAuthSession>?
+    private let liveActivities = AgentLiveActivityController()
+    private var pendingConversationID: String?
     private var authProvider: ConvexAnonymousAuthProvider?
     private var subscriptionTask: Task<Void, Never>?
     private var usageSubscriptionTask: Task<Void, Never>?
@@ -90,6 +92,7 @@ final class ChatViewModel: ObservableObject {
             attachmentError = "Could not create a secure Vlad session."
             return
         }
+        liveActivities.connect(client)
         subscribe(using: client)
     }
 
@@ -280,8 +283,30 @@ final class ChatViewModel: ObservableObject {
         subscribe(using: client, threadId: chat.id)
     }
 
+    func openConversation(_ url: URL) {
+        guard let id = AgentActivityAttributes.conversationID(from: url) else { return }
+        pendingConversationID = id
+        openPendingConversation()
+    }
+
+    func refreshLiveActivities() {
+        liveActivities.refresh()
+    }
+
+    func prepareLiveActivitiesForBackground() {
+        liveActivities.prepareForBackground()
+    }
+
+    private func openPendingConversation() {
+        guard let id = pendingConversationID,
+              let chat = chats.first(where: { $0.id == id }), client != nil else { return }
+        pendingConversationID = nil
+        selectChat(chat)
+    }
+
     func deleteChat(_ id: String) {
         guard let client else { return }
+        liveActivities.remove(threadId: id)
         let nextThreadId = chats.first(where: { $0.id != id })?.id
         chats.removeAll { $0.id == id }
         if selectedThreadId == id {
@@ -397,11 +422,13 @@ final class ChatViewModel: ObservableObject {
             agentRunSubscriptionTask?.cancel()
             agentRunSubscriptionThreadId = nil
             agentRunStatus = nil
+            await liveActivities.reset()
             await client.logout()
             do {
                 if case .failure(let error) = await client.login() {
                     throw error
                 }
+                liveActivities.connect(client)
                 subscribe(using: client)
             } catch {
                 attachmentError = Self.userFacingMessage(for: error)
@@ -716,8 +743,9 @@ final class ChatViewModel: ObservableObject {
             )
         }
         currentChat = chats.first(where: { $0.id == selectedId })
+        openPendingConversation()
         if let client {
-            subscribeToAgentRunState(using: client, threadId: selectedId)
+            subscribeToAgentRunState(using: client, threadId: selectedThreadId)
         }
     }
 
@@ -751,6 +779,7 @@ final class ChatViewModel: ObservableObject {
                         guard !Task.isCancelled else { return }
                         guard self?.agentRunSubscriptionThreadId == threadId else { return }
                         self?.agentRunStatus = state?.status
+                        self?.liveActivities.receive(state, threadId: threadId)
                         retryDelay = 1_000_000_000
                         if self?.attachmentError?.hasPrefix("Run state sync failed:") == true {
                             self?.attachmentError = nil
