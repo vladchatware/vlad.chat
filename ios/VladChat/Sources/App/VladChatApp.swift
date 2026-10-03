@@ -3,6 +3,7 @@ import SwiftUI
 @main
 struct VladChatApp: App {
     @StateObject private var chat = ChatViewModel()
+    @Environment(\.scenePhase) private var scenePhase
 
 #if DEBUG
     private var isInferenceGalleryUITest: Bool {
@@ -48,7 +49,9 @@ struct VladChatApp: App {
     var body: some Scene {
         WindowGroup {
 #if DEBUG
-            if isStreamingScrollUITest {
+            if ProcessInfo.processInfo.arguments.contains("--ui-test-agent-activity") {
+                AgentActivityHarness()
+            } else if isStreamingScrollUITest {
                 StreamingScrollE2EView(viewModel: chat)
             } else if isSeededChatHistoryUITest {
                 SeededChatHistoryHarnessView(viewModel: chat)
@@ -74,6 +77,11 @@ struct VladChatApp: App {
     private var chatApplication: some View {
         ChatContainer()
             .environmentObject(chat)
+            .onOpenURL { chat.openConversation($0) }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { chat.refreshLiveActivities() }
+                if phase == .inactive { chat.prepareLiveActivitiesForBackground() }
+            }
             .task {
                 await chat.start()
             }

@@ -66,6 +66,27 @@ each Convex deployment. Register the callback URL
 client secret in Convex environment variables, outside the repo; it expires
 every six months and must be renewed.
 
+## Agent Live Activities
+
+The `VladAgentLiveActivity` WidgetKit extension shares only a run ID, thread ID,
+phase, step count, and update time with ActivityKit. Chat titles, prompts,
+message text, tool arguments/results, and failure details are excluded. Runs
+observed for at least five seconds, or when leaving the app, appear on supported system surfaces when
+Live Activities are enabled. Initial conversation loading keeps its in-thread
+indicator. User dismissal is respected for the remainder of that run.
+
+The native controller tracks active conversations independently of chat
+selection, restores activities on relaunch, ends them on terminal snapshots,
+and clears them on logout or conversation deletion. An activity older than its
+freshness deadline shows an outdated-status hint. Tapping opens its conversation
+after the authenticated chat list loads.
+
+App subscriptions update activities while the process runs. Delivery after iOS
+suspends the process requires the APNs server slice; native subscriptions alone
+cannot guarantee background completion. For deterministic simulator inspection,
+launch a Debug build with `--ui-test-agent-activity`. It uses the production
+controller and widget with synthetic lifecycle states and no backend traffic.
+
 ## SwiftChat source
 
 UI source is pinned from [SwiftChat](https://github.com/sachaservan/SwiftChat) at

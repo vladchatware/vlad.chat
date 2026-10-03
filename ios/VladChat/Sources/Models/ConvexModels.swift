@@ -331,6 +331,10 @@ enum AgentRunStatus: String, Decodable, Sendable {
 
 struct AgentRunState: Decodable, Sendable {
     let status: AgentRunStatus
+    let runId: String?
+    let stepCount: Int?
+    let inFlightPhase: String?
+    let updatedAt: Double?
 }
 
 struct ResumeThreadResult: Decodable, Sendable {

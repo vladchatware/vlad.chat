@@ -3,67 +3,83 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 63;
+	objectVersion = 77;
 	objects = {
 
 /* Begin PBXBuildFile section */
 		01373EED703076144AE16821 /* MessageInputView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58EF2E983BA939442D4912B4 /* MessageInputView.swift */; };
 		05452BC6090868E2DA679982 /* CameraPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A22C39F702AD1937842D4BD6 /* CameraPickerView.swift */; };
+		056CF0BB121F77785960628A /* AgentActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21D322594172A2B8E3733CA9 /* AgentActivityAttributes.swift */; };
 		122820DAEECC63FC7D829067 /* ChatViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF21C3EBF79DDEC2291186BA /* ChatViewModel.swift */; };
 		1C3B74DCF5BF097B46AFCA34 /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3025EBF89C03C17CFD4FB9C /* ChatView.swift */; };
 		2414E3EF7A44652043036CF4 /* VladChatTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4873D1CB4ED597FD6B864158 /* VladChatTests.swift */; };
 		2B43C7A56F91502AF35237D2 /* DocumentPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFEC2B9736171C6FD41475F1 /* DocumentPickerView.swift */; };
 		2B9E925ED3F6BCCEE366C8A1 /* LaTeXMarkdownView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E3191D24B8CA7883D5F4BE3 /* LaTeXMarkdownView.swift */; };
+		30007C990F10B6C1DCAE470B /* AgentLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DEA10347CA8F20626C226DF /* AgentLiveActivity.swift */; };
+		302FADB08A48543AC9A8ED0C /* AgentActivityHarness.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0ABB2448C81EEE9C63582E2 /* AgentActivityHarness.swift */; };
+		35B57BA22647F4FB6C838526 /* ComputerUseBox.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7AC44CA4C773FA380D51773 /* ComputerUseBox.swift */; };
 		36F309D91C67373039676DD1 /* ThinkingTextChunker.swift in Sources */ = {isa = PBXBuildFile; fileRef = C06AD2E66310DC33E15AE479 /* ThinkingTextChunker.swift */; };
+		375D4F5A52E2C2EC849FDACC /* AgentActivityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5BDA4181FFEC6FE7DBF29D5 /* AgentActivityTests.swift */; };
 		3C9E20B725BB77218B9A517B /* AccountView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C92DFD8F24CDCC77E7D24F57 /* AccountView.swift */; };
 		3E37990548DAC6DA0C15236A /* ConvexConcurrency.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A12E43535CC3FD4E269DF80 /* ConvexConcurrency.swift */; };
 		3EB1BD302332E8F90F83B787 /* MessageAttachmentIndicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3EF9E9F7A5FBF3562E673BD4 /* MessageAttachmentIndicator.swift */; };
+		44F82F07F8A63438F3B9E9FA /* NativeDictationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2E82D00BC1E262720297F4C /* NativeDictationService.swift */; };
 		4D0329C35CC8212C2111C7F4 /* ThinkingSummaryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A38D1E3BB8B85596E30B9DC /* ThinkingSummaryService.swift */; };
 		5B743530CCEDFF18B04D5CC9 /* URLFetchBox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1FD65E6D34FD45F2E5681233 /* URLFetchBox.swift */; };
 		5BC7EE81108C69B10339E152 /* SettingsManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61C9C44E8F6C418EA197D704 /* SettingsManager.swift */; };
 		63EDA0C2CFAF332C8C83051B /* StorePurchaseService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DE12232A4CC8E259072C1A6 /* StorePurchaseService.swift */; };
-		65A87DD451FC9C62EF02D877 /* VladChatUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BA0E75A42368ECD9F6DB9AB /* VladChatUITests.swift */; };
+		644566510BCFF61E50E146F0 /* AgentActivityProjection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F26CBC96D352F32ABC482B4 /* AgentActivityProjection.swift */; };
+		64743F7D6AB4349275FAF073 /* AgentLiveActivityController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FA7E2CE2FB7E613E10FCC05 /* AgentLiveActivityController.swift */; };
 		6F323DB6C6FFC5A666D16BDF /* ChatSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 987A5A35D14425EA045ACBF1 /* ChatSidebar.swift */; };
 		6FF230DA18213A2BFB7FE38C /* StreamingMarkdownChunker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93A28EFB29901B2DA5AAA406 /* StreamingMarkdownChunker.swift */; };
 		797E7B038DEDF0B6F503D5B7 /* ConvexMobile in Frameworks */ = {isa = PBXBuildFile; productRef = 009329F25B55CD4CF0271343 /* ConvexMobile */; };
 		79EC4A54FCE0CE4B97845936 /* Color+Hex.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F44F27F08B5272C8AB9EC8C /* Color+Hex.swift */; };
-		7A2B3156AAC1F1B1C9772BE2 /* Textual in Frameworks */ = {isa = PBXBuildFile; productRef = 0DFA1635E620E86004FE00D9 /* Textual */; };
+		7A2B3156AAC1F1B1C9772BE2 /* SwiftMath in Frameworks */ = {isa = PBXBuildFile; productRef = 984D5BF62A263D86E42A5B16 /* SwiftMath */; };
 		86DCECDBD54739D5D8D499E0 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 267A2E26C109E7B230231923 /* KeychainStore.swift */; };
 		87BBCAA4C7CC728974EC6C60 /* MessageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB017A045EB0E831D8337685 /* MessageView.swift */; };
 		88B6E062DF6855D14D5C088C /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E1AF3C3E6958622F27A8087 /* AppConfig.swift */; };
 		8C8644934B7800B1A5BE7DB0 /* ChatModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A55061FA5619976004A5D058 /* ChatModels.swift */; };
 		8CF8B8FA8A8DF28A2967F0EF /* ConvexModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 608E17D6E91F466C95ED8B9F /* ConvexModels.swift */; };
 		8E989642A9371E8C5C36CAB8 /* AttachmentUploadService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A509CDAC4C85623707707EF9 /* AttachmentUploadService.swift */; };
-		9012AB34CD56EF789012AB34 /* NativeDictationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9012AB34CD56EF789012AB35 /* NativeDictationService.swift */; };
 		9933692D39557A3BBC092003 /* VladChatApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8FC30CEB41B68299B76A47B /* VladChatApp.swift */; };
-		A1B2C3D4E5F60718293A4B5C /* InferenceStateGallery.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B5D /* InferenceStateGallery.swift */; };
+		A3A0AD86A4E9EA856B537928 /* VladChatUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E06A4184A27D6F671B3A2A8 /* VladChatUITests.swift */; };
 		A4CDE519CF14447809110045 /* ChatListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D47BDA3E80D5E451FF8E14C4 /* ChatListView.swift */; };
+		A7715CCDD60F05F854181C78 /* ComputerUseViewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3F4FDA3DB9083BC3EC2637D /* ComputerUseViewer.swift */; };
 		ADBE7C19239C867EFF1724C8 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BD9E62D28947946EFF6C9065 /* Assets.xcassets */; };
+		AF2316DF37791241130CBA55 /* Textual in Frameworks */ = {isa = PBXBuildFile; productRef = 0DFA1635E620E86004FE00D9 /* Textual */; };
 		B04A5C9623439CABC5B72A64 /* Color.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78176BBA98F98657AA17C093 /* Color.swift */; };
-		B0D1CCC056F0FAB73FE2E6DF /* SwiftMath in Frameworks */ = {isa = PBXBuildFile; productRef = 984D5BF62A263D86E42A5B16 /* SwiftMath */; };
+		B75FB1ABD54E6220F6535792 /* AgentActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21D322594172A2B8E3733CA9 /* AgentActivityAttributes.swift */; };
 		BCED25AB65E09107868208BA /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C303574FDDFEFCABDDCF900 /* Constants.swift */; };
 		C082285A111B08E623D065EA /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 9A63E1CD2294F5D63A5EE291 /* Assets.xcassets */; };
+		C15F1477F1E0BD6451C2581A /* AgentActivityUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D414651A60BD26C013A1D4F /* AgentActivityUITests.swift */; };
 		C1BF75E1416CA53AA3B02E05 /* NetworkMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE2F2F42D1A563F9C5AEC08F /* NetworkMonitor.swift */; };
 		C382D7548367E52154539082 /* MessageTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0406B54D2766858ED20F26 /* MessageTableView.swift */; };
 		C6F8221993C3AB2EDB609478 /* WebSearchBox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DB20BBFDEF8331C24836A3E /* WebSearchBox.swift */; };
-		D00D00000000000000000101 /* ActivityCardStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00D00000000000000000001 /* ActivityCardStyle.swift */; };
-		D00D00000000000000000102 /* ComputerUseBox.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00D00000000000000000002 /* ComputerUseBox.swift */; };
-		D00D00000000000000000104 /* ComputerUseViewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00D00000000000000000004 /* ComputerUseViewer.swift */; };
-		D00D00000000000000000103 /* ComputerUseModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00D00000000000000000003 /* ComputerUseModels.swift */; };
+		DC3DDF0FB53F167A51AB8330 /* InferenceStateGallery.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF4D60F9E92C462C6B9F7709 /* InferenceStateGallery.swift */; };
 		E6AECD2B654580310C2CD6BC /* AppConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = E310EDB0B0AB488B9B4A8020 /* AppConfiguration.swift */; };
+		EBE9E5B917FC0C3E9250B916 /* ActivityCardStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D3998370E8616AA99B7F461 /* ActivityCardStyle.swift */; };
+		F1773953429264E2F7A60771 /* VladAgentLiveActivity.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 632C42A103CD85D5DB79B995 /* VladAgentLiveActivity.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		F4AD256AE67F212AEC788E52 /* ConvexAnonymousAuthProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = B895AAB3CB42E5AB1B1342CB /* ConvexAnonymousAuthProvider.swift */; };
 		F826F7F015AA0765066BAF34 /* AttachmentModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 577CCE72EBAB6D238D8F7C5E /* AttachmentModels.swift */; };
 		FC1140931C7CDE4F9D830826 /* AttachmentPreviewBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = B11C62DE641D0FEA1C0A3A31 /* AttachmentPreviewBar.swift */; };
+		FC4CA267E30A638D0AD23813 /* ComputerUseModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66DC48BC88220743C173EE47 /* ComputerUseModels.swift */; };
 		FFD5A890FF97FC9D685E2F6D /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D32504E42EA43906D3149B9 /* Theme.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
-		5E3DD68E9DF5B77189E38DDC /* PBXContainerItemProxy */ = {
+		00573C2F91108AC816D8163D /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 9EB0E0CAB4F88B9685A7FFC7 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = 7A474298C6959339C14BE11A;
 			remoteInfo = VladChat;
+		};
+		01EC7FBD7692448FFFF889E2 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 9EB0E0CAB4F88B9685A7FFC7 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 09E1FE30C567A5575FF46496;
+			remoteInfo = VladAgentLiveActivity;
 		};
 		74AF7C25BDCDB4E09F89079F /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -74,35 +90,55 @@
 		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		C932C772C68077EDC7EB8C12 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				F1773953429264E2F7A60771 /* VladAgentLiveActivity.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
-		043D17D230681E6400251287 /* Configuration.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; path = Configuration.storekit; sourceTree = "<group>"; };
-		0461A1733063B2E3003A1192 /* TestPlan.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; path = TestPlan.xctestplan; sourceTree = "<group>"; };
-		06811A58C68CB06B34D3A165 /* VladChat.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VladChat.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		06811A58C68CB06B34D3A165 /* VladChat.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = VladChat.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		0D3998370E8616AA99B7F461 /* ActivityCardStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityCardStyle.swift; sourceTree = "<group>"; };
 		0DB20BBFDEF8331C24836A3E /* WebSearchBox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSearchBox.swift; sourceTree = "<group>"; };
 		1A12E43535CC3FD4E269DF80 /* ConvexConcurrency.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConvexConcurrency.swift; sourceTree = "<group>"; };
 		1D32504E42EA43906D3149B9 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		1FD65E6D34FD45F2E5681233 /* URLFetchBox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = URLFetchBox.swift; sourceTree = "<group>"; };
+		21D322594172A2B8E3733CA9 /* AgentActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentActivityAttributes.swift; sourceTree = "<group>"; };
 		267A2E26C109E7B230231923 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
 		2A38D1E3BB8B85596E30B9DC /* ThinkingSummaryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThinkingSummaryService.swift; sourceTree = "<group>"; };
 		2C303574FDDFEFCABDDCF900 /* Constants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
 		3EF9E9F7A5FBF3562E673BD4 /* MessageAttachmentIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageAttachmentIndicator.swift; sourceTree = "<group>"; };
+		3FA7E2CE2FB7E613E10FCC05 /* AgentLiveActivityController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentLiveActivityController.swift; sourceTree = "<group>"; };
 		4873D1CB4ED597FD6B864158 /* VladChatTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VladChatTests.swift; sourceTree = "<group>"; };
+		4874A6693BBA3B15FE2663C8 /* VladChatUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = VladChatUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		4D414651A60BD26C013A1D4F /* AgentActivityUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentActivityUITests.swift; sourceTree = "<group>"; };
 		4E1AF3C3E6958622F27A8087 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
 		4F44F27F08B5272C8AB9EC8C /* Color+Hex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Color+Hex.swift"; sourceTree = "<group>"; };
 		577CCE72EBAB6D238D8F7C5E /* AttachmentModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentModels.swift; sourceTree = "<group>"; };
 		57F4A83A18960EAB21DB81E4 /* Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Base.xcconfig; sourceTree = "<group>"; };
 		58EF2E983BA939442D4912B4 /* MessageInputView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageInputView.swift; sourceTree = "<group>"; };
-		5BA0E75A42368ECD9F6DB9AB /* VladChatUITests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VladChatUITests.swift; sourceTree = "<group>"; };
 		5E3191D24B8CA7883D5F4BE3 /* LaTeXMarkdownView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaTeXMarkdownView.swift; sourceTree = "<group>"; };
 		608E17D6E91F466C95ED8B9F /* ConvexModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConvexModels.swift; sourceTree = "<group>"; };
 		61C9C44E8F6C418EA197D704 /* SettingsManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsManager.swift; sourceTree = "<group>"; };
+		632C42A103CD85D5DB79B995 /* VladAgentLiveActivity.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = VladAgentLiveActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		66DC48BC88220743C173EE47 /* ComputerUseModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComputerUseModels.swift; sourceTree = "<group>"; };
 		78176BBA98F98657AA17C093 /* Color.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Color.swift; sourceTree = "<group>"; };
+		7DEA10347CA8F20626C226DF /* AgentLiveActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentLiveActivity.swift; sourceTree = "<group>"; };
+		7F26CBC96D352F32ABC482B4 /* AgentActivityProjection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentActivityProjection.swift; sourceTree = "<group>"; };
 		8DE12232A4CC8E259072C1A6 /* StorePurchaseService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorePurchaseService.swift; sourceTree = "<group>"; };
-		9012AB34CD56EF789012AB35 /* NativeDictationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeDictationService.swift; sourceTree = "<group>"; };
+		8E06A4184A27D6F671B3A2A8 /* VladChatUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VladChatUITests.swift; sourceTree = "<group>"; };
 		93A28EFB29901B2DA5AAA406 /* StreamingMarkdownChunker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingMarkdownChunker.swift; sourceTree = "<group>"; };
 		987A5A35D14425EA045ACBF1 /* ChatSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatSidebar.swift; sourceTree = "<group>"; };
 		9A63E1CD2294F5D63A5EE291 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		A1B2C3D4E5F60718293A4B5D /* InferenceStateGallery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InferenceStateGallery.swift; sourceTree = "<group>"; };
+		A0ABB2448C81EEE9C63582E2 /* AgentActivityHarness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentActivityHarness.swift; sourceTree = "<group>"; };
 		A22C39F702AD1937842D4BD6 /* CameraPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPickerView.swift; sourceTree = "<group>"; };
 		A3025EBF89C03C17CFD4FB9C /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
 		A509CDAC4C85623707707EF9 /* AttachmentUploadService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentUploadService.swift; sourceTree = "<group>"; };
@@ -116,17 +152,17 @@
 		BD9E62D28947946EFF6C9065 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		BF21C3EBF79DDEC2291186BA /* ChatViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModel.swift; sourceTree = "<group>"; };
 		C06AD2E66310DC33E15AE479 /* ThinkingTextChunker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThinkingTextChunker.swift; sourceTree = "<group>"; };
+		C2E82D00BC1E262720297F4C /* NativeDictationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeDictationService.swift; sourceTree = "<group>"; };
+		C3F4FDA3DB9083BC3EC2637D /* ComputerUseViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComputerUseViewer.swift; sourceTree = "<group>"; };
 		C92DFD8F24CDCC77E7D24F57 /* AccountView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountView.swift; sourceTree = "<group>"; };
-		D00D00000000000000000001 /* ActivityCardStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityCardStyle.swift; sourceTree = "<group>"; };
-		D00D00000000000000000002 /* ComputerUseBox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComputerUseBox.swift; sourceTree = "<group>"; };
-		D00D00000000000000000003 /* ComputerUseModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComputerUseModels.swift; sourceTree = "<group>"; };
-		D00D00000000000000000004 /* ComputerUseViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComputerUseViewer.swift; sourceTree = "<group>"; };
 		D47BDA3E80D5E451FF8E14C4 /* ChatListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatListView.swift; sourceTree = "<group>"; };
 		D4FABECF89A5967AC65716A9 /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
-		DC53ED69F2C352CC8F38D72E /* VladChatUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = VladChatUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		DF4D60F9E92C462C6B9F7709 /* InferenceStateGallery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InferenceStateGallery.swift; sourceTree = "<group>"; };
 		E310EDB0B0AB488B9B4A8020 /* AppConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfiguration.swift; sourceTree = "<group>"; };
+		E7AC44CA4C773FA380D51773 /* ComputerUseBox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComputerUseBox.swift; sourceTree = "<group>"; };
 		EFEC2B9736171C6FD41475F1 /* DocumentPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentPickerView.swift; sourceTree = "<group>"; };
 		F14ED7C520AE25802C5EE7AF /* VladChatTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = VladChatTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		F5BDA4181FFEC6FE7DBF29D5 /* AgentActivityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentActivityTests.swift; sourceTree = "<group>"; };
 		FB017A045EB0E831D8337685 /* MessageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -136,8 +172,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				797E7B038DEDF0B6F503D5B7 /* ConvexMobile in Frameworks */,
-				7A2B3156AAC1F1B1C9772BE2 /* Textual in Frameworks */,
-				B0D1CCC056F0FAB73FE2E6DF /* SwiftMath in Frameworks */,
+				AF2316DF37791241130CBA55 /* Textual in Frameworks */,
+				7A2B3156AAC1F1B1C9772BE2 /* SwiftMath in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -165,16 +201,16 @@
 		0CC096B9336F3D70FB955C53 /* Views */ = {
 			isa = PBXGroup;
 			children = (
-				D00D00000000000000000001 /* ActivityCardStyle.swift */,
+				0D3998370E8616AA99B7F461 /* ActivityCardStyle.swift */,
 				B11C62DE641D0FEA1C0A3A31 /* AttachmentPreviewBar.swift */,
 				A22C39F702AD1937842D4BD6 /* CameraPickerView.swift */,
 				D47BDA3E80D5E451FF8E14C4 /* ChatListView.swift */,
 				987A5A35D14425EA045ACBF1 /* ChatSidebar.swift */,
 				A3025EBF89C03C17CFD4FB9C /* ChatView.swift */,
-				D00D00000000000000000002 /* ComputerUseBox.swift */,
-				D00D00000000000000000004 /* ComputerUseViewer.swift */,
+				E7AC44CA4C773FA380D51773 /* ComputerUseBox.swift */,
+				C3F4FDA3DB9083BC3EC2637D /* ComputerUseViewer.swift */,
 				EFEC2B9736171C6FD41475F1 /* DocumentPickerView.swift */,
-				A1B2C3D4E5F60718293A4B5D /* InferenceStateGallery.swift */,
+				DF4D60F9E92C462C6B9F7709 /* InferenceStateGallery.swift */,
 				5E3191D24B8CA7883D5F4BE3 /* LaTeXMarkdownView.swift */,
 				3EF9E9F7A5FBF3562E673BD4 /* MessageAttachmentIndicator.swift */,
 				58EF2E983BA939442D4912B4 /* MessageInputView.swift */,
@@ -199,7 +235,7 @@
 			children = (
 				577CCE72EBAB6D238D8F7C5E /* AttachmentModels.swift */,
 				A55061FA5619976004A5D058 /* ChatModels.swift */,
-				D00D00000000000000000003 /* ComputerUseModels.swift */,
+				66DC48BC88220743C173EE47 /* ComputerUseModels.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -207,9 +243,18 @@
 		20B20AFB068E8D4E976F87E9 /* Tests */ = {
 			isa = PBXGroup;
 			children = (
+				F5BDA4181FFEC6FE7DBF29D5 /* AgentActivityTests.swift */,
 				4873D1CB4ED597FD6B864158 /* VladChatTests.swift */,
 			);
 			path = Tests;
+			sourceTree = "<group>";
+		};
+		2E58EB02B2B292F5FB3FCCF6 /* LiveActivity */ = {
+			isa = PBXGroup;
+			children = (
+				7DEA10347CA8F20626C226DF /* AgentLiveActivity.swift */,
+			);
+			path = LiveActivity;
 			sourceTree = "<group>";
 		};
 		35415D81DB0B42F4BDBA6B99 /* Models */ = {
@@ -228,7 +273,7 @@
 				F35D340C8E731DF8F9F67A0C /* Config */,
 				E0E28E323A94BAB6C1936F50 /* Convex */,
 				35415D81DB0B42F4BDBA6B99 /* Models */,
-				E9A761B49C0F417A81D425EA /* Services */,
+				767780AE81074B00B245B887 /* Services */,
 				A24B218BD7C01E7D0F7C6DB7 /* SwiftChat */,
 				79982D5223196B71CFAC14F7 /* ViewModels */,
 				129613A2370057455DFD521B /* Views */,
@@ -242,6 +287,18 @@
 				AE2F2F42D1A563F9C5AEC08F /* NetworkMonitor.swift */,
 			);
 			path = Utilities;
+			sourceTree = "<group>";
+		};
+		767780AE81074B00B245B887 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				A0ABB2448C81EEE9C63582E2 /* AgentActivityHarness.swift */,
+				7F26CBC96D352F32ABC482B4 /* AgentActivityProjection.swift */,
+				3FA7E2CE2FB7E613E10FCC05 /* AgentLiveActivityController.swift */,
+				A509CDAC4C85623707707EF9 /* AttachmentUploadService.swift */,
+				8DE12232A4CC8E259072C1A6 /* StorePurchaseService.swift */,
+			);
+			path = Services;
 			sourceTree = "<group>";
 		};
 		79982D5223196B71CFAC14F7 /* ViewModels */ = {
@@ -286,9 +343,10 @@
 		A34F0F5167106C672FBF95E5 /* Products */ = {
 			isa = PBXGroup;
 			children = (
+				632C42A103CD85D5DB79B995 /* VladAgentLiveActivity.appex */,
 				06811A58C68CB06B34D3A165 /* VladChat.app */,
 				F14ED7C520AE25802C5EE7AF /* VladChatTests.xctest */,
-				DC53ED69F2C352CC8F38D72E /* VladChatUITests.xctest */,
+				4874A6693BBA3B15FE2663C8 /* VladChatUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -296,7 +354,7 @@
 		A50B76C585FC6B11379372CE /* Services */ = {
 			isa = PBXGroup;
 			children = (
-				9012AB34CD56EF789012AB35 /* NativeDictationService.swift */,
+				C2E82D00BC1E262720297F4C /* NativeDictationService.swift */,
 				93A28EFB29901B2DA5AAA406 /* StreamingMarkdownChunker.swift */,
 				2A38D1E3BB8B85596E30B9DC /* ThinkingSummaryService.swift */,
 				C06AD2E66310DC33E15AE479 /* ThinkingTextChunker.swift */,
@@ -316,23 +374,32 @@
 		B4F2B86B94DD9A92168046D5 = {
 			isa = PBXGroup;
 			children = (
-				043D17D230681E6400251287 /* Configuration.storekit */,
-				0461A1733063B2E3003A1192 /* TestPlan.xctestplan */,
 				7D68E4ECEBBECB2BB3452799 /* Config */,
+				2E58EB02B2B292F5FB3FCCF6 /* LiveActivity */,
 				09F966065B193C8FDFA75722 /* Resources */,
+				CE51B5AB51653196AC43E2F2 /* Shared */,
 				3DBF414C34B04D13D8655711 /* Sources */,
 				20B20AFB068E8D4E976F87E9 /* Tests */,
+				BF0B18E41FC857F7AC43859F /* UITests */,
 				A34F0F5167106C672FBF95E5 /* Products */,
-				B73004227F3C8FFD6E025CA9 /* UITests */,
 			);
 			sourceTree = "<group>";
 		};
-		B73004227F3C8FFD6E025CA9 /* UITests */ = {
+		BF0B18E41FC857F7AC43859F /* UITests */ = {
 			isa = PBXGroup;
 			children = (
-				5BA0E75A42368ECD9F6DB9AB /* VladChatUITests.swift */,
+				4D414651A60BD26C013A1D4F /* AgentActivityUITests.swift */,
+				8E06A4184A27D6F671B3A2A8 /* VladChatUITests.swift */,
 			);
 			path = UITests;
+			sourceTree = "<group>";
+		};
+		CE51B5AB51653196AC43E2F2 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				21D322594172A2B8E3733CA9 /* AgentActivityAttributes.swift */,
+			);
+			path = Shared;
 			sourceTree = "<group>";
 		};
 		DAF596842F47A23F4132BE92 /* Config */ = {
@@ -354,15 +421,6 @@
 			path = Convex;
 			sourceTree = "<group>";
 		};
-		E9A761B49C0F417A81D425EA /* Services */ = {
-			isa = PBXGroup;
-			children = (
-				A509CDAC4C85623707707EF9 /* AttachmentUploadService.swift */,
-				8DE12232A4CC8E259072C1A6 /* StorePurchaseService.swift */,
-			);
-			path = Services;
-			sourceTree = "<group>";
-		};
 		F35D340C8E731DF8F9F67A0C /* Config */ = {
 			isa = PBXGroup;
 			children = (
@@ -374,6 +432,23 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		09E1FE30C567A5575FF46496 /* VladAgentLiveActivity */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D3DED379FD898D0181622CD8 /* Build configuration list for PBXNativeTarget "VladAgentLiveActivity" */;
+			buildPhases = (
+				BD04428290C169EDB3E52C2C /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = VladAgentLiveActivity;
+			packageProductDependencies = (
+			);
+			productName = VladAgentLiveActivity;
+			productReference = 632C42A103CD85D5DB79B995 /* VladAgentLiveActivity.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		5F4EFEE3BA068592B87D5F61 /* VladChatTests */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 2F16B520187BDABC80A40AA2 /* Build configuration list for PBXNativeTarget "VladChatTests" */;
@@ -392,23 +467,6 @@
 			productReference = F14ED7C520AE25802C5EE7AF /* VladChatTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
-		698DF4F7CAAFF39E1943B9E5 /* VladChatUITests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 959336DA0388DA2E1AFF48D6 /* Build configuration list for PBXNativeTarget "VladChatUITests" */;
-			buildPhases = (
-				7A212F9B5E41603DFA1BECB4 /* Sources */,
-				B3C3F31190D912F6E01E0AE3 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				FD8D60E373D36CA39E48B271 /* PBXTargetDependency */,
-			);
-			name = VladChatUITests;
-			productName = VladChatUITests;
-			productReference = DC53ED69F2C352CC8F38D72E /* VladChatUITests.xctest */;
-			productType = "com.apple.product-type.bundle.ui-testing";
-		};
 		7A474298C6959339C14BE11A /* VladChat */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = EA95085A888403ABB907B436 /* Build configuration list for PBXNativeTarget "VladChat" */;
@@ -416,10 +474,12 @@
 				0D5733CD4F5291F1E629D166 /* Sources */,
 				D131D9658151A5DF20D62359 /* Resources */,
 				34C8DCB042E6E6F32B32CAF1 /* Frameworks */,
+				C932C772C68077EDC7EB8C12 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				49E73FCB0914B53AA4BA4889 /* PBXTargetDependency */,
 			);
 			name = VladChat;
 			packageProductDependencies = (
@@ -431,6 +491,24 @@
 			productReference = 06811A58C68CB06B34D3A165 /* VladChat.app */;
 			productType = "com.apple.product-type.application";
 		};
+		8E0ECA801B8F14053BDFC69A /* VladChatUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 63B52DB47A0257CA57B425B2 /* Build configuration list for PBXNativeTarget "VladChatUITests" */;
+			buildPhases = (
+				1D40F4F9AB4E7073D7B9E642 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				D7C34EFB080335FD44D1F07D /* PBXTargetDependency */,
+			);
+			name = VladChatUITests;
+			packageProductDependencies = (
+			);
+			productName = VladChatUITests;
+			productReference = 4874A6693BBA3B15FE2663C8 /* VladChatUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -440,6 +518,10 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1600;
 				TargetAttributes = {
+					09E1FE30C567A5575FF46496 = {
+						DevelopmentTeam = L6775788HZ;
+						ProvisioningStyle = Automatic;
+					};
 					5F4EFEE3BA068592B87D5F61 = {
 						DevelopmentTeam = L6775788HZ;
 						ProvisioningStyle = Automatic;
@@ -452,6 +534,11 @@
 								enabled = 1;
 							};
 						};
+					};
+					8E0ECA801B8F14053BDFC69A = {
+						DevelopmentTeam = L6775788HZ;
+						ProvisioningStyle = Automatic;
+						TestTargetID = 7A474298C6959339C14BE11A;
 					};
 				};
 			};
@@ -470,24 +557,19 @@
 				0B261F600B327D4D89F5F7B4 /* XCRemoteSwiftPackageReference "SwiftMath" */,
 				29A345B0E549445465AFB71C /* XCRemoteSwiftPackageReference "textual" */,
 			);
+			preferredProjectObjectVersion = 77;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
+				09E1FE30C567A5575FF46496 /* VladAgentLiveActivity */,
 				7A474298C6959339C14BE11A /* VladChat */,
 				5F4EFEE3BA068592B87D5F61 /* VladChatTests */,
-				698DF4F7CAAFF39E1943B9E5 /* VladChatUITests */,
+				8E0ECA801B8F14053BDFC69A /* VladChatUITests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		B3C3F31190D912F6E01E0AE3 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		D131D9658151A5DF20D62359 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -504,6 +586,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				375D4F5A52E2C2EC849FDACC /* AgentActivityTests.swift in Sources */,
 				2414E3EF7A44652043036CF4 /* VladChatTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -513,39 +596,43 @@
 			buildActionMask = 2147483647;
 			files = (
 				3C9E20B725BB77218B9A517B /* AccountView.swift in Sources */,
+				EBE9E5B917FC0C3E9250B916 /* ActivityCardStyle.swift in Sources */,
+				B75FB1ABD54E6220F6535792 /* AgentActivityAttributes.swift in Sources */,
+				302FADB08A48543AC9A8ED0C /* AgentActivityHarness.swift in Sources */,
+				644566510BCFF61E50E146F0 /* AgentActivityProjection.swift in Sources */,
+				64743F7D6AB4349275FAF073 /* AgentLiveActivityController.swift in Sources */,
 				88B6E062DF6855D14D5C088C /* AppConfig.swift in Sources */,
 				E6AECD2B654580310C2CD6BC /* AppConfiguration.swift in Sources */,
 				F826F7F015AA0765066BAF34 /* AttachmentModels.swift in Sources */,
 				FC1140931C7CDE4F9D830826 /* AttachmentPreviewBar.swift in Sources */,
+				8E989642A9371E8C5C36CAB8 /* AttachmentUploadService.swift in Sources */,
 				05452BC6090868E2DA679982 /* CameraPickerView.swift in Sources */,
 				A4CDE519CF14447809110045 /* ChatListView.swift in Sources */,
 				8C8644934B7800B1A5BE7DB0 /* ChatModels.swift in Sources */,
 				6F323DB6C6FFC5A666D16BDF /* ChatSidebar.swift in Sources */,
 				1C3B74DCF5BF097B46AFCA34 /* ChatView.swift in Sources */,
-				A1B2C3D4E5F60718293A4B5C /* InferenceStateGallery.swift in Sources */,
-				D00D00000000000000000101 /* ActivityCardStyle.swift in Sources */,
-				D00D00000000000000000102 /* ComputerUseBox.swift in Sources */,
-				D00D00000000000000000104 /* ComputerUseViewer.swift in Sources */,
-				D00D00000000000000000103 /* ComputerUseModels.swift in Sources */,
 				122820DAEECC63FC7D829067 /* ChatViewModel.swift in Sources */,
 				79EC4A54FCE0CE4B97845936 /* Color+Hex.swift in Sources */,
 				B04A5C9623439CABC5B72A64 /* Color.swift in Sources */,
+				35B57BA22647F4FB6C838526 /* ComputerUseBox.swift in Sources */,
+				FC4CA267E30A638D0AD23813 /* ComputerUseModels.swift in Sources */,
+				A7715CCDD60F05F854181C78 /* ComputerUseViewer.swift in Sources */,
 				BCED25AB65E09107868208BA /* Constants.swift in Sources */,
 				F4AD256AE67F212AEC788E52 /* ConvexAnonymousAuthProvider.swift in Sources */,
 				3E37990548DAC6DA0C15236A /* ConvexConcurrency.swift in Sources */,
 				8CF8B8FA8A8DF28A2967F0EF /* ConvexModels.swift in Sources */,
-				8E989642A9371E8C5C36CAB8 /* AttachmentUploadService.swift in Sources */,
-				63EDA0C2CFAF332C8C83051B /* StorePurchaseService.swift in Sources */,
 				2B43C7A56F91502AF35237D2 /* DocumentPickerView.swift in Sources */,
+				DC3DDF0FB53F167A51AB8330 /* InferenceStateGallery.swift in Sources */,
 				86DCECDBD54739D5D8D499E0 /* KeychainStore.swift in Sources */,
 				2B9E925ED3F6BCCEE366C8A1 /* LaTeXMarkdownView.swift in Sources */,
 				3EB1BD302332E8F90F83B787 /* MessageAttachmentIndicator.swift in Sources */,
 				01373EED703076144AE16821 /* MessageInputView.swift in Sources */,
-				9012AB34CD56EF789012AB34 /* NativeDictationService.swift in Sources */,
 				C382D7548367E52154539082 /* MessageTableView.swift in Sources */,
 				87BBCAA4C7CC728974EC6C60 /* MessageView.swift in Sources */,
+				44F82F07F8A63438F3B9E9FA /* NativeDictationService.swift in Sources */,
 				C1BF75E1416CA53AA3B02E05 /* NetworkMonitor.swift in Sources */,
 				5BC7EE81108C69B10339E152 /* SettingsManager.swift in Sources */,
+				63EDA0C2CFAF332C8C83051B /* StorePurchaseService.swift in Sources */,
 				6FF230DA18213A2BFB7FE38C /* StreamingMarkdownChunker.swift in Sources */,
 				FFD5A890FF97FC9D685E2F6D /* Theme.swift in Sources */,
 				4D0329C35CC8212C2111C7F4 /* ThinkingSummaryService.swift in Sources */,
@@ -556,31 +643,62 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		7A212F9B5E41603DFA1BECB4 /* Sources */ = {
+		1D40F4F9AB4E7073D7B9E642 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				65A87DD451FC9C62EF02D877 /* VladChatUITests.swift in Sources */,
+				C15F1477F1E0BD6451C2581A /* AgentActivityUITests.swift in Sources */,
+				A3A0AD86A4E9EA856B537928 /* VladChatUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BD04428290C169EDB3E52C2C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				056CF0BB121F77785960628A /* AgentActivityAttributes.swift in Sources */,
+				30007C990F10B6C1DCAE470B /* AgentLiveActivity.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		49E73FCB0914B53AA4BA4889 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 09E1FE30C567A5575FF46496 /* VladAgentLiveActivity */;
+			targetProxy = 01EC7FBD7692448FFFF889E2 /* PBXContainerItemProxy */;
+		};
 		698F0B06E016B8F8622F9747 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 7A474298C6959339C14BE11A /* VladChat */;
 			targetProxy = 74AF7C25BDCDB4E09F89079F /* PBXContainerItemProxy */;
 		};
-		FD8D60E373D36CA39E48B271 /* PBXTargetDependency */ = {
+		D7C34EFB080335FD44D1F07D /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			name = VladChat;
 			target = 7A474298C6959339C14BE11A /* VladChat */;
-			targetProxy = 5E3DD68E9DF5B77189E38DDC /* PBXContainerItemProxy */;
+			targetProxy = 00573C2F91108AC816D8163D /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		0088D354657C34469F89492A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = chat.vlad.ios.uitests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = VladChat;
+			};
+			name = Debug;
+		};
 		22ECC9BACA35A26F64908A10 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -633,7 +751,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 25;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = L6775788HZ;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -674,7 +792,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = VladChat.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				CURRENT_PROJECT_VERSION = 25;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -688,20 +805,39 @@
 			};
 			name = Debug;
 		};
-		6C087F2589883421D180CE90 /* Debug */ = {
+		67068A9FEF9E848DF0E30ECA /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CLANG_ENABLE_OBJC_WEAK = NO;
-				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = L6775788HZ;
+				APPLICATION_EXTENSION_API_ONLY = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
-				PRODUCT_BUNDLE_IDENTIFIER = chat.vlad.ios.uitests;
-				PRODUCT_NAME = VladChatUITests;
+				INFOPLIST_FILE = LiveActivity/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "chat.vlad.ios.agent-activity";
 				SDKROOT = iphoneos;
-				SWIFT_VERSION = 5.0;
+				SKIP_INSTALL = YES;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = VladChat;
+			};
+			name = Release;
+		};
+		A446B0725D89C0C5D9752602 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = LiveActivity/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "chat.vlad.ios.agent-activity";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
 		};
@@ -740,7 +876,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 25;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = L6775788HZ;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -767,24 +903,6 @@
 			};
 			name = Release;
 		};
-		B6684A26CA49CCE38A9A8259 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CLANG_ENABLE_OBJC_WEAK = NO;
-				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = L6775788HZ;
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
-				PRODUCT_BUNDLE_IDENTIFIER = chat.vlad.ios.uitests;
-				PRODUCT_NAME = VladChatUITests;
-				SDKROOT = iphoneos;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = VladChat;
-				VALIDATE_PRODUCT = YES;
-			};
-			name = Release;
-		};
 		C34CB8E878092795DB17E995 /* Release */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = D4FABECF89A5967AC65716A9 /* Release.xcconfig */;
@@ -792,7 +910,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = VladChat.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				CURRENT_PROJECT_VERSION = 25;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -823,6 +940,23 @@
 			};
 			name = Release;
 		};
+		FDA23F0537494E2BD6B8007A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = chat.vlad.ios.uitests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = VladChat;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -835,20 +969,29 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
-		959336DA0388DA2E1AFF48D6 /* Build configuration list for PBXNativeTarget "VladChatUITests" */ = {
+		63B52DB47A0257CA57B425B2 /* Build configuration list for PBXNativeTarget "VladChatUITests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				B6684A26CA49CCE38A9A8259 /* Release */,
-				6C087F2589883421D180CE90 /* Debug */,
+				0088D354657C34469F89492A /* Debug */,
+				FDA23F0537494E2BD6B8007A /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			defaultConfigurationName = Debug;
 		};
 		C672A88A331ADC16401931C6 /* Build configuration list for PBXProject "VladChat" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				517E584ABDB15943B9D4DC10 /* Debug */,
 				B4AB53B18C3C96F65BE9671F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		D3DED379FD898D0181622CD8 /* Build configuration list for PBXNativeTarget "VladAgentLiveActivity" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A446B0725D89C0C5D9752602 /* Debug */,
+				67068A9FEF9E848DF0E30ECA /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
