@@ -656,6 +656,32 @@ final class VladChatUITests: XCTestCase {
         XCTAssertEqual(keyboard.value as? String, "Hidden")
         keyboard.tap()
         XCTAssertTrue(landscapeKeyboardKey.waitForExistence(timeout: 5))
+
+        let fullscreen = app.buttons["computerFullscreen"]
+        XCTAssertTrue(fullscreen.isHittable)
+        XCTAssertLessThan(desktop.frame.maxY, fullscreen.frame.midY, "Landscape controls should sit below the remote screen")
+        XCTAssertLessThan(fullscreen.frame.maxX, landscapeKeyboardKey.frame.minX, "Controls should stay within the left workspace")
+        let workspaceWidth = desktop.frame.width
+        fullscreen.tap()
+        let restore = app.buttons["computerRestoreLayout"]
+        XCTAssertTrue(restore.waitForExistence(timeout: 5))
+        XCTAssertFalse(landscapeKeyboardKey.exists)
+        XCTAssertFalse(keyboard.exists)
+        XCTAssertFalse(app.buttons["Collapse to preview"].exists)
+        XCTAssertGreaterThan(desktop.frame.width, workspaceWidth * 1.3, "Full screen should expand the remote viewport")
+        restore.tap()
+        XCTAssertTrue(landscapeKeyboardKey.waitForExistence(timeout: 5))
+        XCTAssertEqual(keyboard.value as? String, "Shown")
+        landscapeKeyboardKey.tap()
+        assertReceived("Text: q")
+
+        keyboard.tap()
+        fullscreen.tap()
+        XCTAssertTrue(restore.waitForExistence(timeout: 5))
+        restore.tap()
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
+        XCTAssertEqual(keyboard.value as? String, "Hidden", "Restore should preserve a hidden keyboard")
+        XCTAssertFalse(landscapeKeyboardKey.exists)
     }
 
     func testInspectorExplainsAndDisablesControlsWhileAgentOwnsComputer() {
