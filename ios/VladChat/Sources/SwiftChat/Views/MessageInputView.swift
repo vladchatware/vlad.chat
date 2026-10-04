@@ -133,7 +133,7 @@ struct MessageInputView: View {
                                      placeholderText: Self.placeholderText,
                                      shouldFocusInput: viewModel.shouldFocusInput,
                                      isLoading: viewModel.isLoading,
-                                     onEditingBegan: stopDictationForKeyboard,
+                                     onEditingBegan: handleComposerEditingBegan,
                                      onFocusHandled: { viewModel.shouldFocusInput = false },
                                      onSendMessage: submitMessage)
                         .frame(height: textHeight)
@@ -176,7 +176,7 @@ struct MessageInputView: View {
                                      placeholderText: Self.placeholderText,
                                      shouldFocusInput: viewModel.shouldFocusInput,
                                      isLoading: viewModel.isLoading,
-                                     onEditingBegan: stopDictationForKeyboard,
+                                     onEditingBegan: handleComposerEditingBegan,
                                      onFocusHandled: { viewModel.shouldFocusInput = false },
                                      onSendMessage: submitMessage)
                         .frame(height: textHeight)
@@ -436,6 +436,11 @@ struct MessageInputView: View {
         let visibleDraft = messageText
         dictationService.cancel(preservingDraft: visibleDraft)
         messageText = visibleDraft
+    }
+
+    private func handleComposerEditingBegan() {
+        HapticFeedback.trigger(.composerFocused)
+        stopDictationForKeyboard()
     }
 
     private func handleComposerAction() {

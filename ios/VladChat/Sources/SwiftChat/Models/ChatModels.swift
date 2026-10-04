@@ -364,6 +364,7 @@ enum HapticFeedback {
         case error
         case success
         case turnSubmitted
+        case composerFocused
         case dictationStarted
         case toolOutputStarted
         case trimCompleted
@@ -383,6 +384,8 @@ enum HapticFeedback {
             UINotificationFeedbackGenerator().notificationOccurred(.success)
         case .dictationStarted:
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        case .composerFocused:
+            UIImpactFeedbackGenerator(style: .soft).impactOccurred()
         case .toolOutputStarted:
             UIImpactFeedbackGenerator(style: .soft).impactOccurred()
         case .computerHandoffRequested:
