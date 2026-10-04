@@ -168,7 +168,7 @@ final class ComputerUseSessionController: NSObject, ObservableObject, WKNavigati
         window.vladVNC = {
           pointer: (x, y, mask) => report('Pointer: ' + x + ', ' + y + ', ' + mask),
           key: (keysym, code, down) => report('Key: ' + code + ', ' + down),
-          text: value => report('Text: ' + value),
+          text: value => report('Text: ' + (value === ' ' ? '[space]' : value)),
           fit: () => report('Fit applied')
         };
         window.webkit.messageHandlers.vnc.postMessage({type:'connected'});
@@ -559,6 +559,10 @@ struct RemoteKey: Identifiable {
         .init(label: "→", code: "ArrowRight", keysym: 0xFF53),
         .init(label: "↵", code: "Enter", keysym: 0xFF0D),
     ]
+
+    static let landscapeShortcuts = accessory.filter {
+        ["Escape", "Tab", "ControlLeft", "AltLeft", "ArrowLeft", "ArrowUp", "ArrowDown", "ArrowRight"].contains($0.code)
+    }
 
     static let backspace = RemoteKey(label: "Delete", code: "Backspace", keysym: 0xFF08)
 }
@@ -1109,60 +1113,112 @@ struct ComputerUseInspectorScreen: View {
     @State private var keyboardFocusRequest = 0
     @State private var keyboardRequested = true
     @State private var keyboardIsVisible = false
+    @State private var landscapeKeyboardHidden = false
+    @State private var landscapeFullscreen = false
 
     var body: some View {
         GeometryReader { geometry in
             let compactHeight = verticalSizeClass == .compact
+            let landscapeKeyboardVisible = compactHeight && !landscapeKeyboardHidden
+            let fullscreen = compactHeight && landscapeFullscreen
             // Changing layouts preserves the preview's identity and WKWebView.
             // In landscape the keyboard must not push a vertical controls stack
             // into the remote screen's entire remaining height.
             let layout = compactHeight
-                ? AnyLayout(HStackLayout(alignment: .top, spacing: 12))
+                ? AnyLayout(HStackLayout(alignment: .center, spacing: fullscreen ? 0 : 16))
                 : AnyLayout(VStackLayout(spacing: 0))
             layout {
-                ComputerInspectorPreview(controller: controller)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                ComputerInspectorInputPanel(
-                    controller: controller,
-                    text: $remoteText,
-                    isFocused: $textFocused,
-                    keyboardIsVisible: keyboardIsVisible,
-                    compactHeight: compactHeight
-                ) {
-                    if keyboardIsVisible {
-                        keyboardRequested = false
-                        keyboardIsVisible = false
-                        textFocused = false
-                    } else {
-                        keyboardRequested = true
-                        keyboardIsVisible = true
-                        keyboardFocusRequest += 1
+                VStack(spacing: compactHeight ? 12 : 0) {
+                    ComputerInspectorPreview(controller: controller)
+                    if compactHeight && !fullscreen {
+                        ComputerInspectorControls(
+                            controller: controller,
+                            keyboardIsVisible: landscapeKeyboardVisible,
+                            compact: true,
+                            focusKeyboard: toggleKeyboard,
+                            enterFullscreen: {
+                                controller.releaseKeyboardModifiers()
+                                landscapeFullscreen = true
+                            }
+                        )
+                        if (controller.state.canSendInput && !controller.canControl) || controller.inputErrorMessage != nil {
+                            ComputerInspectorInputStatus(controller: controller)
+                        }
                     }
                 }
-                .frame(width: compactHeight ? min(300, geometry.size.width * 0.4) : nil)
+                .frame(maxWidth: .infinity)
+                .overlay(alignment: .topLeading) {
+                    if compactHeight && !fullscreen {
+                        Button {
+                            textFocused = false
+                            controller.collapse()
+                        } label: {
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 15, weight: .semibold))
+                                .frame(width: 44, height: 44)
+                                .contentShape(Circle())
+                                .background(.ultraThinMaterial, in: Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Collapse to preview")
+                        .padding(8)
+                    }
+                }
+                if !compactHeight || (landscapeKeyboardVisible && !fullscreen) {
+                    ComputerInspectorInputPanel(
+                        controller: controller,
+                        text: $remoteText,
+                        isFocused: $textFocused,
+                        keyboardIsVisible: compactHeight ? landscapeKeyboardVisible : keyboardIsVisible,
+                        compactHeight: compactHeight,
+                        toggleKeyboard: toggleKeyboard
+                    )
+                    .frame(width: compactHeight ? min(390, geometry.size.width * 0.46) : nil)
+                }
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if fullscreen {
+                    Button { landscapeFullscreen = false } label: {
+                        Image(systemName: "arrow.down.right.and.arrow.up.left")
+                            .font(.system(size: 17, weight: .medium))
+                            .frame(width: 44, height: 44)
+                            .background(.regularMaterial, in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Restore previous layout")
+                    .accessibilityIdentifier("computerRestoreLayout")
+                    .padding(.trailing, max(geometry.safeAreaInsets.trailing, 12))
+                    .padding(.bottom, max(geometry.safeAreaInsets.bottom, 12))
+                }
             }
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, landscapeFullscreen && verticalSizeClass == .compact ? 0 : 12)
+        .padding(.vertical, verticalSizeClass == .compact && !landscapeFullscreen ? 8 : 0)
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            ComputerInspectorKeyAccessory(controller: controller)
+            if verticalSizeClass != .compact {
+                ComputerInspectorKeyAccessory(controller: controller)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(uiColor: .systemBackground))
+        .ignoresSafeArea(.container, edges: landscapeFullscreen && verticalSizeClass == .compact ? .all : [])
         .navigationTitle("Computer")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar(verticalSizeClass == .compact ? .hidden : .visible, for: .navigationBar)
         .tint(.primary)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    textFocused = false
-                    controller.collapse()
-                } label: {
-                    Image(systemName: "chevron.down")
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
+                if verticalSizeClass != .compact {
+                    Button {
+                        textFocused = false
+                        controller.collapse()
+                    } label: {
+                        Image(systemName: "chevron.down")
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .accessibilityLabel("Collapse to preview")
                 }
-                .accessibilityLabel("Collapse to preview")
             }
         }
         .task(id: keyboardFocusRequest) {
@@ -1174,21 +1230,30 @@ struct ComputerUseInspectorScreen: View {
                 return
             }
             guard controller.presentation == .inspector, scenePhase == .active else { return }
-            textFocused = keyboardRequested && controller.canControl && controller.state.canSendInput
+            textFocused = verticalSizeClass != .compact && keyboardRequested && controller.canControl && controller.state.canSendInput
             controller.finishInspectorExpansion()
         }
         .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
             guard UIDevice.current.orientation.isValidInterfaceOrientation else { return }
-            // Let rotation dismiss the software keyboard; the Keyboard control can reopen it.
-            keyboardRequested = false
-            keyboardIsVisible = false
             textFocused = false
+            if UIDevice.current.orientation.isLandscape {
+                // The app-owned keyboard replaces iOS input in landscape.
+                keyboardRequested = false
+                landscapeKeyboardHidden = false
+                keyboardIsVisible = false
+            } else {
+                // Portrait retains the native keyboard, opened on demand.
+                keyboardRequested = false
+                keyboardIsVisible = false
+            }
             keyboardFocusRequest += 1
         }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+            guard verticalSizeClass != .compact else { return }
             keyboardIsVisible = true
         }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+            guard verticalSizeClass != .compact else { return }
             guard !keyboardRequested else { return }
             keyboardIsVisible = false
             textFocused = false
@@ -1197,29 +1262,59 @@ struct ComputerUseInspectorScreen: View {
             if presentation != .inspector { textFocused = false }
         }
         .onChange(of: textFocused) { _, focused in
-            keyboardIsVisible = focused
+            if verticalSizeClass != .compact { keyboardIsVisible = focused }
             if !focused && !keyboardRequested { controller.releaseKeyboardModifiers() }
+        }
+        .onChange(of: verticalSizeClass) { _, sizeClass in
+            landscapeFullscreen = false
+            textFocused = false
+            if sizeClass == .compact {
+                keyboardRequested = false
+                landscapeKeyboardHidden = false
+                keyboardIsVisible = false
+            } else {
+                keyboardRequested = false
+                keyboardIsVisible = false
+            }
+            keyboardFocusRequest += 1
         }
         .onChange(of: keyboardRequested) { _, requested in
             if !requested { controller.releaseKeyboardModifiers() }
         }
         .onChange(of: controller.canControl) { _, canControl in
-            textFocused = keyboardRequested && canControl && controller.state.canSendInput
+            textFocused = verticalSizeClass != .compact && keyboardRequested && canControl && controller.state.canSendInput
         }
         .onChange(of: controller.state) { _, state in
-            textFocused = keyboardRequested && controller.canControl && state.canSendInput
+            textFocused = verticalSizeClass != .compact && keyboardRequested && controller.canControl && state.canSendInput
         }
         .onChange(of: scenePhase) { _, phase in
             if phase != .active {
                 textFocused = false
                 controller.releaseKeyboardModifiers()
             } else {
-                textFocused = keyboardRequested && controller.canControl && controller.state.canSendInput
+                textFocused = verticalSizeClass != .compact && keyboardRequested && controller.canControl && controller.state.canSendInput
             }
         }
         .onDisappear {
             textFocused = false
             controller.releaseKeyboardModifiers()
+        }
+    }
+
+    private func toggleKeyboard() {
+        if verticalSizeClass == .compact {
+            landscapeKeyboardHidden.toggle()
+            keyboardRequested = false
+            textFocused = false
+            controller.releaseKeyboardModifiers()
+        } else if keyboardIsVisible {
+            keyboardRequested = false
+            keyboardIsVisible = false
+            textFocused = false
+        } else {
+            keyboardRequested = true
+            keyboardIsVisible = true
+            keyboardFocusRequest += 1
         }
     }
 }
@@ -1238,11 +1333,12 @@ private struct ComputerInspectorInputPanel: View {
             text: $text,
             isFocused: isFocused,
             keyboardIsVisible: keyboardIsVisible,
+            compactHeight: compactHeight,
             toggleKeyboard: toggleKeyboard
         )
         if compactHeight {
-            ScrollView { content }
-                .scrollDismissesKeyboard(.never)
+            content
+                .frame(maxHeight: .infinity, alignment: .center)
         } else {
             content
         }
@@ -1254,26 +1350,52 @@ private struct ComputerInspectorInputContent: View {
     @Binding var text: String
     var isFocused: FocusState<Bool>.Binding
     let keyboardIsVisible: Bool
+    let compactHeight: Bool
     let toggleKeyboard: () -> Void
 
     var body: some View {
-        VStack(spacing: 0) {
-            ComputerInspectorControls(
-                controller: controller,
-                keyboardIsVisible: keyboardIsVisible,
-                focusKeyboard: toggleKeyboard
-            )
-            .padding(.top, 8)
+        ZStack(alignment: .topLeading) {
+            if !compactHeight {
+                ComputerInspectorTextInputProxy(
+                    controller: controller,
+                    text: $text,
+                    isFocused: isFocused
+                )
+            }
+
+            VStack(spacing: 0) {
+                if !compactHeight {
+                    ComputerInspectorControls(
+                        controller: controller,
+                        keyboardIsVisible: keyboardIsVisible,
+                        focusKeyboard: toggleKeyboard
+                    )
+                    .padding(.top, 8)
+                }
+                if !compactHeight {
+                    ComputerInspectorInputStatus(controller: controller)
+                }
+                if compactHeight && keyboardIsVisible {
+                    ComputerInspectorLandscapeKeyboard(controller: controller)
+                }
+            }
+        }
+    }
+}
+
+private struct ComputerInspectorInputStatus: View {
+    @ObservedObject var controller: ComputerUseSessionController
+
+    var body: some View {
+        VStack(spacing: 6) {
             if controller.state.canSendInput && !controller.canControl {
                 Text("The agent is controlling this computer.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 12)
-                    .padding(.top, 6)
                     .accessibilityIdentifier("computerControlUnavailable")
             }
-            ComputerInspectorKeyboard(controller: controller, text: $text, isFocused: isFocused)
             ComputerInspectorInputFailure(controller: controller)
         }
     }
@@ -1330,33 +1452,42 @@ private struct ComputerInspectorPreview: View {
 private struct ComputerInspectorControls: View {
     @ObservedObject var controller: ComputerUseSessionController
     let keyboardIsVisible: Bool
+    var compact = false
     let focusKeyboard: () -> Void
+    var enterFullscreen: (() -> Void)?
 
     var body: some View {
-        HStack(spacing: 7) {
+        HStack(spacing: compact ? 0 : 7) {
             controlButton("cursorarrow.click", title: "Click") { controller.click() }
             controlButton("cursorarrow.click.2", title: "Right click") { controller.click(buttonMask: 4) }
-            controlButton("keyboard", title: "Keyboard", action: focusKeyboard)
+            controlButton("keyboard", title: "Keyboard", selected: keyboardIsVisible, action: focusKeyboard)
                 .accessibilityValue(keyboardIsVisible ? "Shown" : "Hidden")
-            controlButton("arrow.up.left.and.arrow.down.right", title: "Fit", requiresInputOwnership: false) {
+            controlButton("arrow.down.right.and.arrow.up.left", title: "Fit", requiresInputOwnership: false) {
                 controller.fitDesktop()
+                if compact { enterFullscreen?() }
             }
+            .accessibilityIdentifier(compact ? "computerFitFullscreen" : "computerFit")
         }
+        .padding(compact ? 4 : 0)
+        .modifier(ComputerInspectorControlBarMaterial(compact: compact))
+        .fixedSize(horizontal: compact, vertical: false)
     }
 
-    private func controlButton(_ symbol: String, title: String, requiresInputOwnership: Bool = true, action: @escaping () -> Void) -> some View {
+    private func controlButton(_ symbol: String, title: String, requiresInputOwnership: Bool = true, selected: Bool = false, action: @escaping () -> Void) -> some View {
         let isAvailable = controller.state.canSendInput && (!requiresInputOwnership || controller.canControl)
         return Button(action: action) {
-            VStack(spacing: 4) {
+            VStack(spacing: compact ? 2 : 4) {
                 Image(systemName: symbol).font(.system(size: 15, weight: .medium))
-                Text(title).font(.caption2).lineLimit(1)
+                Text(title).font(compact ? .system(size: 9) : .caption2).lineLimit(1)
             }
-            .frame(maxWidth: .infinity, minHeight: 48)
+            .frame(minWidth: compact ? 50 : nil, maxWidth: compact ? nil : .infinity, minHeight: compact ? 44 : 48)
+            .contentShape(Rectangle())
             .foregroundStyle(.primary)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .background(Color.primary.opacity(compact && selected ? 0.10 : 0), in: Capsule())
+            .background(compact ? AnyShapeStyle(.clear) : AnyShapeStyle(.regularMaterial), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+                    .strokeBorder(Color.primary.opacity(compact ? 0 : 0.08), lineWidth: 1)
             }
         }
         .buttonStyle(.plain)
@@ -1368,36 +1499,165 @@ private struct ComputerInspectorControls: View {
     }
 }
 
-private struct ComputerInspectorKeyboard: View {
+private struct ComputerInspectorControlBarMaterial: ViewModifier {
+    let compact: Bool
+
+    func body(content: Content) -> some View {
+        if compact {
+            if #available(iOS 26, *) {
+                content.glassEffect(.regular, in: Capsule())
+            } else {
+                content.background(.regularMaterial, in: Capsule())
+            }
+        } else {
+            content
+        }
+    }
+}
+
+private struct ComputerInspectorTextInputProxy: View {
     @ObservedObject var controller: ComputerUseSessionController
     @Binding var text: String
     var isFocused: FocusState<Bool>.Binding
 
     var body: some View {
-        VStack(spacing: 8) {
-            TextField("Type to computer", text: $text)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .focused(isFocused)
-                .onChange(of: text) { old, new in
-                    if new.hasPrefix(old) { controller.sendText(String(new.dropFirst(old.count))) }
-                    else if old.hasPrefix(new) {
-                        for _ in 0..<old.count - new.count { controller.sendSpecialKey(.backspace) }
-                    }
+        TextField("Type to computer", text: $text)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .focused(isFocused)
+            .onChange(of: text) { old, new in
+                if new.hasPrefix(old) { controller.sendText(String(new.dropFirst(old.count))) }
+                else if old.hasPrefix(new) {
+                    for _ in 0..<old.count - new.count { controller.sendSpecialKey(.backspace) }
                 }
-                .submitLabel(.return)
-                .onSubmit {
-                    controller.sendSpecialKey(.init(label: "Enter", code: "Enter", keysym: 0xFF0D))
-                    isFocused.wrappedValue = true
-                }
-                .textFieldStyle(.roundedBorder)
-                .disabled(!controller.canControl || !controller.state.canSendInput)
-                .opacity(controller.canControl && controller.state.canSendInput ? 1 : 0.42)
-                .accessibilityIdentifier("computerRemoteText")
+            }
+            .submitLabel(.return)
+            .onSubmit {
+                controller.sendSpecialKey(.init(label: "Enter", code: "Enter", keysym: 0xFF0D))
+                isFocused.wrappedValue = true
+            }
+            .textFieldStyle(.plain)
+            .disabled(!controller.canControl || !controller.state.canSendInput)
+            .frame(width: 1, height: 1)
+            .opacity(0.01)
+            .allowsHitTesting(false)
+            .accessibilityLabel("Type to computer")
+            .accessibilityIdentifier("computerRemoteText")
+    }
+}
 
+private struct ComputerInspectorLandscapeKeyboard: View {
+    @ObservedObject var controller: ComputerUseSessionController
+    @State private var shifted = false
+    @State private var symbols = false
+
+    private let letters = ["qwertyuiop", "asdfghjkl", "zxcvbnm"]
+    private let digits = Array("1234567890").map(String.init)
+    private let symbolsTopRow = ["!", "@", "#", "$", "%", "^", "&", "*"]
+    private let symbolsHomeRow = ["-", "_", "=", "+", "[", "]", "{", "}"]
+
+    private var inputEnabled: Bool { controller.canControl && controller.state.canSendInput }
+
+    var body: some View {
+        VStack(spacing: 5) {
+            HStack(spacing: 3) {
+                ForEach(RemoteKey.landscapeShortcuts) { key in
+                    Button { controller.sendSpecialKey(key) } label: {
+                        Text(key.label)
+                            .font(.system(size: 12, weight: .medium))
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                            .contentShape(Rectangle())
+                            .foregroundStyle(.primary)
+                            .background(
+                                controller.activeModifiers.contains(key.code)
+                                    ? Color.accentColor.opacity(0.25)
+                                    : Color.clear,
+                                in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!inputEnabled)
+                    .opacity(inputEnabled ? 1 : 0.42)
+                    .accessibilityValue(controller.activeModifiers.contains(key.code) ? "Pressed" : "Released")
+                    .accessibilityIdentifier("remoteKey_\(key.code)")
+                }
+            }
+            keyRow(symbols ? digits : Array(letters[0]).map(String.init))
+            keyRow(symbols ? symbolsTopRow : Array(letters[1]).map(String.init), inset: 10)
+            HStack(spacing: 3) {
+                utilityKey(shifted ? "Shift" : "⇧", id: "computerKeyboardShift") {
+                    shifted.toggle()
+                }
+                ForEach(Array((symbols ? symbolsHomeRow : Array(letters[2]).map(String.init)).enumerated()), id: \.offset) { _, value in
+                    characterKey(value, accessibilityID: "computerKey_\(value)")
+                }
+                utilityKey("⌫", id: "computerKeyboardBackspace") {
+                    controller.sendSpecialKey(.backspace)
+                }
+            }
+            HStack(spacing: 3) {
+                utilityKey(symbols ? "ABC" : "123", id: "computerKeyboardSymbols") {
+                    symbols.toggle()
+                }
+                characterKey(",", accessibilityID: "computerKey_comma")
+                utilityKey("Space", id: "computerKeyboardSpace") {
+                    controller.sendText(" ")
+                }
+                characterKey(".", accessibilityID: "computerKey_period")
+                utilityKey("↵", id: "computerKeyboardEnter") {
+                    controller.sendSpecialKey(.init(label: "Enter", code: "Enter", keysym: 0xFF0D))
+                }
+            }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 9)
+        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+
+    private func keyRow(_ values: [String], inset: CGFloat = 0) -> some View {
+        HStack(spacing: 3) {
+            ForEach(Array(values.enumerated()), id: \.offset) { _, value in
+                characterKey(value, accessibilityID: "computerKey_\(value)")
+            }
+        }
+        .padding(.horizontal, inset)
+    }
+
+    private func characterKey(_ value: String, accessibilityID: String) -> some View {
+        Button {
+            let output = shifted && !symbols ? value.uppercased() : value
+            controller.sendText(output)
+            if shifted { shifted = false }
+        } label: {
+            Text(shifted && !symbols ? value.uppercased() : value)
+                .font(.system(size: 17, weight: .medium, design: .rounded))
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .contentShape(Rectangle())
+                .foregroundStyle(.primary)
+                .background(Color(uiColor: .systemBackground), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(!inputEnabled)
+        .opacity(inputEnabled ? 1 : 0.42)
+        .accessibilityIdentifier(accessibilityID)
+    }
+
+    private func utilityKey(_ title: String, id: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 13, weight: .semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .contentShape(Rectangle())
+                .foregroundStyle(.primary)
+                .background(Color(uiColor: .tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(!inputEnabled)
+        .opacity(inputEnabled ? 1 : 0.42)
+        .accessibilityIdentifier(id)
     }
 }
 
