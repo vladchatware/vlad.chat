@@ -10,6 +10,51 @@ const modules = {
 };
 
 describe("agent run model-step retries", () => {
+  it("reuses the existing run for a repeated prompt request", async () => {
+    const t = convexTest(schema, modules);
+    const now = Date.now();
+    const userId = await t.run((ctx) =>
+      ctx.db.insert("users", { isAnonymous: true }),
+    );
+    await t.run((ctx) =>
+      ctx.db.insert("agentRuns", {
+        threadId: "thread-idempotent",
+        userId,
+        model: "test-model",
+        searchEnabled: false,
+        status: "running",
+        stepCount: 0,
+        attemptCount: 0,
+        createdAt: now,
+        updatedAt: now,
+      }),
+    );
+
+    const args = {
+      threadId: "thread-idempotent",
+      userId,
+      requestId: "request-1",
+      prompt: { role: "user" as const, content: "hello" },
+      model: "test-model",
+      searchEnabled: false,
+    };
+    const first = await t.run((ctx) =>
+      ctx.runMutation(internal.threads.createAgentRunWithPrompt, args),
+    );
+    const second = await t.run((ctx) =>
+      ctx.runMutation(internal.threads.createAgentRunWithPrompt, args),
+    );
+
+    expect(first.duplicate).toBe(false);
+    expect(second).toMatchObject({
+      runId: first.runId,
+      queued: true,
+      duplicate: true,
+    });
+    const runs = await t.run((ctx) => ctx.db.query("agentRuns").collect());
+    expect(runs).toHaveLength(2);
+  });
+
   it("advances attempts once and refuses retries after tool execution starts", async () => {
     const t = convexTest(schema, modules);
     const now = Date.now();

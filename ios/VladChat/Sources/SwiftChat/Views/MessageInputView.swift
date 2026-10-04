@@ -17,7 +17,11 @@ struct MessageInputView: View {
         static let defaultHeight: CGFloat = 72
         static let minimumHeight: CGFloat = 72
         static let maximumHeight: CGFloat = 180
+        static let controlGap: CGFloat = 8
+        static let controlEdgeInset: CGFloat = 8
     }
+
+    private static let placeholderText = "Message"
 
     @Binding var messageText: String
     @ObservedObject var viewModel: ChatViewModel
@@ -66,6 +70,9 @@ struct MessageInputView: View {
             }
             .onChange(of: dictationService.draftText) { _, text in
                 messageText = text
+            }
+            .onChange(of: isKeyboardVisible) { _, isVisible in
+                if isVisible { stopDictationForKeyboard() }
             }
             .onChange(of: dictationService.errorMessage) { _, message in
                 guard let message else { return }
@@ -123,9 +130,10 @@ struct MessageInputView: View {
 
                     CustomTextEditor(text: $messageText,
                                      textHeight: $textHeight,
-                                     placeholderText: viewModel.currentChat?.messages.isEmpty ?? true ? "Ask anything" : "Message",
+                                     placeholderText: Self.placeholderText,
                                      shouldFocusInput: viewModel.shouldFocusInput,
                                      isLoading: viewModel.isLoading,
+                                     onEditingBegan: stopDictationForKeyboard,
                                      onFocusHandled: { viewModel.shouldFocusInput = false },
                                      onSendMessage: submitMessage)
                         .frame(height: textHeight)
@@ -134,13 +142,14 @@ struct MessageInputView: View {
                         .accessibilityHint("Spoken words appear in this message field.")
 
                     HStack(spacing: 0) {
-                        HStack(spacing: 8) {
+                        HStack(spacing: 0) {
                             attachButton
                             modelPickerButton
                             webSearchButton
+                                .padding(.leading, Layout.controlGap)
                         }
-                        .padding(.leading, 8)
-                        Spacer(minLength: 8)
+                        .padding(.leading, Layout.controlEdgeInset)
+                        Spacer(minLength: Layout.controlGap)
                         composerActionButton
                     }
                     .padding(.vertical, 8)
@@ -164,9 +173,10 @@ struct MessageInputView: View {
 
                     CustomTextEditor(text: $messageText,
                                      textHeight: $textHeight,
-                                     placeholderText: viewModel.currentChat?.messages.isEmpty ?? true ? "Ask anything" : "Message",
+                                     placeholderText: Self.placeholderText,
                                      shouldFocusInput: viewModel.shouldFocusInput,
                                      isLoading: viewModel.isLoading,
+                                     onEditingBegan: stopDictationForKeyboard,
                                      onFocusHandled: { viewModel.shouldFocusInput = false },
                                      onSendMessage: submitMessage)
                         .frame(height: textHeight)
@@ -175,13 +185,14 @@ struct MessageInputView: View {
                         .accessibilityHint("Spoken words appear in this message field.")
 
                     HStack(spacing: 0) {
-                        HStack(spacing: 8) {
+                        HStack(spacing: 0) {
                             attachButton
                             modelPickerButton
                             webSearchButton
+                                .padding(.leading, Layout.controlGap)
                         }
-                        .padding(.leading, 8)
-                        Spacer(minLength: 8)
+                        .padding(.leading, Layout.controlEdgeInset)
+                        Spacer(minLength: Layout.controlGap)
                         composerActionButton
                     }
                     .padding(.vertical, 8)
@@ -209,71 +220,97 @@ struct MessageInputView: View {
             isDarkMode: isDarkMode,
             surfaceAlignment: .bottomTrailing
         ))
-        .padding(.trailing, 8)
-        .disabled(isAgentRunActionPending)
+        .padding(.trailing, Layout.controlEdgeInset)
+        .highPriorityGesture(
+            LongPressGesture(minimumDuration: 0.45)
+                .onEnded { _ in
+                    guard canSteerDraft else { return }
+                    steerDraft()
+                }
+        )
+        .disabled(
+            (isAgentRunActionPending && !hasDraftContent)
+                || viewModel.isQueueSubmissionPending
+                || viewModel.isSteeringAgentRun
+                || (isKeyboardVisible && !hasDraftContent && !hasActiveAgentRun && !canResumeAgentRun)
+        )
         .accessibilityLabel(composerActionLabel)
         .accessibilityValue(
-            viewModel.agentRunStatus == .stopRequested ? "Stopping run"
+            hasDraftContent && hasActiveAgentRun ? "Ready to queue"
+                : viewModel.agentRunStatus == .stopRequested ? "Stopping run"
                 : viewModel.agentRunStatus == .queued ? "Run queued"
                 : viewModel.isResumingAgentRun ? "Resuming run"
                 : canResumeAgentRun ? "Run paused"
+                : hasDraftContent ? "Ready to send"
                 : viewModel.agentRunStatus == .running ? "Run active"
                 : viewModel.isLoading ? "Generating"
                 : dictationService.isFinalizing ? "Finishing dictation"
                 : dictationService.isRecording ? "Dictating"
                 : dictationService.isStarting ? "Starting dictation"
-                : hasDraftContent ? "Ready to send" : "Draft empty"
+                : "Draft empty"
         )
         .accessibilityHint(composerActionHint)
         .accessibilityIdentifier(composerActionIdentifier)
     }
 
     private var composerActionSymbol: String {
-        if isAgentRunActionPending { return "ellipsis" }
+        if isAgentRunActionPending && !hasDraftContent { return "ellipsis" }
         if canResumeAgentRun { return "play.fill" }
-        if viewModel.agentRunStatus == .running || viewModel.isLoading { return "stop.fill" }
+        if hasDraftContent { return "arrow.up" }
         if dictationService.isRecording { return "stop.fill" }
-        if dictationService.isFinalizing || dictationService.isStarting { return "ellipsis" }
-        return hasDraftContent ? "arrow.up" : "mic.fill"
+        if dictationService.isFinalizing || dictationService.isStarting { return "stop.fill" }
+        if viewModel.agentRunStatus == .running || viewModel.isLoading { return "stop.fill" }
+        return "mic.fill"
     }
 
     private var composerActionLabel: String {
+        if hasDraftContent && hasActiveAgentRun { return "Queue message" }
         if viewModel.agentRunStatus == .stopRequested { return "Stopping run" }
         if viewModel.agentRunStatus == .queued { return "Run queued" }
         if viewModel.isResumingAgentRun { return "Resuming run" }
         if canResumeAgentRun { return "Resume run" }
-        if viewModel.agentRunStatus == .running { return "Stop run" }
-        if viewModel.isLoading { return "Stop generation" }
+        if hasDraftContent { return "Send message" }
         if dictationService.isRecording { return "Stop dictation" }
         if dictationService.isFinalizing { return "Finishing dictation" }
         if dictationService.isStarting { return "Starting dictation" }
-        return hasDraftContent ? "Send message" : "Start dictation"
+        if viewModel.agentRunStatus == .running { return "Stop run" }
+        if viewModel.isLoading { return "Stop generation" }
+        return "Start dictation"
     }
 
     private var composerActionHint: String {
+        if hasDraftContent && hasActiveAgentRun { return "Tap to add this message to the queue; press and hold to steer the active run" }
         if viewModel.agentRunStatus == .stopRequested { return "Saving this run's checkpoint" }
         if viewModel.agentRunStatus == .queued { return "This run is waiting to start" }
         if viewModel.isResumingAgentRun { return "Resuming from the saved checkpoint" }
         if canResumeAgentRun { return "Continues this run from its saved checkpoint" }
-        if viewModel.agentRunStatus == .running { return "Stops this run and saves its checkpoint" }
-        if viewModel.isLoading { return "Stops the response" }
+        if hasDraftContent {
+            return dictationService.isActive
+                ? "Sends the available transcript and stops dictation"
+                : "Sends your message"
+        }
         if dictationService.isRecording { return "Stops dictation and keeps the recognized text" }
         if dictationService.isFinalizing { return "Wait for the recognized text" }
         if dictationService.isStarting { return "Wait for dictation to start" }
-        return hasDraftContent ? "Sends your message" : "Starts speaking your message"
+        if viewModel.agentRunStatus == .running { return "Stops this run and saves its checkpoint" }
+        if viewModel.isLoading { return "Stops the response" }
+        if isKeyboardVisible { return "Dismiss the keyboard to start dictation" }
+        return "Starts speaking your message"
     }
 
     private var composerActionIdentifier: String {
-        if isAgentRunActionPending {
+        if isAgentRunActionPending && !hasDraftContent {
             return "agentRunPendingButton"
         }
         if canResumeAgentRun { return "resumeAgentRunButton" }
-        if viewModel.agentRunStatus == .running { return "stopAgentRunButton" }
-        if viewModel.isLoading { return "stopGenerationButton" }
+        if hasDraftContent && hasActiveAgentRun { return "queueMessageButton" }
+        if hasDraftContent { return "sendMessageButton" }
         if dictationService.isRecording { return "stopDictationButton" }
         if dictationService.isFinalizing { return "dictationFinalizingButton" }
         if dictationService.isStarting { return "dictationStartingButton" }
-        return hasDraftContent ? "sendMessageButton" : "dictationButton"
+        if viewModel.agentRunStatus == .running { return "stopAgentRunButton" }
+        if viewModel.isLoading { return "stopGenerationButton" }
+        return "dictationButton"
     }
 
     @ViewBuilder
@@ -311,6 +348,7 @@ struct MessageInputView: View {
             isDarkMode: isDarkMode,
             surfaceAlignment: .bottomLeading
         ))
+        .accessibilityIdentifier("composerAddAttachment")
         .disabled(viewModel.isLoading || viewModel.isProcessingAttachment)
     }
 
@@ -347,6 +385,7 @@ struct MessageInputView: View {
         }
         .accessibilityLabel("Choose model")
         .accessibilityValue(viewModel.currentModel.displayName)
+        .accessibilityIdentifier("modelPickerButton")
         .disabled(viewModel.isLoading)
     }
 
@@ -364,9 +403,55 @@ struct MessageInputView: View {
         )
     }
 
+    private var hasActiveAgentRun: Bool {
+        viewModel.agentRunStatus == .running
+            || viewModel.agentRunStatus == .stopRequested
+            || viewModel.agentRunStatus == .paused
+            || viewModel.agentRunStatus == .queued
+            || viewModel.isLoading
+    }
+
+    private var canSteerDraft: Bool {
+        hasDraftContent
+            && viewModel.pendingAttachments.isEmpty
+            && (viewModel.agentRunStatus == .running
+                || viewModel.agentRunStatus == .stopRequested
+                || viewModel.agentRunStatus == .paused)
+    }
+
+    private func steerDraft() {
+        let instruction = messageText
+        dictationService.cancel()
+        viewModel.steerAgentRun(instruction: instruction) {
+            messageText = ""
+            textHeight = Layout.defaultHeight
+            dismissKeyboard()
+        }
+    }
+
+    private func stopDictationForKeyboard() {
+        guard dictationService.isActive else { return }
+        let visibleDraft = messageText
+        dictationService.cancel(preservingDraft: visibleDraft)
+        messageText = visibleDraft
+    }
+
     private func handleComposerAction() {
         if isAgentRunActionPending {
+            if hasDraftContent && hasActiveAgentRun {
+                let draft = messageText
+                dictationService.cancel()
+                queueDraft(draft)
+            }
             return
+        } else if hasDraftContent {
+            let draft = messageText
+            dictationService.cancel()
+            if hasActiveAgentRun {
+                queueDraft(draft)
+            } else {
+                submitMessage(draft)
+            }
         } else if canResumeAgentRun {
             viewModel.resumeAgentRun()
         } else if viewModel.agentRunStatus == .running || viewModel.isLoading {
@@ -377,8 +462,8 @@ struct MessageInputView: View {
             return
         } else if dictationService.isStarting {
             dictationService.cancel()
-        } else if hasDraftContent {
-            submitMessage(messageText)
+        } else if isKeyboardVisible {
+            return
         } else {
             Task {
                 do {
@@ -389,6 +474,14 @@ struct MessageInputView: View {
                     }
                 }
             }
+        }
+    }
+
+    private func queueDraft(_ text: String) {
+        viewModel.queueMessage(text: text) {
+            messageText = ""
+            textHeight = Layout.defaultHeight
+            dismissKeyboard()
         }
     }
 
@@ -488,7 +581,7 @@ struct WebSearchToggleButton: View {
         .buttonStyle(ComposerIconButtonStyle(
             isProminent: isEnabled,
             isDarkMode: isDarkMode,
-            surfaceAlignment: .bottom
+            surfaceAlignment: .bottomLeading
         ))
         .accessibilityLabel("Web search")
         .accessibilityIdentifier(accessibilityIdentifier)
@@ -505,6 +598,7 @@ struct CustomTextEditor: UIViewRepresentable {
     var placeholderText: String
     var shouldFocusInput: Bool
     var isLoading: Bool
+    var onEditingBegan: () -> Void
     var onFocusHandled: () -> Void
     var onSendMessage: (String) -> Bool
 
@@ -626,6 +720,7 @@ struct CustomTextEditor: UIViewRepresentable {
 
         func textViewDidBeginEditing(_ textView: UITextView) {
             isEditing = true
+            parent.onEditingBegan()
             if textView.textColor == .lightGray {
                 textView.text = ""
                 textView.textColor = UIColor { tc in tc.userInterfaceStyle == .dark ? .white : .black }

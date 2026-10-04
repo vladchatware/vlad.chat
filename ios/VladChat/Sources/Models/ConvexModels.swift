@@ -331,10 +331,26 @@ enum AgentRunStatus: String, Decodable, Sendable {
 
 struct AgentRunState: Decodable, Sendable {
     let status: AgentRunStatus
+    let queuedRuns: [QueuedAgentRun]?
+}
+
+struct QueuedAgentRun: Decodable, Identifiable, Sendable {
+    let runId: String
+    let text: String
+    let attachmentCount: Double
+    let createdAt: Double
+
+    var id: String { runId }
 }
 
 struct ResumeThreadResult: Decodable, Sendable {
     let status: AgentRunStatus
+}
+
+struct SteerThreadResult: Decodable, Sendable {
+    let status: String
+    let runId: String
+    let steeringId: String
 }
 
 struct DeleteMobileMessagesResult: Decodable, Sendable {
