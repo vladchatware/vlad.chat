@@ -1464,11 +1464,9 @@ private struct ComputerInspectorControls: View {
                 .accessibilityValue(keyboardIsVisible ? "Shown" : "Hidden")
             controlButton("arrow.down.right.and.arrow.up.left", title: "Fit", requiresInputOwnership: false) {
                 controller.fitDesktop()
+                if compact { enterFullscreen?() }
             }
-            if let enterFullscreen {
-                controlButton("arrow.up.left.and.arrow.down.right", title: "Full screen", requiresInputOwnership: false, action: enterFullscreen)
-                    .accessibilityIdentifier("computerFullscreen")
-            }
+            .accessibilityIdentifier(compact ? "computerFitFullscreen" : "computerFit")
         }
         .padding(compact ? 4 : 0)
         .modifier(ComputerInspectorControlBarMaterial(compact: compact))
