@@ -62,6 +62,7 @@ final class NativeDictationService: ObservableObject {
 
             isStarting = false
             isRecording = true
+            HapticFeedback.trigger(.dictationStarted)
         } catch {
             isStarting = false
             if let systemDictation {

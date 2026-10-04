@@ -99,6 +99,48 @@ struct VladChatTests {
         #expect(result.queued == true)
     }
 
+    @Test func toolOutputHapticTransitionFiresOnceWhenOutputFirstAppears() {
+        let previous = ResponseActivity(phase: .tool, tools: [
+            responseTool(id: "search", status: .running, output: nil),
+        ])
+        let producingOutput = ResponseActivity(phase: .tool, tools: [
+            responseTool(id: "search", status: .running, output: "First result"),
+        ])
+
+        #expect(producingOutput.outputToolIDsStarting(comparedTo: previous) == ["search"])
+        #expect(producingOutput.outputToolIDsStarting(comparedTo: producingOutput).isEmpty)
+    }
+
+    @Test func handoffHapticTransitionFiresWhenHandoffAppears() {
+        let previous = ResponseActivity(phase: .tool, tools: [
+            responseTool(id: "handoff", status: .running, output: nil),
+        ])
+        let handoffOutput = #"{"ok":false,"op":"handoff","handoff":{"type":"computer_handoff","reason":"sso","message":"Sign in to continue.","requiresUser":true}}"#
+        let needsUser = ResponseActivity(phase: .tool, tools: [
+            responseTool(id: "handoff", status: .completed, output: handoffOutput),
+        ])
+
+        #expect(needsUser.handoffToolIDsRequested(comparedTo: previous) == ["handoff"])
+        #expect(needsUser.handoffToolIDsRequested(comparedTo: needsUser).isEmpty)
+    }
+
+    private func responseTool(
+        id: String,
+        status: ResponseTool.Status,
+        output: String?
+    ) -> ResponseTool {
+        ResponseTool(
+            id: id,
+            name: "web_search",
+            status: status,
+            output: output,
+            title: nil,
+            inputSummary: nil,
+            outputTruncated: nil,
+            errorText: nil
+        )
+    }
+
     @Test func regeneratedResponseAcknowledgesReusedOrder() {
         for status in ["streaming", "success", "failed"] {
             let snapshot = generationSnapshot([

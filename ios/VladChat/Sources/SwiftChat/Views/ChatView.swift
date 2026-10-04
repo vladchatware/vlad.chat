@@ -47,7 +47,10 @@ struct ChatContainer: View {
                     isAccountPromptPresented: $isAccountPromptPresented,
                     showsCustomChatsButton: horizontalSizeClass == .compact,
                     onShowChats: showChats,
-                    onOpenAccount: { isAccountSheetPresented = true },
+                    onOpenAccount: {
+                        HapticFeedback.trigger(.vladPictureTapped)
+                        isAccountSheetPresented = true
+                    },
                     returnToChats: showChats
                 )
 
