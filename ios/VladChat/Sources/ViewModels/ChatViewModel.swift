@@ -31,6 +31,7 @@ final class ChatViewModel: ObservableObject {
     @Published var account: MobileAccount?
     @Published var usageSummary: MobileUsageSummary?
     @Published private(set) var agentRunStatus: AgentRunStatus?
+    @Published private(set) var agentRunStatusPresentation: AgentRunStatusPresentation?
     @Published private(set) var isResumingAgentRun = false
     @Published var isLinkingAccount = false
     @Published var isLoggingOut = false
@@ -397,6 +398,7 @@ final class ChatViewModel: ObservableObject {
             agentRunSubscriptionTask?.cancel()
             agentRunSubscriptionThreadId = nil
             agentRunStatus = nil
+            agentRunStatusPresentation = nil
             await client.logout()
             do {
                 if case .failure(let error) = await client.login() {
@@ -472,6 +474,7 @@ final class ChatViewModel: ObservableObject {
         agentRunSubscriptionTask?.cancel()
         agentRunSubscriptionThreadId = nil
         agentRunStatus = nil
+        agentRunStatusPresentation = nil
         presentationTask?.cancel()
         presentationTask = nil
         presentationTaskID = nil
@@ -736,6 +739,7 @@ final class ChatViewModel: ObservableObject {
         agentRunSubscriptionTask = nil
         agentRunSubscriptionThreadId = threadId
         agentRunStatus = nil
+        agentRunStatusPresentation = nil
         guard let threadId else { return }
 
         agentRunSubscriptionTask = Task { [weak self] in
@@ -751,6 +755,7 @@ final class ChatViewModel: ObservableObject {
                         guard !Task.isCancelled else { return }
                         guard self?.agentRunSubscriptionThreadId == threadId else { return }
                         self?.agentRunStatus = state?.status
+                        self?.agentRunStatusPresentation = AgentRunStatusPresentation(state: state)
                         retryDelay = 1_000_000_000
                         if self?.attachmentError?.hasPrefix("Run state sync failed:") == true {
                             self?.attachmentError = nil
@@ -759,9 +764,12 @@ final class ChatViewModel: ObservableObject {
                 } catch {
                     guard !Task.isCancelled else { return }
                     guard self?.agentRunSubscriptionThreadId == threadId else { return }
+                    self?.agentRunStatusPresentation = self?.agentRunStatusPresentation?.markingStatusUnavailable()
                     self?.attachmentError = "Run state sync failed: \(Self.userFacingMessage(for: error))"
                 }
                 guard !Task.isCancelled else { return }
+                guard self?.agentRunSubscriptionThreadId == threadId else { return }
+                self?.agentRunStatusPresentation = self?.agentRunStatusPresentation?.markingStatusUnavailable()
                 try? await Task.sleep(nanoseconds: retryDelay)
                 retryDelay = min(retryDelay * 2, 30_000_000_000)
             }

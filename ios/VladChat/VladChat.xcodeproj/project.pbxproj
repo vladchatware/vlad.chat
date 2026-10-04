@@ -47,6 +47,7 @@
 		C382D7548367E52154539082 /* MessageTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0406B54D2766858ED20F26 /* MessageTableView.swift */; };
 		C6F8221993C3AB2EDB609478 /* WebSearchBox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DB20BBFDEF8331C24836A3E /* WebSearchBox.swift */; };
 		D00D00000000000000000101 /* ActivityCardStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00D00000000000000000001 /* ActivityCardStyle.swift */; };
+		D00D00000000000000000105 /* AgentRunStatusPill.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00D00000000000000000005 /* AgentRunStatusPill.swift */; };
 		D00D00000000000000000102 /* ComputerUseBox.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00D00000000000000000002 /* ComputerUseBox.swift */; };
 		D00D00000000000000000104 /* ComputerUseViewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00D00000000000000000004 /* ComputerUseViewer.swift */; };
 		D00D00000000000000000103 /* ComputerUseModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00D00000000000000000003 /* ComputerUseModels.swift */; };
@@ -121,6 +122,7 @@
 		D00D00000000000000000002 /* ComputerUseBox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComputerUseBox.swift; sourceTree = "<group>"; };
 		D00D00000000000000000003 /* ComputerUseModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComputerUseModels.swift; sourceTree = "<group>"; };
 		D00D00000000000000000004 /* ComputerUseViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComputerUseViewer.swift; sourceTree = "<group>"; };
+		D00D00000000000000000005 /* AgentRunStatusPill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunStatusPill.swift; sourceTree = "<group>"; };
 		D47BDA3E80D5E451FF8E14C4 /* ChatListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatListView.swift; sourceTree = "<group>"; };
 		D4FABECF89A5967AC65716A9 /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
 		DC53ED69F2C352CC8F38D72E /* VladChatUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = VladChatUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -165,6 +167,7 @@
 		0CC096B9336F3D70FB955C53 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				D00D00000000000000000005 /* AgentRunStatusPill.swift */,
 				D00D00000000000000000001 /* ActivityCardStyle.swift */,
 				B11C62DE641D0FEA1C0A3A31 /* AttachmentPreviewBar.swift */,
 				A22C39F702AD1937842D4BD6 /* CameraPickerView.swift */,
@@ -524,6 +527,7 @@
 				1C3B74DCF5BF097B46AFCA34 /* ChatView.swift in Sources */,
 				A1B2C3D4E5F60718293A4B5C /* InferenceStateGallery.swift in Sources */,
 				D00D00000000000000000101 /* ActivityCardStyle.swift in Sources */,
+				D00D00000000000000000105 /* AgentRunStatusPill.swift in Sources */,
 				D00D00000000000000000102 /* ComputerUseBox.swift in Sources */,
 				D00D00000000000000000104 /* ComputerUseViewer.swift in Sources */,
 				D00D00000000000000000103 /* ComputerUseModels.swift in Sources */,

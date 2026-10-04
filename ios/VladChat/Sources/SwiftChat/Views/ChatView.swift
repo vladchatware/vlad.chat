@@ -18,12 +18,18 @@ struct ChatContainer: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @EnvironmentObject private var viewModel: ChatViewModel
 
+    private let agentRunStatusOverride: AgentRunStatusPresentation?
+
     @State private var messageText = ""
     @State private var isAccountPromptPresented = false
     @State private var isAccountSheetPresented = false
     @State private var selectedThreadID: String?
     @State private var columnVisibility = NavigationSplitViewVisibility.automatic
     @State private var computerViewerPresentation: ComputerViewerPresentation = .hidden
+
+    init(agentRunStatusOverride: AgentRunStatusPresentation? = nil) {
+        self.agentRunStatusOverride = agentRunStatusOverride
+    }
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
@@ -36,6 +42,7 @@ struct ChatContainer: View {
                     isDarkMode: colorScheme == .dark,
                     isLoading: viewModel.isLoading,
                     viewModel: viewModel,
+                    agentRunStatusOverride: agentRunStatusOverride,
                     messageText: $messageText,
                     isAccountPromptPresented: $isAccountPromptPresented,
                     showsCustomChatsButton: horizontalSizeClass == .compact,
@@ -162,24 +169,45 @@ private struct ChatCanvasColumn: View {
     let isDarkMode: Bool
     let isLoading: Bool
     @ObservedObject var viewModel: ChatViewModel
+    let agentRunStatusOverride: AgentRunStatusPresentation?
     @Binding var messageText: String
     @Binding var isAccountPromptPresented: Bool
     let showsCustomChatsButton: Bool
     let onShowChats: () -> Void
     let onOpenAccount: () -> Void
     let returnToChats: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var agentRunPresentation: AgentRunStatusPresentation? {
+        agentRunStatusOverride ?? viewModel.agentRunStatusPresentation
+    }
 
     var body: some View {
         NavigationStack {
-            ChatListView(
-                isDarkMode: isDarkMode,
-                isLoading: isLoading,
-                viewModel: viewModel,
-                messageText: $messageText,
-                isAccountPromptPresented: $isAccountPromptPresented
-            )
-            .background(Color.chatBackground(isDarkMode: isDarkMode))
-            .ignoresSafeArea(edges: .top)
+            VStack(spacing: 0) {
+                if let presentation = agentRunPresentation {
+                    HStack {
+                        AgentRunStatusPill(presentation: presentation)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 7)
+                    .transition(.opacity)
+                }
+
+                ChatListView(
+                    isDarkMode: isDarkMode,
+                    isLoading: isLoading,
+                    viewModel: viewModel,
+                    messageText: $messageText,
+                    isAccountPromptPresented: $isAccountPromptPresented
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .background {
+                Color.chatBackground(isDarkMode: isDarkMode)
+                    .ignoresSafeArea(edges: .top)
+            }
             .tint(isDarkMode ? .white : .black)
             .navigationBarTitleDisplayMode(.inline)
             .navigationBarBackButtonHidden(true)
@@ -207,6 +235,10 @@ private struct ChatCanvasColumn: View {
                 }
             }
             .simultaneousGesture(returnToChatsGesture)
+            .animation(
+                reduceMotion ? nil : .easeInOut(duration: 0.18),
+                value: agentRunPresentation != nil
+            )
         }
     }
 

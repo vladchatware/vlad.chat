@@ -330,7 +330,62 @@ enum AgentRunStatus: String, Decodable, Sendable {
 }
 
 struct AgentRunState: Decodable, Sendable {
+    let runId: String?
     let status: AgentRunStatus
+    let stepCount: Int?
+    let inFlightPhase: String?
+}
+
+enum AgentRunStatusPresentationPhase: String, Equatable, Sendable {
+    case starting
+    case running
+    case executing
+    case stopping
+    case paused
+    case statusUnavailable
+}
+
+struct AgentRunStatusPresentation: Equatable, Sendable {
+    let runId: String
+    let phase: AgentRunStatusPresentationPhase
+    let stepCount: Int?
+
+    init?(state: AgentRunState?) {
+        guard let state, let runId = state.runId, !runId.isEmpty else { return nil }
+
+        let stepCount = state.stepCount.flatMap { $0 > 0 ? $0 : nil }
+        let phase: AgentRunStatusPresentationPhase
+        switch state.status {
+        case .running:
+            if state.inFlightPhase == "tool" {
+                phase = .executing
+            } else if state.inFlightPhase == "model" || stepCount != nil {
+                phase = .running
+            } else {
+                phase = .starting
+            }
+        case .stopRequested:
+            phase = .stopping
+        case .paused:
+            phase = .paused
+        case .queued, .completed, .failed, .idle, .unknown:
+            return nil
+        }
+
+        self.runId = runId
+        self.phase = phase
+        self.stepCount = stepCount
+    }
+
+    init(runId: String, phase: AgentRunStatusPresentationPhase, stepCount: Int?) {
+        self.runId = runId
+        self.phase = phase
+        self.stepCount = stepCount
+    }
+
+    func markingStatusUnavailable() -> Self {
+        Self(runId: runId, phase: .statusUnavailable, stepCount: nil)
+    }
 }
 
 struct ResumeThreadResult: Decodable, Sendable {
