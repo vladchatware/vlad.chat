@@ -25,6 +25,17 @@ struct VladChatApp: App {
         ProcessInfo.processInfo.arguments.contains("--ui-test-thread-sync-scroll")
     }
 
+    private var agentRunStatusPillUITestPresentation: AgentRunStatusPresentation? {
+        guard ProcessInfo.processInfo.arguments.contains("--ui-test-agent-status-pill") else {
+            return nil
+        }
+        return AgentRunStatusPresentation(
+            runId: "ui-test-run",
+            phase: .executing,
+            stepCount: 4
+        )
+    }
+
     private var computerUseE2EScenario: ComputerUseE2EHarnessView.Scenario? {
         if ProcessInfo.processInfo.arguments.contains("--ui-test-computer-sandbox-failure") {
             return .sandboxResumeFailure
@@ -58,6 +69,9 @@ struct VladChatApp: App {
                     .environmentObject(chat)
             } else if isThinkingLabelUITest {
                 ThinkingLabelE2EView(viewModel: chat)
+            } else if let agentRunStatusPillUITestPresentation {
+                ChatContainer(agentRunStatusOverride: agentRunStatusPillUITestPresentation)
+                    .environmentObject(chat)
             } else if isInferenceGalleryUITest {
                 InferenceStateGallery()
             } else if let computerUseE2EScenario {

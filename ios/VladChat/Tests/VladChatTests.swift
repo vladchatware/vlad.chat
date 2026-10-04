@@ -3,6 +3,51 @@ import Testing
 @testable import VladChat
 
 struct VladChatTests {
+    @Test func agentRunStatusPresentationProjectsActivePhasesAndHidesTerminalStates() throws {
+        let cases: [(String, AgentRunStatusPresentationPhase?)] = [
+            (#"{"runId":"run","status":"running"}"#, .starting),
+            (#"{"runId":"run","status":"running","inFlightPhase":"model"}"#, .running),
+            (#"{"runId":"run","status":"running","inFlightPhase":"tool","stepCount":3}"#, .executing),
+            (#"{"runId":"run","status":"running","stepCount":2}"#, .running),
+            (#"{"runId":"run","status":"stopRequested"}"#, .stopping),
+            (#"{"runId":"run","status":"paused"}"#, .paused),
+            (#"{"runId":"run","status":"queued"}"#, nil),
+            (#"{"runId":"run","status":"completed"}"#, nil),
+            (#"{"runId":"run","status":"failed"}"#, nil),
+            (#"{"runId":"run","status":"idle"}"#, nil),
+            (#"{"runId":"run","status":"new-server-state"}"#, nil),
+            (#"{"status":"running"}"#, nil),
+        ]
+
+        for (payload, expectedPhase) in cases {
+            let state = try JSONDecoder().decode(AgentRunState.self, from: Data(payload.utf8))
+            #expect(AgentRunStatusPresentation(state: state)?.phase == expectedPhase)
+        }
+    }
+
+    @Test func unavailableAgentRunStatusDropsStepCountAndPreservesRunIdentity() throws {
+        let payload = #"{"runId":"run","status":"running","stepCount":4}"#
+        let state = try JSONDecoder().decode(AgentRunState.self, from: Data(payload.utf8))
+        let confirmed = try #require(AgentRunStatusPresentation(state: state))
+
+        let unavailable = confirmed.markingStatusUnavailable()
+
+        #expect(unavailable.runId == "run")
+        #expect(unavailable.phase == .statusUnavailable)
+        #expect(unavailable.stepCount == nil)
+        #expect(AgentRunStatusPresentation(state: state) == confirmed)
+    }
+
+    @Test func agentRunStatusStepCountMustBePositive() throws {
+        for value in [0, -1] {
+            let payload = """
+            {"runId":"run","status":"running","stepCount":\(value)}
+            """
+            let state = try JSONDecoder().decode(AgentRunState.self, from: Data(payload.utf8))
+            #expect(AgentRunStatusPresentation(state: state)?.stepCount == nil)
+        }
+    }
+
     @Test func jumpToBottomButtonUsesSeparateShowAndHideThresholds() {
         #expect(!TranscriptScrollPolicy.shouldShowJumpToBottom(
             distanceFromBottom: 200,
