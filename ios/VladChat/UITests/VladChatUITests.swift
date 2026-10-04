@@ -569,7 +569,7 @@ final class VladChatUITests: XCTestCase {
         XCTAssertEqual(control.value as? String, "Released")
     }
 
-    func testInspectorControlsReachViewerAndKeyboardStaysHiddenAfterRotation() {
+    func testInspectorUsesDirectLandscapeKeyboardWithoutSystemKeyboard() {
         app.launchArguments = ["--ui-test-computer-viewer"]
         XCUIDevice.shared.orientation = .portrait
         defer { XCUIDevice.shared.orientation = .portrait }
@@ -609,12 +609,22 @@ final class VladChatUITests: XCTestCase {
         let keyboardHidden = NSPredicate { _, _ in !self.app.keyboards.firstMatch.exists }
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: keyboardHidden, object: nil)], timeout: 5), .completed)
         XCUIDevice.shared.orientation = .landscapeLeft
-        XCTAssertEqual(keyboard.value as? String, "Hidden")
-        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: keyboardHidden, object: nil)], timeout: 5), .completed)
-        XCTAssertTrue(desktop.exists)
-        keyboard.tap()
-        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        let landscapeKeyboardKey = app.buttons["computerKey_q"]
+        XCTAssertTrue(landscapeKeyboardKey.waitForExistence(timeout: 5), "Landscape should show the app-owned keyboard beside the remote screen")
         XCTAssertEqual(keyboard.value as? String, "Shown")
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: keyboardHidden, object: nil)], timeout: 5), .completed)
+        XCTAssertFalse(app.textFields["computerRemoteText"].exists, "Landscape typing must not require a dedicated text field")
+        XCTAssertTrue(desktop.exists)
+        landscapeKeyboardKey.tap()
+        assertReceived("Text: q")
+        app.buttons["computerKeyboardSpace"].tap()
+        assertReceived("Text: [space]")
+        keyboard.tap()
+        XCTAssertFalse(landscapeKeyboardKey.exists, "The Keyboard control should reclaim landscape screen space")
+        XCTAssertFalse(app.keyboards.firstMatch.exists, "The app-owned keyboard must not open iOS keyboard")
+        XCTAssertEqual(keyboard.value as? String, "Hidden")
+        keyboard.tap()
+        XCTAssertTrue(landscapeKeyboardKey.waitForExistence(timeout: 5))
     }
 
     func testInspectorExplainsAndDisablesControlsWhileAgentOwnsComputer() {
@@ -665,18 +675,26 @@ final class VladChatUITests: XCTestCase {
             XCTAssertTrue(app.buttons["Click"].isHittable)
             XCTAssertGreaterThan(desktop.frame.height, 0)
 
+            let isLandscape = orientation.isLandscape
+            let customKeyboardKey = app.buttons["computerKey_q"]
             let keyboardSettled = NSPredicate { _, _ in
-                let isVisible = self.app.keyboards.firstMatch.exists
-                let expectedValue = isVisible ? "Shown" : "Hidden"
-                return keyboard.value as? String == expectedValue
+                let isVisible = isLandscape ? customKeyboardKey.exists : self.app.keyboards.firstMatch.exists
+                return keyboard.value as? String == (isVisible ? "Shown" : "Hidden")
             }
             XCTAssertEqual(
                 XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: keyboardSettled, object: nil)], timeout: 5),
                 .completed,
-                "The Keyboard control should reflect whether iOS kept the software keyboard open"
+                "The Keyboard control should reflect the keyboard used in the current orientation"
             )
 
-            if app.keyboards.firstMatch.exists {
+            if isLandscape {
+                XCTAssertTrue(customKeyboardKey.exists)
+                XCTAssertFalse(app.keyboards.firstMatch.exists)
+                keyboard.tap()
+                XCTAssertFalse(customKeyboardKey.exists)
+                XCTAssertFalse(app.keyboards.firstMatch.exists)
+                XCTAssertEqual(keyboard.value as? String, "Hidden")
+            } else if app.keyboards.firstMatch.exists {
                 XCTAssertLessThanOrEqual(desktop.frame.maxY, escape.frame.minY)
                 XCTAssertLessThanOrEqual(escape.frame.maxY, app.keyboards.firstMatch.frame.minY)
                 keyboard.tap()
@@ -687,7 +705,12 @@ final class VladChatUITests: XCTestCase {
             }
 
             keyboard.tap()
-            XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5), "The Keyboard control must reopen the software keyboard")
+            if isLandscape {
+                XCTAssertTrue(customKeyboardKey.waitForExistence(timeout: 5), "The Keyboard control must reopen the app-owned keyboard")
+                XCTAssertFalse(app.keyboards.firstMatch.exists)
+            } else {
+                XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5), "The Keyboard control must reopen the software keyboard")
+            }
             let keyboardShown = NSPredicate { _, _ in keyboard.value as? String == "Shown" }
             XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: keyboardShown, object: nil)], timeout: 5), .completed)
             XCTAssertTrue(desktop.exists)
@@ -728,14 +751,23 @@ final class VladChatUITests: XCTestCase {
             XCTAssertTrue(keyboard.isHittable, "The Keyboard control must remain available after rotation")
             XCTAssertGreaterThan(desktop.frame.height, 40, "The remote screen must retain usable space after rotation")
 
+            let isLandscape = orientation.isLandscape
+            let customKeyboardKey = app.buttons["computerKey_q"]
             let keyboardSettled = NSPredicate { _, _ in
-                let isVisible = self.app.keyboards.firstMatch.exists
-                let expectedValue = isVisible ? "Shown" : "Hidden"
-                return keyboard.value as? String == expectedValue
+                let isVisible = isLandscape ? customKeyboardKey.exists : self.app.keyboards.firstMatch.exists
+                return keyboard.value as? String == (isVisible ? "Shown" : "Hidden")
             }
             XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: keyboardSettled, object: nil)], timeout: 5), .completed)
 
-            if app.keyboards.firstMatch.exists {
+            if isLandscape {
+                XCTAssertTrue(customKeyboardKey.exists)
+                XCTAssertFalse(app.keyboards.firstMatch.exists)
+                app.buttons["computerKey_q"].tap()
+                let typed = desktop.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Text: q")).firstMatch
+                XCTAssertTrue(typed.waitForExistence(timeout: 5), "Landscape keyboard keys must reach the existing viewer")
+                keyboard.tap()
+                XCTAssertFalse(customKeyboardKey.exists)
+            } else if app.keyboards.firstMatch.exists {
                 keyboard.tap()
                 let keyboardHidden = NSPredicate { _, _ in !self.app.keyboards.firstMatch.exists }
                 XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: keyboardHidden, object: nil)], timeout: 5), .completed)
@@ -744,7 +776,12 @@ final class VladChatUITests: XCTestCase {
             }
 
             keyboard.tap()
-            XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5), "The Keyboard control must reopen the software keyboard")
+            if isLandscape {
+                XCTAssertTrue(customKeyboardKey.waitForExistence(timeout: 5), "The Keyboard control must reopen the app-owned keyboard")
+                XCTAssertFalse(app.keyboards.firstMatch.exists)
+            } else {
+                XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5), "The Keyboard control must reopen the software keyboard")
+            }
             let keyboardShown = NSPredicate { _, _ in keyboard.value as? String == "Shown" }
             XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: keyboardShown, object: nil)], timeout: 5), .completed)
             XCTAssertTrue(capture.exists)
