@@ -25,7 +25,7 @@ final class MessageTableViewController: UIViewController {
     }
     private let bottomBlur = UIVisualEffectView()
     private let bottomBlurMask = CAGradientLayer()
-    private var bottomBlurAnimator: UIViewPropertyAnimator?
+    private var isBottomBlurConfigured = false
 
     init(tableView: UITableView, composerTop: CGFloat?, isDarkMode: Bool) {
         self.tableView = tableView
@@ -63,7 +63,7 @@ final class MessageTableViewController: UIViewController {
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        guard #available(iOS 26, *), bottomBlurAnimator == nil else { return }
+        guard #available(iOS 26, *), !isBottomBlurConfigured else { return }
         // Configure the partial effect after attachment to its window; UIKit
         // can rebuild material effects when an unattached view first appears.
         let animator = UIViewPropertyAnimator(duration: 1, curve: .linear) { [bottomBlur] in
@@ -72,7 +72,11 @@ final class MessageTableViewController: UIViewController {
         animator.startAnimation()
         animator.pauseAnimation()
         animator.fractionComplete = 0.2
-        bottomBlurAnimator = animator
+        // Commit the partial material as a finished effect. Keeping a paused
+        // animator active makes UI automation wait indefinitely for idle.
+        animator.stopAnimation(false)
+        animator.finishAnimation(at: .current)
+        isBottomBlurConfigured = true
     }
 
     override func viewDidLayoutSubviews() {
@@ -111,12 +115,6 @@ final class MessageTableViewController: UIViewController {
         bottomBlurMask.frame = bottomBlur.bounds
         CATransaction.commit()
     }
-
-    func stopBottomBlurAnimations() {
-        bottomBlurAnimator?.stopAnimation(true)
-        bottomBlurAnimator = nil
-    }
-
 }
 
 struct MessageTableView: UIViewControllerRepresentable {
@@ -386,10 +384,6 @@ struct MessageTableView: UIViewControllerRepresentable {
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
-    }
-
-    static func dismantleUIViewController(_ controller: MessageTableViewController, coordinator: Coordinator) {
-        controller.stopBottomBlurAnimations()
     }
 
     class Coordinator: NSObject, UITableViewDelegate, UITableViewDataSource {
