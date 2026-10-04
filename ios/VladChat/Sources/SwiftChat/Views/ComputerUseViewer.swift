@@ -560,6 +560,10 @@ struct RemoteKey: Identifiable {
         .init(label: "↵", code: "Enter", keysym: 0xFF0D),
     ]
 
+    static let landscapeShortcuts = accessory.filter {
+        ["Escape", "Tab", "ControlLeft", "AltLeft", "ArrowLeft", "ArrowUp", "ArrowDown", "ArrowRight"].contains($0.code)
+    }
+
     static let backspace = RemoteKey(label: "Delete", code: "Backspace", keysym: 0xFF08)
 }
 
@@ -1123,6 +1127,23 @@ struct ComputerUseInspectorScreen: View {
                 : AnyLayout(VStackLayout(spacing: 0))
             layout {
                 ComputerInspectorPreview(controller: controller)
+                    .overlay(alignment: .topTrailing) {
+                        if compactHeight {
+                            Button {
+                                textFocused = false
+                                controller.collapse()
+                            } label: {
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .frame(width: 36, height: 36)
+                                    .contentShape(Circle())
+                                    .background(.ultraThinMaterial, in: Circle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Collapse to preview")
+                            .padding(8)
+                        }
+                    }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 ComputerInspectorInputPanel(
@@ -1151,24 +1172,29 @@ struct ComputerUseInspectorScreen: View {
         }
         .padding(.horizontal, 12)
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            ComputerInspectorKeyAccessory(controller: controller)
+            if verticalSizeClass != .compact {
+                ComputerInspectorKeyAccessory(controller: controller)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(uiColor: .systemBackground))
         .navigationTitle("Computer")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar(verticalSizeClass == .compact ? .hidden : .visible, for: .navigationBar)
         .tint(.primary)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    textFocused = false
-                    controller.collapse()
-                } label: {
-                    Image(systemName: "chevron.down")
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
+                if verticalSizeClass != .compact {
+                    Button {
+                        textFocused = false
+                        controller.collapse()
+                    } label: {
+                        Image(systemName: "chevron.down")
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .accessibilityLabel("Collapse to preview")
                 }
-                .accessibilityLabel("Collapse to preview")
             }
         }
         .task(id: keyboardFocusRequest) {
@@ -1269,8 +1295,8 @@ private struct ComputerInspectorInputPanel: View {
             toggleKeyboard: toggleKeyboard
         )
         if compactHeight {
-            ScrollView { content }
-                .scrollDismissesKeyboard(.never)
+            content
+                .frame(maxHeight: .infinity, alignment: .top)
         } else {
             content
         }
@@ -1443,24 +1469,42 @@ private struct ComputerInspectorLandscapeKeyboard: View {
 
     private let letters = ["qwertyuiop", "asdfghjkl", "zxcvbnm"]
     private let digits = Array("1234567890").map(String.init)
-    private let symbolRow = ["!", "@", "#", "$", "%", "&", "*", "(", ")", "-"]
+    private let symbolsTopRow = ["!", "@", "#", "$", "%", "^", "&", "*"]
+    private let symbolsHomeRow = ["-", "_", "=", "+", "[", "]", "{", "}"]
 
     private var inputEnabled: Bool { controller.canControl && controller.state.canSendInput }
 
     var body: some View {
         VStack(spacing: 5) {
             HStack(spacing: 3) {
-                ForEach(Array((symbols ? symbolRow : digits).enumerated()), id: \.offset) { _, value in
-                    characterKey(value, accessibilityID: "computerKey_\(value)")
+                ForEach(RemoteKey.landscapeShortcuts) { key in
+                    Button { controller.sendSpecialKey(key) } label: {
+                        Text(key.label)
+                            .font(.system(size: 12, weight: .medium))
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity, minHeight: 40)
+                            .foregroundStyle(.primary)
+                            .background(
+                                controller.activeModifiers.contains(key.code)
+                                    ? Color.accentColor.opacity(0.25)
+                                    : Color(uiColor: .tertiarySystemFill),
+                                in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!inputEnabled)
+                    .opacity(inputEnabled ? 1 : 0.42)
+                    .accessibilityValue(controller.activeModifiers.contains(key.code) ? "Pressed" : "Released")
+                    .accessibilityIdentifier("remoteKey_\(key.code)")
                 }
             }
-            keyRow(symbols ? ["+", "=", "_", ":", ";", "'", "\"", ",", "."] : Array(letters[0]).map(String.init))
-            keyRow(symbols ? ["/", "?", "\\", "|", "[", "]", "{", "}"] : Array(letters[1]).map(String.init), inset: 10)
+            keyRow(symbols ? digits : Array(letters[0]).map(String.init))
+            keyRow(symbols ? symbolsTopRow : Array(letters[1]).map(String.init), inset: 10)
             HStack(spacing: 3) {
                 utilityKey(shifted ? "Shift" : "⇧", id: "computerKeyboardShift") {
                     shifted.toggle()
                 }
-                ForEach(Array((symbols ? ["<", ">", "~", "`"] : Array(letters[2]).map(String.init)).enumerated()), id: \.offset) { _, value in
+                ForEach(Array((symbols ? symbolsHomeRow : Array(letters[2]).map(String.init)).enumerated()), id: \.offset) { _, value in
                     characterKey(value, accessibilityID: "computerKey_\(value)")
                 }
                 utilityKey("⌫", id: "computerKeyboardBackspace") {
@@ -1503,7 +1547,7 @@ private struct ComputerInspectorLandscapeKeyboard: View {
         } label: {
             Text(shifted && !symbols ? value.uppercased() : value)
                 .font(.system(size: 15, weight: .medium, design: .rounded))
-                .frame(maxWidth: .infinity, minHeight: 36)
+                .frame(maxWidth: .infinity, minHeight: 40)
                 .foregroundStyle(.primary)
                 .background(Color(uiColor: .systemBackground), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
         }
@@ -1519,7 +1563,7 @@ private struct ComputerInspectorLandscapeKeyboard: View {
                 .font(.system(size: 13, weight: .semibold))
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
-                .frame(maxWidth: .infinity, minHeight: 36)
+                .frame(maxWidth: .infinity, minHeight: 40)
                 .foregroundStyle(.primary)
                 .background(Color(uiColor: .tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
         }
