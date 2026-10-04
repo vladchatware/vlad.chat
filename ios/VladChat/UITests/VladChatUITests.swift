@@ -617,6 +617,33 @@ final class VladChatUITests: XCTestCase {
         XCTAssertEqual(keyboard.value as? String, "Shown")
     }
 
+    func testInspectorExplainsAndDisablesControlsWhileAgentOwnsComputer() {
+        app.launchArguments = ["--ui-test-computer-agent-controlling"]
+        app.launch()
+
+        let expand = app.buttons["computerExpandTarget"]
+        XCTAssertTrue(expand.waitForExistence(timeout: 5))
+        expand.tap()
+        XCTAssertTrue(app.navigationBars["Computer"].waitForExistence(timeout: 8))
+
+        XCTAssertTrue(app.staticTexts["computerControlUnavailable"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["computerControlUnavailable"].label, "The agent is controlling this computer.")
+
+        for title in ["Click", "Right click", "Keyboard"] {
+            XCTAssertTrue(app.buttons[title].exists)
+            XCTAssertFalse(app.buttons[title].isEnabled, "\(title) must be disabled while the agent owns computer input")
+        }
+        XCTAssertTrue(app.buttons["Fit"].isEnabled, "Fit changes local viewer scaling and does not require input ownership")
+        XCTAssertFalse(app.textFields["computerRemoteText"].isEnabled)
+        XCTAssertFalse(app.buttons["remoteKey_Escape"].isEnabled)
+
+        app.buttons["Fit"].tap()
+        let fit = app.webViews["computerInspectorPreview"].staticTexts
+            .matching(NSPredicate(format: "label CONTAINS %@", "Fit applied"))
+            .firstMatch
+        XCTAssertTrue(fit.waitForExistence(timeout: 5), "Available viewer controls must still reach the current session")
+    }
+
     func testInspectorKeepsPreviewAndKeyboardControlAvailableAfterRotation() {
         app.launchArguments = ["--ui-test-computer-viewer"]
         XCUIDevice.shared.orientation = .portrait

@@ -125,11 +125,15 @@ final class ComputerUseSessionController: NSObject, ObservableObject, WKNavigati
     }
 
 #if DEBUG
-    func loadUITestFixture(isConnecting: Bool = false, connectionTimeoutSeconds: UInt64? = nil) {
+    func loadUITestFixture(
+        isConnecting: Bool = false,
+        isAgentControlling: Bool = false,
+        connectionTimeoutSeconds: UInt64? = nil
+    ) {
         sessionID = "ui-test-vnc-session"
         presentation = .floating
         state = isConnecting ? .connecting : .live
-        canControl = !isConnecting
+        canControl = !isConnecting && !isAgentControlling
         guard !isConnecting else {
             if let connectionTimeoutSeconds {
                 beginConnectionDeadline(
@@ -1260,6 +1264,15 @@ private struct ComputerInspectorInputContent: View {
                 focusKeyboard: toggleKeyboard
             )
             .padding(.top, 8)
+            if controller.state.canSendInput && !controller.canControl {
+                Text("The agent is controlling this computer.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 6)
+                    .accessibilityIdentifier("computerControlUnavailable")
+            }
             ComputerInspectorKeyboard(controller: controller, text: $text, isFocused: isFocused)
             ComputerInspectorInputFailure(controller: controller)
         }
@@ -1332,7 +1345,8 @@ private struct ComputerInspectorControls: View {
     }
 
     private func controlButton(_ symbol: String, title: String, requiresInputOwnership: Bool = true, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        let isAvailable = controller.state.canSendInput && (!requiresInputOwnership || controller.canControl)
+        return Button(action: action) {
             VStack(spacing: 4) {
                 Image(systemName: symbol).font(.system(size: 15, weight: .medium))
                 Text(title).font(.caption2).lineLimit(1)
@@ -1347,8 +1361,10 @@ private struct ComputerInspectorControls: View {
         }
         .buttonStyle(.plain)
         .tint(.primary)
-        .disabled(!controller.state.canSendInput || (requiresInputOwnership && !controller.canControl))
+        .opacity(isAvailable ? 1 : 0.42)
+        .disabled(!isAvailable)
         .accessibilityLabel(title)
+        .accessibilityHint(isAvailable ? "" : "Unavailable while the computer session is busy.")
     }
 }
 
@@ -1376,6 +1392,7 @@ private struct ComputerInspectorKeyboard: View {
                 }
                 .textFieldStyle(.roundedBorder)
                 .disabled(!controller.canControl || !controller.state.canSendInput)
+                .opacity(controller.canControl && controller.state.canSendInput ? 1 : 0.42)
                 .accessibilityIdentifier("computerRemoteText")
 
         }
@@ -1403,6 +1420,7 @@ private struct ComputerInspectorKeyAccessory: View {
                         )
                         .buttonStyle(.plain)
                         .disabled(!controller.canControl || !controller.state.canSendInput)
+                        .opacity(controller.canControl && controller.state.canSendInput ? 1 : 0.42)
                         .accessibilityValue(controller.activeModifiers.contains(key.code) ? "Pressed" : "Released")
                         .accessibilityIdentifier("remoteKey_\(key.code)")
                 }
@@ -1418,7 +1436,7 @@ private struct ComputerInspectorKeyAccessory: View {
 
 #if DEBUG
 struct ComputerUseE2EHarnessView: View {
-    enum Scenario: Equatable { case sandboxResumeFailure, viewerFixture, viewerProduction, viewerConnecting, viewerTimeout }
+    enum Scenario: Equatable { case sandboxResumeFailure, viewerFixture, viewerProduction, viewerConnecting, viewerTimeout, viewerAgentControlling }
     let scenario: Scenario
     @StateObject private var viewModel = ChatViewModel()
     @State private var viewerPresentation: ComputerViewerPresentation = .hidden
@@ -1502,6 +1520,8 @@ struct ComputerUseE2EHarnessView: View {
                 controller.loadUITestFixture(isConnecting: true)
             case .viewerTimeout:
                 controller.loadUITestFixture(isConnecting: true, connectionTimeoutSeconds: 3)
+            case .viewerAgentControlling:
+                controller.loadUITestFixture(isAgentControlling: true)
             case .sandboxResumeFailure:
                 break
             }
