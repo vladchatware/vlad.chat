@@ -76,7 +76,9 @@ struct VladChatApp: App {
                 ChatContainer(agentRunStatusOverride: agentRunStatusPillUITestPresentation)
                     .environmentObject(chat)
             } else if isInferenceGalleryUITest {
-                InferenceStateGallery()
+                InferenceStateGallery(
+                    screenshotFixturesOnly: ProcessInfo.processInfo.arguments.contains("--ui-test-gallery-screenshots")
+                )
             } else if let computerUseE2EScenario {
                 ComputerUseE2EHarnessView(scenario: computerUseE2EScenario)
             } else {

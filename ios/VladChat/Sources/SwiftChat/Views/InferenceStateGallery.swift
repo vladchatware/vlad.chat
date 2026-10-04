@@ -4,10 +4,17 @@ import SwiftUI
 /// Offline gallery for reviewing the production inference states without a
 /// network request. Fixtures use the same response DTOs as Convex snapshots.
 struct InferenceStateGallery: View {
+    var screenshotFixturesOnly = false
     @Environment(\.colorScheme) private var colorScheme
     @State private var replayStep = 0
 
     private var isDarkMode: Bool { colorScheme == .dark }
+    private var fixtures: [InferenceStateFixture] {
+        guard screenshotFixturesOnly else { return InferenceStateFixture.all }
+        return InferenceStateFixture.all.filter {
+            $0.id == "computer-screenshot" || $0.id == "computer-screenshot-carousel"
+        }
+    }
     private let replayBatches = [
         "The",
         "The response",
@@ -66,7 +73,7 @@ struct InferenceStateGallery: View {
                         }
                     }
 
-                    ForEach(InferenceStateFixture.all) { fixture in
+                    ForEach(fixtures) { fixture in
                         VStack(alignment: .leading, spacing: Theme.Dimensions.relatedItemSpacing) {
                             Text(fixture.title)
                                 .font(.headline)

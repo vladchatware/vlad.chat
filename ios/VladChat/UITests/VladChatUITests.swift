@@ -63,7 +63,8 @@ final class VladChatUITests: XCTestCase {
     func testComputerScreenshotToolResultsRenderInlineCarousel() {
         XCUIDevice.shared.orientation = .portrait
         defer { XCUIDevice.shared.orientation = .portrait }
-        launchGallery()
+        launchGallery(screenshotFixturesOnly: true)
+        XCTAssertTrue(app.navigationBars["Inference states"].waitForExistence(timeout: 5))
 
         let gallery = app.scrollViews.firstMatch
         let fixtureTitle = app.staticTexts["Computer screenshot carousel"]
@@ -925,8 +926,11 @@ final class VladChatUITests: XCTestCase {
         XCTAssertFalse(app.buttons["Retry"].exists, "A timeout before receiving a session URL cannot retry stale viewer state")
     }
 
-    private func launchGallery() {
+    private func launchGallery(screenshotFixturesOnly: Bool = false) {
         app.launchArguments = ["--ui-test-gallery"]
+        if screenshotFixturesOnly {
+            app.launchArguments.append("--ui-test-gallery-screenshots")
+        }
         app.launch()
     }
 
