@@ -248,7 +248,22 @@ struct MobileChat: Decodable, Equatable, Sendable {
                 return !message.isUser && message.order >= expectedOrder
             }
             guard let optimisticText else { return false }
-            return message.isUser && message.text == optimisticText
+            guard message.isUser,
+                  message.text == optimisticText,
+                  let prompt = messages.first(where: {
+                      $0.isUser &&
+                      $0.text == optimisticText &&
+                      previousMessages[$0.id]?.createdAt != $0.createdAt
+                  }) else { return false }
+
+            // The action result may arrive after the subscription snapshot. A
+            // new prompt alone is not enough to replace the local waiting row:
+            // keep it until the corresponding assistant response is observable.
+            return messages.contains { response in
+                !response.isUser &&
+                    response.order >= prompt.order &&
+                    previousMessages[response.id]?.createdAt != response.createdAt
+            }
         }
     }
 }
