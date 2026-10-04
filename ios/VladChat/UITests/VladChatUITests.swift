@@ -542,7 +542,9 @@ final class VladChatUITests: XCTestCase {
         let hiddenKeyboard = NSPredicate { _, _ in !self.app.keyboards.firstMatch.exists }
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: hiddenKeyboard, object: nil)], timeout: 5), .completed)
         keyboard.tap()
-        XCTAssertTrue(app.textFields["Type to computer"].waitForExistence(timeout: 5))
+        let remoteInput = app.textFields["computerRemoteText"]
+        XCTAssertTrue(remoteInput.waitForExistence(timeout: 5))
+        XCTAssertLessThanOrEqual(remoteInput.frame.width, 1.5, "The native keyboard target should not occupy an input row")
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["remoteKey_Escape"].exists)
         app.buttons["Collapse to preview"].tap()
@@ -567,6 +569,30 @@ final class VladChatUITests: XCTestCase {
         expand.tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
         XCTAssertEqual(control.value as? String, "Released")
+    }
+
+    func testPortraitTypingUsesKeyboardWithoutVisibleInputField() {
+        app.launchArguments = ["--ui-test-computer-viewer"]
+        app.launch()
+
+        let expand = app.buttons["computerExpandTarget"]
+        XCTAssertTrue(expand.waitForExistence(timeout: 5))
+        expand.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+
+        let remoteInput = app.textFields["computerRemoteText"]
+        XCTAssertTrue(remoteInput.waitForExistence(timeout: 5))
+        XCTAssertLessThanOrEqual(remoteInput.frame.width, 1.5, "Portrait typing should not occupy an input row")
+        app.keys["o"].tap()
+        app.keys["k"].tap()
+
+        let desktop = app.webViews["computerInspectorPreview"]
+        for event in ["Text: o", "Text: k"] {
+            XCTAssertTrue(
+                desktop.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", event)).firstMatch.waitForExistence(timeout: 5),
+                "Portrait keyboard input should send \(event) to the active computer"
+            )
+        }
     }
 
     func testInspectorUsesDirectLandscapeKeyboardWithoutSystemKeyboard() {
@@ -596,10 +622,8 @@ final class VladChatUITests: XCTestCase {
         app.buttons["Fit"].tap()
         assertReceived("Fit applied")
 
-        let remoteText = app.textFields["computerRemoteText"]
-        XCTAssertTrue(remoteText.waitForExistence(timeout: 5))
-        remoteText.tap()
-        remoteText.typeText("ok")
+        app.keys["o"].tap()
+        app.keys["k"].tap()
         assertReceived("Text: o")
         assertReceived("Text: k")
 

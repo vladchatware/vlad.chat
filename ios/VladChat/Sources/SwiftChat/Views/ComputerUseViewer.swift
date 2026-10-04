@@ -1312,30 +1312,36 @@ private struct ComputerInspectorInputContent: View {
     let toggleKeyboard: () -> Void
 
     var body: some View {
-        VStack(spacing: 0) {
-            ComputerInspectorControls(
-                controller: controller,
-                keyboardIsVisible: keyboardIsVisible,
-                focusKeyboard: toggleKeyboard
-            )
-            .padding(.top, compactHeight ? 2 : 8)
-            if controller.state.canSendInput && !controller.canControl {
-                Text("The agent is controlling this computer.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 12)
-                    .padding(.top, 6)
-                    .accessibilityIdentifier("computerControlUnavailable")
+        ZStack(alignment: .topLeading) {
+            if !compactHeight {
+                ComputerInspectorTextInputProxy(
+                    controller: controller,
+                    text: $text,
+                    isFocused: isFocused
+                )
             }
-            if compactHeight {
-                if keyboardIsVisible {
+
+            VStack(spacing: 0) {
+                ComputerInspectorControls(
+                    controller: controller,
+                    keyboardIsVisible: keyboardIsVisible,
+                    focusKeyboard: toggleKeyboard
+                )
+                .padding(.top, compactHeight ? 2 : 8)
+                if controller.state.canSendInput && !controller.canControl {
+                    Text("The agent is controlling this computer.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 12)
+                        .padding(.top, 6)
+                        .accessibilityIdentifier("computerControlUnavailable")
+                }
+                if compactHeight && keyboardIsVisible {
                     ComputerInspectorLandscapeKeyboard(controller: controller)
                 }
-            } else {
-                ComputerInspectorKeyboard(controller: controller, text: $text, isFocused: isFocused)
+                ComputerInspectorInputFailure(controller: controller)
             }
-            ComputerInspectorInputFailure(controller: controller)
         }
     }
 }
@@ -1429,36 +1435,34 @@ private struct ComputerInspectorControls: View {
     }
 }
 
-private struct ComputerInspectorKeyboard: View {
+private struct ComputerInspectorTextInputProxy: View {
     @ObservedObject var controller: ComputerUseSessionController
     @Binding var text: String
     var isFocused: FocusState<Bool>.Binding
 
     var body: some View {
-        VStack(spacing: 8) {
-            TextField("Type to computer", text: $text)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .focused(isFocused)
-                .onChange(of: text) { old, new in
-                    if new.hasPrefix(old) { controller.sendText(String(new.dropFirst(old.count))) }
-                    else if old.hasPrefix(new) {
-                        for _ in 0..<old.count - new.count { controller.sendSpecialKey(.backspace) }
-                    }
+        TextField("Type to computer", text: $text)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .focused(isFocused)
+            .onChange(of: text) { old, new in
+                if new.hasPrefix(old) { controller.sendText(String(new.dropFirst(old.count))) }
+                else if old.hasPrefix(new) {
+                    for _ in 0..<old.count - new.count { controller.sendSpecialKey(.backspace) }
                 }
-                .submitLabel(.return)
-                .onSubmit {
-                    controller.sendSpecialKey(.init(label: "Enter", code: "Enter", keysym: 0xFF0D))
-                    isFocused.wrappedValue = true
-                }
-                .textFieldStyle(.roundedBorder)
-                .disabled(!controller.canControl || !controller.state.canSendInput)
-                .opacity(controller.canControl && controller.state.canSendInput ? 1 : 0.42)
-                .accessibilityIdentifier("computerRemoteText")
-
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+            }
+            .submitLabel(.return)
+            .onSubmit {
+                controller.sendSpecialKey(.init(label: "Enter", code: "Enter", keysym: 0xFF0D))
+                isFocused.wrappedValue = true
+            }
+            .textFieldStyle(.plain)
+            .disabled(!controller.canControl || !controller.state.canSendInput)
+            .frame(width: 1, height: 1)
+            .opacity(0.01)
+            .allowsHitTesting(false)
+            .accessibilityLabel("Type to computer")
+            .accessibilityIdentifier("computerRemoteText")
     }
 }
 
