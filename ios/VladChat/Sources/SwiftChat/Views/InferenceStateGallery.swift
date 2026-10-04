@@ -144,6 +144,7 @@ struct StreamingScrollE2EView: View {
     @State private var scrollToUserTrigger = UUID()
     @State private var didSeedFixture = false
     @State private var didInsertHistoryRow = false
+    @State private var appendedChunkCount = 0
 
     private var isDarkMode: Bool { colorScheme == .dark }
 
@@ -171,6 +172,12 @@ struct StreamingScrollE2EView: View {
                 Button("Complete stream", action: completeStream)
                     .accessibilityIdentifier("finishStreamingFixture")
                     .disabled(!isLoading)
+                Button(action: appendStreamChunk) {
+                    Image(systemName: "plus")
+                }
+                .accessibilityLabel("Append stream chunk")
+                .accessibilityIdentifier("appendStreamingChunkFixture")
+                .disabled(!isLoading)
                 Button("Insert history row", action: insertHistoryRow)
                     .accessibilityIdentifier("insertHistoryRowFixture")
                     .disabled(didInsertHistoryRow)
@@ -233,6 +240,22 @@ struct StreamingScrollE2EView: View {
         viewModel.currentChat = chat
         viewModel.isLoading = false
         isLoading = false
+    }
+
+    private func appendStreamChunk() {
+        guard var chat = viewModel.currentChat, let lastIndex = chat.messages.indices.last else { return }
+        appendedChunkCount += 1
+        let paragraph = "STREAM_APPEND_\(appendedChunkCount) — New streamed text extends the response without moving the paragraph the reader is already viewing."
+        chat.messages[lastIndex].content += "\n\n\(paragraph)"
+        chat.messages[lastIndex].contentChunks.append(
+            ContentChunk(
+                id: "streaming-scroll-appended-\(appendedChunkCount)",
+                type: .paragraph,
+                content: paragraph,
+                isComplete: false
+            )
+        )
+        viewModel.currentChat = chat
     }
 
     private func insertHistoryRow() {

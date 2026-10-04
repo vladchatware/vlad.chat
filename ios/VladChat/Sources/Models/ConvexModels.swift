@@ -334,6 +334,7 @@ struct AgentRunState: Decodable, Sendable {
     let status: AgentRunStatus
     let stepCount: Int?
     let inFlightPhase: String?
+    let queuedRuns: [QueuedAgentRun]?
 }
 
 enum AgentRunStatusPresentationPhase: String, Equatable, Sendable {
@@ -399,8 +400,23 @@ struct AgentRunStatusPresentation: Equatable, Sendable {
     }
 }
 
+struct QueuedAgentRun: Decodable, Identifiable, Sendable {
+    let runId: String
+    let text: String
+    let attachmentCount: Double
+    let createdAt: Double
+
+    var id: String { runId }
+}
+
 struct ResumeThreadResult: Decodable, Sendable {
     let status: AgentRunStatus
+}
+
+struct SteerThreadResult: Decodable, Sendable {
+    let status: String
+    let runId: String
+    let steeringId: String
 }
 
 struct DeleteMobileMessagesResult: Decodable, Sendable {

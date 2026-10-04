@@ -84,6 +84,33 @@ export type MobileMessage = {
   attachments?: MobileAttachment[];
 };
 
+export type MobileSteeringNote = {
+  id: string;
+  text: string;
+  order: number;
+  createdAt: number;
+};
+
+/** Projects persisted steering metadata as visible user turns in the transcript. */
+export function mergeMobileSteeringMessages(
+  messages: MobileMessage[],
+  steeringNotes: MobileSteeringNote[],
+): MobileMessage[] {
+  const steeringMessages = steeringNotes.map((note) => {
+    return {
+      id: `steering-${note.id}`,
+      role: "user",
+      text: note.text,
+      status: "success",
+      order: note.order,
+      createdAt: note.createdAt,
+      attachments: [],
+    };
+  });
+  return [...messages, ...steeringMessages]
+    .sort((left, right) => left.order - right.order || left.createdAt - right.createdAt);
+}
+
 export type MobileCodeRun = {
   code: string;
   description: string;
@@ -93,6 +120,29 @@ export type MobileCodeRun = {
   outputTruncated: boolean;
   errorText?: string;
 };
+
+/** True only for cancellation reasons emitted by our own stop controls. */
+function isUserStopErrorText(
+  errorText: string | undefined,
+  runWasStopped = false,
+): boolean {
+  if (!errorText) return false;
+  const normalized = errorText.trim().replace(/[.!]+$/, "").toLowerCase();
+  return normalized === "user requested stop" ||
+    normalized === "user stopped generation" ||
+    (runWasStopped && normalized === "async abort");
+}
+
+export function normalizeUserStopResponse(
+  status: string,
+  errorText: string | undefined,
+  runWasStopped = false,
+): { status: string; errorText: string | undefined } {
+  if (status === "failed" && isUserStopErrorText(errorText, runWasStopped)) {
+    return { status: "stopped", errorText: undefined };
+  }
+  return { status, errorText };
+}
 
 type MobileAttachment = {
   id: string;

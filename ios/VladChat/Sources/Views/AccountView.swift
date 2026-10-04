@@ -361,9 +361,15 @@ private struct AccountLinkingButtons: View {
                     appleButton
                 }
             } else {
-                HStack(spacing: 8) {
-                    googleButton
-                    appleButton
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) {
+                        googleButton.frame(minWidth: 240)
+                        appleButton.frame(minWidth: 140)
+                    }
+                    VStack(spacing: 8) {
+                        googleButton
+                        appleButton
+                    }
                 }
             }
         }
@@ -432,6 +438,7 @@ private struct GoogleOAuthButton: View {
                         .tint(foregroundColor)
                 }
             }
+            .padding(.horizontal, 16)
             .frame(maxWidth: .infinity, minHeight: 44)
             .background(backgroundColor, in: RoundedRectangle(cornerRadius: 8))
             .overlay {

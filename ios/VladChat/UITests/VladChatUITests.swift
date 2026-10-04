@@ -150,6 +150,47 @@ final class VladChatUITests: XCTestCase {
         XCTAssertLessThan(abs(anchor.frame.minY - originalY), 48, "Visible response position jumped when streaming ended")
     }
 
+    func testStreamingRowGrowthPreservesReaderPosition() {
+        app.launchArguments = ["--ui-test-streaming-scroll"]
+        app.launch()
+
+        let table = app.tables.firstMatch
+        XCTAssertTrue(table.waitForExistence(timeout: 5))
+        let anchor = app.staticTexts.containing(
+            NSPredicate(format: "label CONTAINS %@", "STREAM_ANCHOR_06")
+        ).firstMatch
+        XCTAssertTrue(anchor.waitForExistence(timeout: 5))
+
+        table.swipeDown()
+        for _ in 0..<6 where !anchor.frame.intersects(table.frame) {
+            table.swipeDown()
+        }
+        XCTAssertTrue(anchor.frame.intersects(table.frame))
+        let originalY = anchor.frame.minY
+
+        let appendChunk = app.buttons["appendStreamingChunkFixture"]
+        XCTAssertTrue(appendChunk.exists)
+        for _ in 0..<4 {
+            appendChunk.tap()
+        }
+
+        XCTAssertTrue(app.staticTexts.containing(
+            NSPredicate(format: "label CONTAINS %@", "STREAM_APPEND_4")
+        ).firstMatch.waitForExistence(timeout: 2))
+        let anchorMoved = NSPredicate { _, _ in
+            !anchor.frame.intersects(table.frame) || abs(anchor.frame.minY - originalY) > 8
+        }
+        let deferredLayoutMovedAnchor = XCTNSPredicateExpectation(predicate: anchorMoved, object: nil)
+        deferredLayoutMovedAnchor.isInverted = true
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [deferredLayoutMovedAnchor], timeout: 1),
+            .completed,
+            "Deferred self-sizing moved the reader's visual anchor"
+        )
+        XCTAssertTrue(anchor.frame.intersects(table.frame))
+        XCTAssertEqual(anchor.frame.minY, originalY, accuracy: 8, "Async row growth moved the reader's visual anchor")
+    }
+
     func testStreamCompletionDoesNotStartSecondBottomScrollAfterMarkdownReflow() {
         app.launchArguments = ["--ui-test-streaming-scroll", "--ui-test-streaming-markdown-reflow"]
         app.launch()
