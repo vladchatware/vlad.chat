@@ -113,9 +113,22 @@ struct VladChatTests {
         }
     }
 
-    @Test func regeneratedPromptAcknowledgesReusedOrderBeforeActionReturns() {
+    @Test func promptAloneDoesNotAcknowledgeGenerationBeforeAssistantArrives() {
         let snapshot = generationSnapshot([
             generationMessage(id: "user", role: "user", order: 0, createdAt: 2),
+        ])
+
+        #expect(!snapshot.hasObservedLocalGeneration(
+            expectedOrder: nil,
+            previousMessages: previousGenerationMessages(),
+            optimisticText: "Hello"
+        ))
+    }
+
+    @Test func promptAndAssistantAcknowledgeGenerationBeforeActionReturns() {
+        let snapshot = generationSnapshot([
+            generationMessage(id: "user", role: "user", order: 0, createdAt: 2),
+            generationMessage(id: "answer", role: "assistant", order: 0, status: "streaming", createdAt: 2),
         ])
 
         #expect(snapshot.hasObservedLocalGeneration(
