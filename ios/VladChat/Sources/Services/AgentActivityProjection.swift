@@ -1,6 +1,11 @@
 import Foundation
 
 extension AgentRunState {
+    var ongoingActivityState: AgentActivityAttributes.ContentState? {
+        guard let content = liveActivityState, !content.phase.isTerminal else { return nil }
+        return content
+    }
+
     var liveActivityState: AgentActivityAttributes.ContentState? {
         guard runId != nil else { return nil }
         let phase: AgentActivityAttributes.Phase

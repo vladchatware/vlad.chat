@@ -3,6 +3,17 @@ import Testing
 @testable import VladChat
 
 struct AgentActivityTests {
+    @Test func inAppStatusOnlyExposesOngoingRuns() throws {
+        for status in ["completed", "failed", "queued", "idle"] {
+            let json = "{\"runId\":\"run-1\",\"status\":\"\(status)\",\"updatedAt\":1000}"
+            let state = try JSONDecoder().decode(AgentRunState.self, from: Data(json.utf8))
+            #expect(state.ongoingActivityState == nil)
+        }
+        let paused = try JSONDecoder().decode(AgentRunState.self, from: Data(#"{"runId":"run-1","status":"paused","stepCount":4,"updatedAt":1000}"#.utf8))
+        #expect(paused.ongoingActivityState?.phase == .paused)
+        #expect(paused.ongoingActivityState?.stepCount == 4)
+    }
+
     @Test func lifecycleUsesRunStatusAndStepPhase() throws {
         let fixtures: [(String, AgentActivityAttributes.Phase?)] = [
             (#"{"status":"running","stepCount":0}"#, .starting),

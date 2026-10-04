@@ -21,6 +21,47 @@ final class AgentLiveActivityController {
     private var availabilityTask: Task<Void, Never>?
     private var pushEnabled = false
     private var pushTasks: [String: Task<Void, Never>] = [:]
+    private var foregroundThreadId: String?
+    private var foregroundActivityId: String?
+
+    var foregroundActivity: Activity<AgentActivityAttributes>? {
+        Activity<AgentActivityAttributes>.activities.first { $0.id == foregroundActivityId }
+    }
+
+    var standardActivities: [Activity<AgentActivityAttributes>] {
+        Activity<AgentActivityAttributes>.activities.filter { $0.id != foregroundActivityId }
+    }
+
+    func selectForegroundConversation(_ threadId: String?) {
+        if let previous = foregroundThreadId { dirtyThreads.insert(previous) }
+        foregroundThreadId = threadId
+        reconcile()
+    }
+
+    /// Explicit presentation only: a tap outside dismisses a transient activity.
+    /// Subsequent run updates must not reopen it over the person's work.
+    func showForegroundActivity(threadId: String) async throws {
+        guard ActivityAuthorizationInfo().areActivitiesEnabled,
+              UIApplication.shared.applicationState == .active,
+              foregroundThreadId == threadId else { return }
+        if let activity = foregroundActivity {
+            await activity.end(nil, dismissalPolicy: .immediate)
+        }
+        // Ending is asynchronous; use the latest snapshot and selection.
+        guard foregroundThreadId == threadId,
+              UIApplication.shared.applicationState == .active,
+              let state = snapshots[threadId], let runId = state.runId,
+              let content = state.ongoingActivityState else { return }
+        let activity = try Activity<AgentActivityAttributes>.request(
+            attributes: .init(threadId: threadId, runId: runId),
+            // Prefer the presentation explicitly requested by the person over
+            // the standard instance that tracks the same run in the background.
+            content: ActivityContent(state: content, staleDate: Date().addingTimeInterval(120), relevanceScore: 100),
+            pushType: nil,
+            style: .transient
+        )
+        foregroundActivityId = activity.id
+    }
 
     func connect(_ client: ConvexClientWithAuth<ConvexAuthSession>) {
         self.client = client
@@ -39,7 +80,7 @@ final class AgentLiveActivityController {
                 self?.logger.error("Live Activity push availability could not be checked")
             }
         }
-        for activity in Activity<AgentActivityAttributes>.activities {
+        for activity in standardActivities {
             if activity.activityState == .ended || activity.activityState == .dismissed { continue }
             readyRuns.insert(activity.attributes.runId)
             watch(activity)
@@ -85,6 +126,7 @@ final class AgentLiveActivityController {
     }
 
     func reset() async {
+        foregroundThreadId = nil
         availabilityTask?.cancel()
         pushEnabled = false
         subscriptions.values.forEach { $0.cancel() }
@@ -106,6 +148,7 @@ final class AgentLiveActivityController {
         for activity in Activity<AgentActivityAttributes>.activities {
             await activity.end(nil, dismissalPolicy: .immediate)
         }
+        foregroundActivityId = nil
         client = nil
     }
 
@@ -124,7 +167,15 @@ final class AgentLiveActivityController {
     private func apply(threadId: String) async {
         let state = snapshots[threadId]
         let content = state?.liveActivityState
-        let activities = Activity<AgentActivityAttributes>.activities.filter {
+        if let activity = foregroundActivity, activity.attributes.threadId == threadId {
+            if foregroundThreadId != threadId || activity.attributes.runId != state?.runId
+                || content == nil || content?.phase.isTerminal == true {
+                await activity.end(content.map { ActivityContent(state: $0, staleDate: nil) }, dismissalPolicy: .immediate)
+            } else if let content {
+                await activity.update(ActivityContent(state: content, staleDate: Date().addingTimeInterval(120), relevanceScore: 100))
+            }
+        }
+        let activities = standardActivities.filter {
             $0.attributes.threadId == threadId
         }
         for activity in activities where activity.attributes.runId != state?.runId || content == nil || content?.phase.isTerminal == true {
@@ -140,7 +191,7 @@ final class AgentLiveActivityController {
             delays.removeValue(forKey: threadId)?.cancel()
             return
         }
-        let current = Activity<AgentActivityAttributes>.activities.first {
+        let current = standardActivities.first {
             $0.attributes.threadId == threadId && $0.attributes.runId == runId
                 && ($0.activityState == .active || $0.activityState == .stale)
         }
@@ -174,7 +225,7 @@ final class AgentLiveActivityController {
 
     private func startActivity(threadId: String, runId: String, content: AgentActivityAttributes.ContentState) {
         guard ActivityAuthorizationInfo().areActivitiesEnabled, !dismissedRuns.contains(runId),
-              !Activity<AgentActivityAttributes>.activities.contains(where: {
+              !standardActivities.contains(where: {
                   $0.attributes.runId == runId && ($0.activityState == .active || $0.activityState == .stale)
               }) else { return }
         do {

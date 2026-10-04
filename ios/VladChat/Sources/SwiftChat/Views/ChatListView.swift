@@ -89,38 +89,13 @@ struct ChatListView: View {
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            VStack(spacing: shouldShowAccountPrompt ? 12 : 0) {
-                if shouldShowAccountPrompt {
-                    AccountPromptView(viewModel: viewModel, onDismiss: dismissAccountPrompt)
-                        .frame(maxWidth: 600)
-                        .padding(.horizontal, 16)
-                        .frame(maxWidth: .infinity)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
-
-                MessageInputView(
-                    messageText: $messageText,
-                    viewModel: viewModel,
-                    isKeyboardVisible: isKeyboardVisible
-                )
-                .environmentObject(viewModel)
-                .if(UIDevice.current.userInterfaceIdiom == .pad) { view in
-                    HStack {
-                        Spacer()
-                        view.frame(maxWidth: 600)
-                        Spacer()
-                    }
-                }
-            }
-            .animation(.easeInOut(duration: 0.22), value: shouldShowAccountPrompt)
-            .background {
-                GeometryReader { proxy in
-                    Color.clear.preference(
-                        key: ComputerComposerTopPreferenceKey.self,
-                        value: proxy.frame(in: .global).minY
-                    )
-                }
-            }
+            ChatComposerArea(
+                viewModel: viewModel,
+                messageText: $messageText,
+                shouldShowAccountPrompt: shouldShowAccountPrompt,
+                isKeyboardVisible: isKeyboardVisible,
+                onDismissAccountPrompt: dismissAccountPrompt
+            )
         }
         .overlayPreferenceValue(ComputerComposerTopPreferenceKey.self) { composerTop in
             ComputerUseViewerOverlay(
@@ -220,4 +195,104 @@ struct ChatListView: View {
         isAccountPromptPresented = false
     }
 
+}
+
+private struct ChatComposerArea: View {
+    @ObservedObject var viewModel: ChatViewModel
+    @Binding var messageText: String
+    let shouldShowAccountPrompt: Bool
+    let isKeyboardVisible: Bool
+    let onDismissAccountPrompt: () -> Void
+
+    var body: some View {
+        VStack(spacing: shouldShowAccountPrompt ? 12 : 0) {
+            if shouldShowAccountPrompt {
+                AccountPromptView(viewModel: viewModel, onDismiss: onDismissAccountPrompt)
+                    .frame(maxWidth: 600)
+                    .padding(.horizontal, 16)
+                    .frame(maxWidth: .infinity)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+
+            if let state = viewModel.agentActivityState {
+                AgentRunStatusView(
+                    state: state,
+                    canExpand: viewModel.canExpandAgentActivity,
+                    onExpand: { viewModel.showAgentActivity() }
+                )
+                .frame(maxWidth: 600)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 4)
+            }
+
+            MessageInputView(
+                messageText: $messageText,
+                viewModel: viewModel,
+                isKeyboardVisible: isKeyboardVisible
+            )
+            .environmentObject(viewModel)
+            .if(UIDevice.current.userInterfaceIdiom == .pad) { view in
+                HStack {
+                    Spacer()
+                    view.frame(maxWidth: 600)
+                    Spacer()
+                }
+            }
+        }
+        .animation(.easeInOut(duration: 0.22), value: shouldShowAccountPrompt)
+        .background {
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: ComputerComposerTopPreferenceKey.self,
+                    value: proxy.frame(in: .global).minY
+                )
+            }
+        }
+    }
+}
+
+/// A readable status remains in the app after the temporary Island is dismissed
+/// and when system Live Activities are disabled.
+struct AgentRunStatusView: View {
+    let state: AgentActivityAttributes.ContentState
+    let canExpand: Bool
+    let onExpand: () -> Void
+
+    var body: some View {
+        if canExpand {
+            Button(action: onExpand) {
+                AgentRunStatusLabel(state: state, showsExpansion: true)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Agent run activity")
+            .accessibilityValue(Text(state.phase.label))
+            .accessibilityHint("Opens expanded run activity")
+            .accessibilityIdentifier("expandAgentActivity")
+        } else {
+            AgentRunStatusLabel(state: state, showsExpansion: false)
+                .accessibilityIdentifier("agentRunStatus")
+        }
+    }
+}
+
+private struct AgentRunStatusLabel: View {
+    let state: AgentActivityAttributes.ContentState
+    let showsExpansion: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Label { Text(state.phase.label) } icon: { Image(systemName: state.phase.symbol) }
+            Spacer()
+            Text("Step \(state.stepCount, format: .number)", comment: "Completed step count for the active agent run.")
+                .foregroundStyle(.secondary)
+            if showsExpansion {
+                Image(systemName: "chevron.up")
+                    .accessibilityHidden(true)
+            }
+        }
+        .font(.caption)
+        .foregroundStyle(.primary)
+        .frame(minHeight: 44)
+        .contentShape(Rectangle())
+    }
 }

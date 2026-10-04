@@ -81,6 +81,23 @@ and clears them on logout or conversation deletion. An activity older than its
 freshness deadline shows an outdated-status hint. Tapping opens its conversation
 after the authenticated chat list loads.
 
+Inside the chat, an ongoing run has a compact phase/step status above the
+composer. Tapping it requests a transient expanded Live Activity through the
+iOS 18+ ActivityKit API, intended for Dynamic Island presentation while Vlad
+is in the foreground. Both styles use the same
+attributes and widget configuration. The controller tracks the transient instance
+by ID and requests it without a push token. Tapping outside, collapsing
+the Island, locking the device, or leaving the app ends only this temporary
+presentation. Updates do not reopen it automatically; tap the status to reopen.
+The ongoing background activity continues independently. Terminal run state,
+conversation switching/deletion, and logout also clear the transient activity.
+When Live Activities are disabled, the in-app status remains readable.
+
+Foreground Island presentation is not yet verified: the iOS 26.3 simulator
+creates the transient instance but keeps the Island collapsed. System logs
+report that alerts are not allowed over the owning app. The foreground slice
+remains draft while this rendering failure is investigated.
+
 App subscriptions update activities while the process runs. Configured APNs
 delivery updates and ends them after iOS suspends the process. For deterministic simulator inspection,
 launch a Debug build with `--ui-test-agent-activity`. It uses the production

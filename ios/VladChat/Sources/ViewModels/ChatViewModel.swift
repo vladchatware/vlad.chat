@@ -1,3 +1,4 @@
+import ActivityKit
 import Combine
 import ConvexMobile
 import Foundation
@@ -31,6 +32,8 @@ final class ChatViewModel: ObservableObject {
     @Published var account: MobileAccount?
     @Published var usageSummary: MobileUsageSummary?
     @Published private(set) var agentRunStatus: AgentRunStatus?
+    @Published private(set) var agentActivityState: AgentActivityAttributes.ContentState?
+    @Published private(set) var isPresentingAgentActivity = false
     @Published private(set) var isResumingAgentRun = false
     @Published var isLinkingAccount = false
     @Published var isLoggingOut = false
@@ -297,6 +300,25 @@ final class ChatViewModel: ObservableObject {
         liveActivities.prepareForBackground()
     }
 
+    var canExpandAgentActivity: Bool {
+        ActivityAuthorizationInfo().areActivitiesEnabled && !isPresentingAgentActivity
+    }
+
+    func showAgentActivity() {
+        guard !isPresentingAgentActivity, agentActivityState != nil,
+              let threadId = selectedThreadId else { return }
+        isPresentingAgentActivity = true
+        Task { [weak self] in
+            guard let self else { return }
+            defer { isPresentingAgentActivity = false }
+            do {
+                try await liveActivities.showForegroundActivity(threadId: threadId)
+            } catch {
+                attachmentError = "Could not show run activity. \(Self.userFacingMessage(for: error))"
+            }
+        }
+    }
+
     private func openPendingConversation() {
         guard let id = pendingConversationID,
               let chat = chats.first(where: { $0.id == id }), client != nil else { return }
@@ -422,6 +444,7 @@ final class ChatViewModel: ObservableObject {
             agentRunSubscriptionTask?.cancel()
             agentRunSubscriptionThreadId = nil
             agentRunStatus = nil
+            agentActivityState = nil
             await liveActivities.reset()
             await client.logout()
             do {
@@ -499,6 +522,8 @@ final class ChatViewModel: ObservableObject {
         agentRunSubscriptionTask?.cancel()
         agentRunSubscriptionThreadId = nil
         agentRunStatus = nil
+        agentActivityState = nil
+        liveActivities.selectForegroundConversation(threadId)
         presentationTask?.cancel()
         presentationTask = nil
         presentationTaskID = nil
@@ -764,6 +789,8 @@ final class ChatViewModel: ObservableObject {
         agentRunSubscriptionTask = nil
         agentRunSubscriptionThreadId = threadId
         agentRunStatus = nil
+        agentActivityState = nil
+        liveActivities.selectForegroundConversation(threadId)
         guard let threadId else { return }
 
         agentRunSubscriptionTask = Task { [weak self] in
@@ -779,6 +806,7 @@ final class ChatViewModel: ObservableObject {
                         guard !Task.isCancelled else { return }
                         guard self?.agentRunSubscriptionThreadId == threadId else { return }
                         self?.agentRunStatus = state?.status
+                        self?.agentActivityState = state?.ongoingActivityState
                         self?.liveActivities.receive(state, threadId: threadId)
                         retryDelay = 1_000_000_000
                         if self?.attachmentError?.hasPrefix("Run state sync failed:") == true {
