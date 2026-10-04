@@ -73,6 +73,7 @@ final class ChatViewModel: ObservableObject {
     private var serverMessages: [String: ChatMessage] = [:]
     private var streamingChunkers: [String: StreamingMarkdownChunker] = [:]
     private var streamingContent: [String: String] = [:]
+    private var emittedActivityHaptics: Set<String> = []
 
     init() {
         guard let model = AppConfig.shared.currentModel ?? AppConfig.shared.availableModels.first else {
@@ -182,6 +183,7 @@ final class ChatViewModel: ObservableObject {
                     with: arguments
                 )
                 guard activeGenerationID == generationID else { return }
+                HapticFeedback.trigger(.turnSubmitted)
                 localGenerationExpectedOrder = result.order
                 if let order = result.order, hasObservedLocalGeneration(order: order) {
                     localGenerationActive = false
@@ -300,6 +302,7 @@ final class ChatViewModel: ObservableObject {
                     "threads:generateReply",
                     with: arguments
                 )
+                HapticFeedback.trigger(.turnSubmitted)
                 if pendingAttachments.map(\.id) == attachmentIDs {
                     pendingAttachments = []
                     pendingImageThumbnails = [:]
@@ -330,6 +333,7 @@ final class ChatViewModel: ObservableObject {
                         "instruction": instruction,
                     ]
                 )
+                HapticFeedback.trigger(.turnSubmitted)
                 onAccepted()
             } catch {
                 attachmentError = Self.userFacingMessage(for: error)
@@ -675,6 +679,12 @@ final class ChatViewModel: ObservableObject {
     }
 
     private func apply(_ mobileChat: MobileChat) {
+        let previousResponses = Dictionary(
+            (currentChat?.messages ?? []).compactMap { message in
+                message.responseActivity.map { (message.id, $0) }
+            },
+            uniquingKeysWith: { _, latest in latest }
+        )
         account = mobileChat.account
         if hasObservedLocalGeneration(in: mobileChat, order: localGenerationExpectedOrder) {
             localGenerationActive = false
@@ -684,6 +694,27 @@ final class ChatViewModel: ObservableObject {
         }
 
         let hasActiveServerResponse = hasActiveServerResponse(in: mobileChat)
+        var toolOutputHapticKeys = Set<String>()
+        var handoffHapticKeys = Set<String>()
+        for message in mobileChat.messages where !message.isUser {
+            guard let response = message.response else { continue }
+            let keyPrefix = "\(mobileChat.threadId ?? "")/\(message.id)/"
+            toolOutputHapticKeys.formUnion(response.outputToolIDsStarting(
+                comparedTo: previousResponses[message.id]
+            ).map { "\(keyPrefix)output/\($0)" })
+            handoffHapticKeys.formUnion(response.handoffToolIDsRequested(
+                comparedTo: previousResponses[message.id]
+            ).map { "\(keyPrefix)handoff/\($0)" })
+        }
+        let newToolOutputHaptics = toolOutputHapticKeys.subtracting(emittedActivityHaptics)
+        let newHandoffHaptics = handoffHapticKeys.subtracting(emittedActivityHaptics)
+        emittedActivityHaptics.formUnion(toolOutputHapticKeys)
+        emittedActivityHaptics.formUnion(handoffHapticKeys)
+        if !newHandoffHaptics.isEmpty {
+            HapticFeedback.trigger(.computerHandoffRequested)
+        } else if !newToolOutputHaptics.isEmpty {
+            HapticFeedback.trigger(.toolOutputStarted)
+        }
         updateComputerUseSession(
             from: mobileChat,
             isActive: hasActiveServerResponse || localGenerationActive

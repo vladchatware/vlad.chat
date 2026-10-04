@@ -130,6 +130,7 @@ struct Chat: Identifiable, Codable {
     // MARK: - Haptic Feedback Methods
 
     /// Triggers haptic feedback when a chat operation succeeds
+    @MainActor
     static func triggerSuccessFeedback() {
         HapticFeedback.trigger(.success)
     }
@@ -356,23 +357,38 @@ struct Message: Identifiable, Codable, Equatable {
 
 // MARK: - Haptic Feedback
 
-/// Utility for handling haptic feedback in chat interactions
+/// Maps semantic chat events to a restrained set of system haptics.
+@MainActor
 enum HapticFeedback {
-    enum FeedbackType {
+    enum Event {
         case error
         case success
+        case turnSubmitted
+        case dictationStarted
+        case toolOutputStarted
+        case trimCompleted
+        case computerHandoffRequested
+        case vladPictureTapped
+        case menuOpened
     }
 
-    static func trigger(_ type: FeedbackType) {
+    static func trigger(_ event: Event) {
         let hapticEnabled = UserDefaults.standard.object(forKey: "hapticFeedbackEnabled") as? Bool ?? true
         guard hapticEnabled else { return }
 
-        let generator = UINotificationFeedbackGenerator()
-        switch type {
+        switch event {
         case .error:
-            generator.notificationOccurred(.error)
-        case .success:
-            generator.notificationOccurred(.success)
+            UINotificationFeedbackGenerator().notificationOccurred(.error)
+        case .success, .turnSubmitted, .trimCompleted:
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+        case .dictationStarted:
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        case .toolOutputStarted:
+            UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        case .computerHandoffRequested:
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        case .vladPictureTapped, .menuOpened:
+            UISelectionFeedbackGenerator().selectionChanged()
         }
     }
 }

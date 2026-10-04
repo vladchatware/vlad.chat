@@ -342,6 +342,7 @@ struct MessageInputView: View {
                 .foregroundColor(.secondary)
                 .frame(width: 24, height: 24)
         }
+        .simultaneousGesture(TapGesture().onEnded { HapticFeedback.trigger(.menuOpened) })
         .accessibilityLabel("Add attachment")
         .buttonStyle(ComposerIconButtonStyle(
             isProminent: false,
@@ -383,6 +384,7 @@ struct MessageInputView: View {
             )
             .frame(height: Theme.Dimensions.controlHitTarget, alignment: .bottom)
         }
+        .simultaneousGesture(TapGesture().onEnded { HapticFeedback.trigger(.menuOpened) })
         .accessibilityLabel("Choose model")
         .accessibilityValue(viewModel.currentModel.displayName)
         .accessibilityIdentifier("modelPickerButton")

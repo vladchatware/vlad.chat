@@ -155,6 +155,37 @@ struct ResponseActivity: Codable, Equatable, Hashable, Sendable {
 }
 
 extension ResponseActivity {
+    private var allTools: [ResponseTool] {
+        tools + parts.compactMap(\.tool)
+    }
+
+    func outputToolIDsStarting(comparedTo previous: ResponseActivity?) -> Set<String> {
+        let previousTools = Dictionary(
+            (previous?.allTools ?? []).map { ($0.id, $0) },
+            uniquingKeysWith: { _, latest in latest }
+        )
+
+        return Set(allTools.compactMap { tool in
+            guard let output = tool.output,
+                  !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+            let previousOutput = previousTools[tool.id]?.output?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return previousOutput?.isEmpty == false ? nil : tool.id
+        })
+    }
+
+    func handoffToolIDsRequested(comparedTo previous: ResponseActivity?) -> Set<String> {
+        let previousHandoffs = Set((previous?.allTools ?? []).compactMap { tool in
+            tool.computerResult?.hasHandoff == true ? tool.id : nil
+        })
+
+        return Set(allTools.compactMap { tool in
+            tool.computerResult?.hasHandoff == true && !previousHandoffs.contains(tool.id)
+                ? tool.id
+                : nil
+        })
+    }
+
     /// Tool and terminal rows always render; the bare thinking shimmer only
     /// covers the phases before the answer starts streaming.
     var isDisplayable: Bool {
