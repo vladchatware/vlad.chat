@@ -37,6 +37,9 @@ struct VladChatApp: App {
     }
 
     private var computerUseE2EScenario: ComputerUseE2EHarnessView.Scenario? {
+        if ProcessInfo.processInfo.arguments.contains("--ui-test-computer-agent-controlling") {
+            return .viewerAgentControlling
+        }
         if ProcessInfo.processInfo.arguments.contains("--ui-test-computer-sandbox-failure") {
             return .sandboxResumeFailure
         }
