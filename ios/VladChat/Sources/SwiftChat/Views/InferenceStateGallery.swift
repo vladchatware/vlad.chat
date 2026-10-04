@@ -514,22 +514,31 @@ struct ThreadSyncScrollHarnessView: View {
     @State private var didSeed = false
 
     var body: some View {
-        ChatContainer()
-            .safeAreaInset(edge: .top, spacing: 0) {
-                Button("Apply same-thread sync") {
-                    updateNumber += 1
-                    viewModel.applyUITestSnapshot(snapshot(updateNumber: updateNumber))
-                }
-                .accessibilityIdentifier("applySameThreadSyncFixture")
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
-                .background(Color.chatBackground(isDarkMode: false))
+        // Keep the fixture control outside ChatContainer's navigation host.
+        // A top safe-area inset overlays its native toolbar on iPhone.
+        VStack(spacing: 0) {
+            Button("Apply same-thread sync") {
+                updateNumber += 1
+                viewModel.applyUITestSnapshot(snapshot(updateNumber: updateNumber))
             }
-            .task {
-                guard !didSeed else { return }
-                didSeed = true
-                viewModel.applyUITestSnapshot(snapshot(updateNumber: 0))
-            }
+            .accessibilityIdentifier("applySameThreadSyncFixture")
+            .accessibilityValue(appliedSnapshotStatus)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .background(Color.chatBackground(isDarkMode: false))
+
+            ChatContainer()
+        }
+        .task {
+            guard !didSeed else { return }
+            didSeed = true
+            viewModel.applyUITestSnapshot(snapshot(updateNumber: 0))
+        }
+    }
+
+    private var appliedSnapshotStatus: String {
+        let response = viewModel.currentChat?.messages.last { $0.content.hasPrefix("SYNC_CURRENT_RESPONSE") }
+        guard response?.content.contains("Update \(updateNumber).") == true else { return "Applying snapshot" }
+        return "Update \(updateNumber)"
     }
 
     private func snapshot(updateNumber: Int) -> MobileChat {

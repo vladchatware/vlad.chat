@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 
 final class VladChatUITests: XCTestCase {
     private var app: XCUIApplication!
@@ -47,10 +48,8 @@ final class VladChatUITests: XCTestCase {
 
         for title in titles {
             let fixtureTitle = app.staticTexts[title]
-            for _ in 0..<8 where !fixtureTitle.isHittable {
-                gallery.swipeUp()
-            }
-            XCTAssertTrue(fixtureTitle.isHittable, "Gallery fixture never became visible: \(title)")
+            scrollGallery(gallery, to: fixtureTitle)
+            XCTAssertTrue(isGalleryTitleVisible(fixtureTitle, in: gallery), "Gallery fixture never became visible: \(title)")
 
             if title == "Reasoning" {
                 let reasoningPreview = app.buttons["responseThinkingPreview"]
@@ -287,18 +286,39 @@ final class VladChatUITests: XCTestCase {
         let anchor = app.staticTexts.containing(
             NSPredicate(format: "label CONTAINS %@", "SYNC_HISTORY_ASSISTANT_4")
         ).firstMatch
-        XCTAssertTrue(anchor.waitForExistence(timeout: 8))
-        for _ in 0..<8 where !anchor.frame.intersects(table.frame) {
+        let latest = app.staticTexts.containing(
+            NSPredicate(format: "label CONTAINS %@", "SYNC_CURRENT_RESPONSE")
+        ).firstMatch
+        let initialSnapshotVisible = NSPredicate { _, _ in
+            latest.exists && latest.frame.intersects(table.frame)
+        }
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: initialSnapshotVisible, object: nil)], timeout: 8), .completed,
+                       "The initial snapshot must finish following to the latest response before scrolling")
+        for _ in 0..<8 {
+            // UITableView can remove an offscreen row from its accessibility
+            // snapshot after a swipe. Search without asking a missing row
+            // for its frame.
+            if anchor.exists && anchor.frame.intersects(table.frame) { break }
             table.swipeDown()
         }
+        XCTAssertTrue(anchor.exists, "The earlier message must be materialized after scrolling")
         XCTAssertTrue(anchor.frame.intersects(table.frame), "An earlier message must be visible before the same-thread snapshot arrives")
         let originalY = anchor.frame.minY
 
-        app.buttons["applySameThreadSyncFixture"].tap()
-
-        XCTAssertTrue(app.staticTexts.containing(
-            NSPredicate(format: "label CONTAINS %@", "Update 1")
-        ).firstMatch.waitForExistence(timeout: 3))
+        let applySync = app.buttons["applySameThreadSyncFixture"]
+        applySync.tap()
+        // The updated response is intentionally offscreen and may have no
+        // cell. Observe the fixture's applied snapshot instead of that row.
+        let snapshotApplied = NSPredicate { _, _ in applySync.value as? String == "Update 1" }
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: snapshotApplied, object: nil)], timeout: 3), .completed)
+        let anchorMoved = NSPredicate { _, _ in
+            !anchor.exists || !anchor.frame.intersects(table.frame) || abs(anchor.frame.minY - originalY) >= 48
+        }
+        let deferredLayoutMovedAnchor = XCTNSPredicateExpectation(predicate: anchorMoved, object: nil)
+        deferredLayoutMovedAnchor.isInverted = true
+        XCTAssertEqual(XCTWaiter.wait(for: [deferredLayoutMovedAnchor], timeout: 1), .completed,
+                       "Deferred same-thread layout must preserve the reader's viewport")
+        XCTAssertTrue(anchor.exists, "A same-thread snapshot must retain the earlier message")
         XCTAssertTrue(anchor.frame.intersects(table.frame), "A same-thread snapshot should not jump the reader to the latest response")
         XCTAssertLessThan(abs(anchor.frame.minY - originalY), 48, "A same-thread sync update moved the reader's viewport")
     }
@@ -795,23 +815,28 @@ final class VladChatUITests: XCTestCase {
 
         for orientation in [UIDeviceOrientation.landscapeLeft, .portrait, .landscapeRight, .portrait] {
             XCUIDevice.shared.orientation = orientation
+            waitForWindowOrientation(orientation)
+            let usesCompactHeight = orientation.isLandscape && UIDevice.current.userInterfaceIdiom == .phone
             XCTAssertTrue(capture.waitForExistence(timeout: 5), "Rotation must retain the loaded viewer document")
             XCTAssertEqual(app.webViews.matching(identifier: "computerInspectorPreview").count, 1)
-            XCTAssertEqual(app.navigationBars.matching(identifier: "Computer").count, 1)
+            let navigationBarSettled = NSPredicate { _, _ in
+                self.app.navigationBars.matching(identifier: "Computer").count == (usesCompactHeight ? 0 : 1)
+            }
+            XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: navigationBarSettled, object: nil)], timeout: 5), .completed,
+                           "Compact-height inspector hides its navigation bar; other layouts retain one")
             XCTAssertEqual(app.buttons.matching(identifier: "Collapse to preview").count, 1)
             XCTAssertFalse(app.buttons["showChats"].isHittable)
             XCTAssertTrue(keyboard.isHittable, "The Keyboard control must remain available after rotation")
             XCTAssertGreaterThan(desktop.frame.height, 40, "The remote screen must retain usable space after rotation")
 
-            let isLandscape = orientation.isLandscape
             let customKeyboardKey = app.buttons["computerKey_q"]
             let keyboardSettled = NSPredicate { _, _ in
-                let isVisible = isLandscape ? customKeyboardKey.exists : self.app.keyboards.firstMatch.exists
+                let isVisible = usesCompactHeight ? customKeyboardKey.exists : self.app.keyboards.firstMatch.exists
                 return keyboard.value as? String == (isVisible ? "Shown" : "Hidden")
             }
             XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: keyboardSettled, object: nil)], timeout: 5), .completed)
 
-            if isLandscape {
+            if usesCompactHeight {
                 XCTAssertTrue(customKeyboardKey.exists)
                 XCTAssertFalse(app.keyboards.firstMatch.exists)
                 app.buttons["computerKey_q"].tap()
@@ -828,7 +853,7 @@ final class VladChatUITests: XCTestCase {
             }
 
             keyboard.tap()
-            if isLandscape {
+            if usesCompactHeight {
                 XCTAssertTrue(customKeyboardKey.waitForExistence(timeout: 5), "The Keyboard control must reopen the app-owned keyboard")
                 XCTAssertFalse(app.keyboards.firstMatch.exists)
             } else {
@@ -846,7 +871,7 @@ final class VladChatUITests: XCTestCase {
         XCTAssertFalse(app.navigationBars["Computer"].exists)
     }
 
-    func testRegularWidthInspectorDoesNotDuplicateSystemSidebarControl() {
+    func testInspectorSidebarControlsMatchDeviceLayout() {
         XCUIDevice.shared.orientation = .portrait
         defer { XCUIDevice.shared.orientation = .portrait }
         app.launchArguments = ["--ui-test-computer-production"]
@@ -858,6 +883,27 @@ final class VladChatUITests: XCTestCase {
 
         let desktop = app.webViews["computerInspectorPreview"]
         XCTAssertTrue(desktop.waitForExistence(timeout: 5))
+        if UIDevice.current.userInterfaceIdiom == .phone {
+            // iPhone uses a modal inspector even when landscape becomes
+            // regular-width. Its underlying Chats button must not be usable.
+            for orientation in [UIDeviceOrientation.landscapeLeft, .portrait, .landscapeRight, .portrait] {
+                XCUIDevice.shared.orientation = orientation
+                waitForWindowOrientation(orientation)
+                XCTAssertTrue(desktop.waitForExistence(timeout: 5), "Rotation must preserve the modal inspector")
+                XCTAssertFalse(app.buttons["showChats"].isHittable, "Modal inspector must cover the chat sidebar control")
+                XCTAssertFalse(app.buttons["Show Sidebar"].isHittable, "Modal inspector must not expose an underlying system sidebar control")
+                XCTAssertEqual(app.webViews.matching(identifier: "computerInspectorPreview").count, 1)
+                XCTAssertTrue(app.buttons["Click"].isHittable)
+                XCTAssertTrue(app.buttons["Fit"].isHittable)
+            }
+            app.buttons["Collapse to preview"].tap()
+            XCTAssertTrue(expand.waitForExistence(timeout: 5))
+            let chats = app.buttons["showChats"]
+            XCTAssertTrue(chats.waitForExistence(timeout: 5), "Compact chat must restore its Chats control after collapse")
+            XCTAssertTrue(chats.isHittable)
+            XCTAssertEqual(app.buttons.matching(identifier: "showChats").count, 1)
+            return
+        }
         XCTAssertFalse(app.buttons["showChats"].exists, "Regular-width NavigationSplitView supplies its own sidebar control")
         let showSidebar = app.buttons.matching(NSPredicate(format: "label == %@", "Show Sidebar"))
         XCTAssertEqual(showSidebar.count, 1)
@@ -881,6 +927,7 @@ final class VladChatUITests: XCTestCase {
 
         for orientation in [UIDeviceOrientation.landscapeLeft, .portrait, .landscapeRight, .portrait] {
             XCUIDevice.shared.orientation = orientation
+            waitForWindowOrientation(orientation)
             XCTAssertTrue(desktop.waitForExistence(timeout: 5), "Rotation must preserve the inline inspector")
             XCTAssertFalse(app.buttons["showChats"].exists, "Rotation must not mount a second custom sidebar control")
             let showSidebar = app.buttons.matching(NSPredicate(format: "label == %@", "Show Sidebar"))
@@ -924,6 +971,44 @@ final class VladChatUITests: XCTestCase {
         XCTAssertFalse(app.webViews["computerInspectorPreview"].exists)
         XCTAssertTrue(app.staticTexts["Computer unavailable"].exists)
         XCTAssertFalse(app.buttons["Retry"].exists, "A timeout before receiving a session URL cannot retry stale viewer state")
+    }
+
+    private func waitForWindowOrientation(_ orientation: UIDeviceOrientation, file: StaticString = #filePath, line: UInt = #line) {
+        let windowRotated = NSPredicate { _, _ in
+            let frame = self.app.windows.firstMatch.frame
+            return orientation.isLandscape ? frame.width > frame.height : frame.height > frame.width
+        }
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: windowRotated, object: nil)], timeout: 5),
+            .completed,
+            "The app window must finish rotating before its layout is checked",
+            file: file,
+            line: line
+        )
+    }
+
+    private func isGalleryTitleVisible(_ title: XCUIElement, in gallery: XCUIElement) -> Bool {
+        guard title.exists else { return false }
+        let visibleTop = max(gallery.frame.minY, app.navigationBars.firstMatch.frame.maxY)
+        let visibleFrame = CGRect(x: gallery.frame.minX, y: visibleTop,
+                                  width: gallery.frame.width, height: gallery.frame.maxY - visibleTop)
+        return !title.frame.isEmpty && visibleFrame.contains(title.frame)
+    }
+
+    private func scrollGallery(_ gallery: XCUIElement, to title: XCUIElement) {
+        // Static headings need to be visible, not tappable. Short, slow drags
+        // avoid flinging past fixtures on a small screen or a lazy layout.
+        for _ in 0..<24 {
+            if isGalleryTitleVisible(title, in: gallery) { return }
+            let aboveViewport = title.exists && title.frame.minY < app.navigationBars.firstMatch.frame.maxY
+            let startY = aboveViewport ? 0.45 : 0.75
+            let endY = aboveViewport ? 0.75 : 0.45
+            gallery.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: startY))
+                .press(forDuration: 0.05,
+                       thenDragTo: gallery.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: endY)),
+                       withVelocity: .slow,
+                       thenHoldForDuration: 0.1)
+        }
     }
 
     private func launchGallery(screenshotFixturesOnly: Bool = false) {
