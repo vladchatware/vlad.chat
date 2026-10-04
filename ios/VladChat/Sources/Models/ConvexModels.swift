@@ -350,6 +350,17 @@ struct AgentRunStatusPresentation: Equatable, Sendable {
     let phase: AgentRunStatusPresentationPhase
     let stepCount: Int?
 
+    var statusDescription: LocalizedStringResource {
+        switch phase {
+        case .starting: "Starting"
+        case .running: "Working"
+        case .executing: "Using tools"
+        case .stopping: "Stopping"
+        case .paused: "Paused"
+        case .statusUnavailable: "Status unavailable"
+        }
+    }
+
     init?(state: AgentRunState?) {
         guard let state, let runId = state.runId, !runId.isEmpty else { return nil }
 

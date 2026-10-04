@@ -165,22 +165,6 @@ struct ChatContainer: View {
 
 }
 
-private struct ChatCanvasTopFramePreferenceKey: PreferenceKey {
-    static var defaultValue: CGRect?
-
-    static func reduce(value: inout CGRect?, nextValue: () -> CGRect?) {
-        value = nextValue() ?? value
-    }
-}
-
-private struct PrincipalHeaderFramePreferenceKey: PreferenceKey {
-    static var defaultValue: CGRect?
-
-    static func reduce(value: inout CGRect?, nextValue: () -> CGRect?) {
-        value = nextValue() ?? value
-    }
-}
-
 private struct ChatCanvasColumn: View {
     let isDarkMode: Bool
     let isLoading: Bool
@@ -193,32 +177,14 @@ private struct ChatCanvasColumn: View {
     let onOpenAccount: () -> Void
     let returnToChats: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var chatCanvasFrame: CGRect?
-    @State private var principalHeaderFrame: CGRect?
 
     private var agentRunPresentation: AgentRunStatusPresentation? {
         agentRunStatusOverride ?? viewModel.agentRunStatusPresentation
     }
 
-    private var agentStatusTopPadding: CGFloat {
-        guard let chatCanvasFrame, let principalHeaderFrame else { return 36 }
-        return max(36, principalHeaderFrame.maxY - chatCanvasFrame.minY + 8)
-    }
-
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                if let presentation = agentRunPresentation {
-                    HStack {
-                        AgentRunStatusPill(presentation: presentation)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.horizontal, 8)
-                    .padding(.top, agentStatusTopPadding)
-                    .padding(.bottom, 7)
-                    .transition(.opacity)
-                }
-
                 ChatListView(
                     isDarkMode: isDarkMode,
                     isLoading: isLoading,
@@ -231,14 +197,6 @@ private struct ChatCanvasColumn: View {
             .background {
                 Color.chatBackground(isDarkMode: isDarkMode)
                     .ignoresSafeArea(edges: .top)
-            }
-            .background {
-                GeometryReader { geometry in
-                    Color.clear.preference(
-                        key: ChatCanvasTopFramePreferenceKey.self,
-                        value: geometry.frame(in: .global)
-                    )
-                }
             }
             .tint(isDarkMode ? .white : .black)
             .navigationBarTitleDisplayMode(.inline)
@@ -258,29 +216,16 @@ private struct ChatCanvasColumn: View {
 
                 ToolbarItem(placement: .principal) {
                     Button(action: onOpenAccount) {
-                        VladIdentityHeader()
+                        VladIdentityHeader(agentRunPresentation: agentRunPresentation)
                     }
                     .buttonStyle(.plain)
-                    .background {
-                        GeometryReader { geometry in
-                            Color.clear.preference(
-                                key: PrincipalHeaderFramePreferenceKey.self,
-                                value: geometry.frame(in: .global)
-                            )
-                        }
-                    }
-                    .accessibilityLabel(Text("Vlad account", comment: "Opens account settings when the user taps Vlad's name or picture in the chat header."))
+                    .accessibilityLabel("Vlad account")
+                    .accessibilityValue(agentRunPresentation.map { String(localized: $0.statusDescription) } ?? "")
                     .accessibilityHint("Opens account settings")
                     .accessibilityIdentifier("openAccount")
                 }
             }
             .simultaneousGesture(returnToChatsGesture)
-            .onPreferenceChange(ChatCanvasTopFramePreferenceKey.self) { frame in
-                chatCanvasFrame = frame
-            }
-            .onPreferenceChange(PrincipalHeaderFramePreferenceKey.self) { frame in
-                principalHeaderFrame = frame
-            }
             .animation(
                 reduceMotion ? nil : .easeInOut(duration: 0.18),
                 value: agentRunPresentation != nil
@@ -303,6 +248,8 @@ private struct ChatCanvasColumn: View {
 // MARK: - VladIdentityHeader
 
 struct VladIdentityHeader: View {
+    var agentRunPresentation: AgentRunStatusPresentation? = nil
+
     var body: some View {
         VStack(spacing: -7) {
             Image("Vlad")
@@ -318,7 +265,7 @@ struct VladIdentityHeader: View {
                 .zIndex(1)
                 .accessibilityHidden(true)
 
-            VladNamePill()
+            VladNamePill(agentRunPresentation: agentRunPresentation)
                 .zIndex(0)
         }
         .offset(y: 28)
@@ -328,22 +275,33 @@ struct VladIdentityHeader: View {
 }
 
 struct VladNamePill: View {
+    var agentRunPresentation: AgentRunStatusPresentation? = nil
+
     var body: some View {
         if #available(iOS 26, *) {
-            Text("Vlad", comment: "Name shown beneath Vlad's profile photo in the chat header.")
-                .font(.headline)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 7)
+            headerContent
                 .glassEffect(.regular, in: Capsule())
                 .shadow(color: .black.opacity(0.10), radius: 14, y: 8)
         } else {
-            Text("Vlad", comment: "Name shown beneath Vlad's profile photo in the chat header.")
-                .font(.headline)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 7)
+            headerContent
                 .background(.thinMaterial, in: Capsule())
                 .shadow(color: .black.opacity(0.10), radius: 14, y: 8)
         }
+    }
+
+    @ViewBuilder
+    private var headerContent: some View {
+        HStack(spacing: 6) {
+            Text("Vlad", comment: "Name shown beneath Vlad's profile photo in the chat header.")
+                .font(.headline)
+
+            if let agentRunPresentation {
+                AgentRunStatusIndicator(presentation: agentRunPresentation)
+                    .transition(.opacity)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 7)
     }
 }
 

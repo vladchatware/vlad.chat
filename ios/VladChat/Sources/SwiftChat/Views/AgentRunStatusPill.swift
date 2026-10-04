@@ -1,52 +1,35 @@
 import SwiftUI
 
-struct AgentRunStatusPill: View {
+struct AgentRunStatusIndicator: View {
     let presentation: AgentRunStatusPresentation
 
-    private var phaseTitle: LocalizedStringResource {
+    @ViewBuilder
+    private var statusGlyph: some View {
         switch presentation.phase {
-        case .starting: return "Starting"
-        case .running: return "Running"
-        case .executing: return "Executing"
-        case .stopping: return "Stopping"
-        case .paused: return "Paused"
-        case .statusUnavailable: return "Status unavailable"
-        }
-    }
-
-    private var symbol: String {
-        switch presentation.phase {
-        case .starting: return "sparkle"
-        case .running: return "circle.dotted"
-        case .executing: return "wrench.and.screwdriver"
-        case .stopping: return "stop.circle"
-        case .paused: return "pause.circle"
-        case .statusUnavailable: return "exclamationmark.circle"
+        case .starting, .running, .executing, .stopping:
+            ProgressView()
+                .controlSize(.mini)
+                .tint(.secondary)
+                .accessibilityHidden(true)
+        case .paused:
+            Image(systemName: "pause.fill")
+                .font(.caption2)
+                .accessibilityHidden(true)
+        case .statusUnavailable:
+            Image(systemName: "exclamationmark.circle")
+                .font(.caption2)
+                .accessibilityHidden(true)
         }
     }
 
     var body: some View {
-        HStack(spacing: 7) {
-            Image(systemName: symbol)
-                .accessibilityHidden(true)
-            Text(phaseTitle)
-                .font(.subheadline.weight(.medium))
-            if let stepCount = presentation.stepCount {
-                Text("Step \(stepCount, format: .number)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+        HStack(spacing: 4) {
+            statusGlyph
+            Text(presentation.statusDescription)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
         }
-        .fixedSize(horizontal: false, vertical: true)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 7)
-        .background(.regularMaterial, in: Capsule())
-        .overlay {
-            Capsule()
-                .strokeBorder(.primary.opacity(0.08), lineWidth: 1)
-        }
-        .shadow(color: .black.opacity(0.08), radius: 8, y: 3)
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("agentRunStatusPill")
+        .accessibilityHidden(true)
     }
 }
