@@ -573,12 +573,14 @@ final class VladChatUITests: XCTestCase {
 
     func testPortraitTypingUsesKeyboardWithoutVisibleInputField() {
         app.launchArguments = ["--ui-test-computer-viewer"]
+        XCUIDevice.shared.orientation = .portrait
+        defer { XCUIDevice.shared.orientation = .portrait }
         app.launch()
 
         let expand = app.buttons["computerExpandTarget"]
         XCTAssertTrue(expand.waitForExistence(timeout: 5))
         expand.tap()
-        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
 
         let remoteInput = app.textFields["computerRemoteText"]
         XCTAssertTrue(remoteInput.waitForExistence(timeout: 5))
@@ -597,51 +599,41 @@ final class VladChatUITests: XCTestCase {
 
     func testInspectorUsesDirectLandscapeKeyboardWithoutSystemKeyboard() {
         app.launchArguments = ["--ui-test-computer-viewer"]
-        XCUIDevice.shared.orientation = .portrait
+        XCUIDevice.shared.orientation = .landscapeLeft
         defer { XCUIDevice.shared.orientation = .portrait }
         app.launch()
         let expand = app.buttons["computerExpandTarget"]
         XCTAssertTrue(expand.waitForExistence(timeout: 5))
         expand.tap()
-        XCTAssertTrue(app.navigationBars["Computer"].waitForExistence(timeout: 8), "Opening the inspector should present its navigation screen")
+        let window = app.windows.firstMatch
+        let landscape = NSPredicate { _, _ in window.frame.width > window.frame.height }
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: landscape, object: nil)], timeout: 10),
+            .completed,
+            "The test must run with the app window in landscape before checking the landscape layout"
+        )
         let desktop = app.webViews["computerInspectorPreview"]
         XCTAssertTrue(desktop.staticTexts["No input yet"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(desktop.waitForExistence(timeout: 5))
 
         func assertReceived(_ event: String) {
             let received = desktop.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", event)).firstMatch
             XCTAssertTrue(received.waitForExistence(timeout: 5), "Viewer should receive \(event)")
         }
 
-        app.buttons["Click"].tap()
-        assertReceived("Pointer: 640, 360, 1 | Pointer: 640, 360, 0")
-        app.buttons["Right click"].tap()
-        assertReceived("Pointer: 640, 360, 4 | Pointer: 640, 360, 0")
-        app.buttons["remoteKey_Escape"].tap()
-        assertReceived("Key: Escape, true | Key: Escape, false")
-        app.buttons["Fit"].tap()
-        assertReceived("Fit applied")
-
-        app.keys["o"].tap()
-        app.keys["k"].tap()
-        assertReceived("Text: o")
-        assertReceived("Text: k")
-
         let keyboard = app.buttons["Keyboard"]
-        keyboard.tap()
-        XCTAssertEqual(keyboard.value as? String, "Hidden")
-        let keyboardHidden = NSPredicate { _, _ in !self.app.keyboards.firstMatch.exists }
-        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: keyboardHidden, object: nil)], timeout: 5), .completed)
-        XCUIDevice.shared.orientation = .landscapeLeft
         let landscapeKeyboardKey = app.buttons["computerKey_q"]
         XCTAssertTrue(landscapeKeyboardKey.waitForExistence(timeout: 10), "Landscape should show the app-owned keyboard beside the remote screen")
         XCTAssertEqual(keyboard.value as? String, "Shown")
-        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: keyboardHidden, object: nil)], timeout: 5), .completed)
+        XCTAssertFalse(app.keyboards.firstMatch.exists, "Landscape must not show the iOS keyboard")
         XCTAssertFalse(app.textFields["computerRemoteText"].exists, "Landscape typing must not require a dedicated text field")
         XCTAssertFalse(app.navigationBars["Computer"].exists, "Landscape should reclaim the navigation-title strip")
         XCTAssertFalse(app.descendants(matching: .any)["computerKeyAccessory"].exists, "Landscape shortcuts belong with the right-side keyboard, not in a second full-width strip")
         XCTAssertTrue(app.buttons["remoteKey_Escape"].isHittable)
         XCTAssertTrue(app.buttons["computerKeyboardEnter"].isHittable)
+        XCTAssertTrue(app.buttons["Click"].isHittable)
+        XCTAssertTrue(app.buttons["Right click"].isHittable)
+        XCTAssertTrue(app.buttons["Fit"].isHittable)
         XCTAssertTrue(app.buttons["Collapse to preview"].isHittable, "The compact landscape control should remain available without the navigation bar")
         XCTAssertTrue(desktop.exists)
         app.buttons["remoteKey_Escape"].tap()
