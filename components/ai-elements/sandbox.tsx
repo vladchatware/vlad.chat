@@ -58,8 +58,11 @@ export function SandboxHeader({
   const statusLabels: Record<SandboxState, string> = {
     "input-streaming": "Pending",
     "input-available": "Running",
+    "approval-requested": "Approval required",
+    "approval-responded": "Approval responded",
     "output-available": "Completed",
     "output-error": "Error",
+    "output-denied": "Denied",
   };
 
   return (
