@@ -1,8 +1,19 @@
 import SwiftUI
+import UIKit
 
 @main
 struct VladChatApp: App {
     @StateObject private var chat = ChatViewModel()
+
+    init() {
+#if DEBUG
+        // Functional UI tests must not wait for the intentionally paused
+        // glass animator. Production and visual verification keep animations.
+        if ProcessInfo.processInfo.environment["VLAD_UI_TEST_DISABLE_ANIMATIONS"] == "1" {
+            UIView.setAnimationsEnabled(false)
+        }
+#endif
+    }
 
 #if DEBUG
     private var isInferenceGalleryUITest: Bool {

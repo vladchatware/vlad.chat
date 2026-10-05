@@ -187,20 +187,15 @@ private struct ChatCanvasColumn: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                ChatListView(
-                    isDarkMode: isDarkMode,
-                    isLoading: isLoading,
-                    viewModel: viewModel,
-                    messageText: $messageText,
-                    isAccountPromptPresented: $isAccountPromptPresented
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-            .background {
-                Color.chatBackground(isDarkMode: isDarkMode)
-                    .ignoresSafeArea(edges: .top)
-            }
+            ChatListView(
+                isDarkMode: isDarkMode,
+                isLoading: isLoading,
+                viewModel: viewModel,
+                messageText: $messageText,
+                isAccountPromptPresented: $isAccountPromptPresented
+            )
+            .background(Color.chatBackground(isDarkMode: isDarkMode))
+            .ignoresSafeArea(edges: .top)
             .tint(isDarkMode ? .white : .black)
             .navigationBarTitleDisplayMode(.inline)
             .navigationBarBackButtonHidden(true)

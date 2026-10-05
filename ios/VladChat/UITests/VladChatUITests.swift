@@ -11,6 +11,7 @@ final class VladChatUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication()
+        app.launchEnvironment["VLAD_UI_TEST_DISABLE_ANIMATIONS"] = "1"
     }
 
     func testWebSearchToggleIsIconOnlyAndStateful() {
@@ -224,6 +225,8 @@ final class VladChatUITests: XCTestCase {
     }
 
     func testSeededChatHistoryStreamsThroughProductionChatToLatestText() {
+        // Keep the real partial glass effect in this production recording.
+        app.launchEnvironment["VLAD_UI_TEST_DISABLE_ANIMATIONS"] = "0"
         app.launchArguments = ["--ui-test-seeded-chat-history"]
         app.launch()
 
