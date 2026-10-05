@@ -60,7 +60,7 @@ import { PROVIDER_MODELS, isModelEnabled } from '@/lib/provider';
 import { SUBSCRIPTION_GRANT_CREDITS } from '@/lib/billing';
 import posthog from 'posthog-js';
 import { ComputerScreenshotTool } from '@/components/computer-screenshot-tool';
-import { CodeRunPanel, type CodeRunView } from '@/components/ai-elements/code-run-panel';
+import { CodeRunPanel } from '@/components/ai-elements/code-run-panel';
 
 const models = PROVIDER_MODELS.map(({ id, name }) => ({ name, value: id }));
 
