@@ -576,13 +576,44 @@ private final class WeakVNCMessageHandler: NSObject, WKScriptMessageHandler {
 
 struct ComputerVNCWebView: UIViewRepresentable {
     @ObservedObject var controller: ComputerUseSessionController
+    let presentation: ComputerViewerPresentation
 
-    func makeUIView(context: Context) -> WKWebView { controller.webView }
+    func makeUIView(context: Context) -> HostView { HostView() }
 
-    func updateUIView(_ view: WKWebView, context: Context) {
-        view.scrollView.isScrollEnabled = false
-        view.scrollView.bounces = false
-        view.isOpaque = false
+    func updateUIView(_ host: HostView, context: Context) {
+        // The floating host can still update while the inspector appears.
+        // Only the active presentation may take ownership of the live WebView.
+        guard controller.presentation == presentation else { return }
+        let webView = controller.webView
+        host.attach(webView)
+        let isInspector = presentation == .inspector
+        webView.accessibilityIdentifier = isInspector ? "computerInspectorPreview" : "computerDesktopPreview"
+        webView.accessibilityLabel = isInspector ? "Computer desktop inspector" : "Computer desktop preview"
+        webView.scrollView.isScrollEnabled = false
+        webView.scrollView.bounces = false
+        webView.isOpaque = false
+    }
+
+    // SwiftUI owns a distinct container for each presentation; it never tears
+    // down the shared WebView's accessibility host when the old screen disappears.
+    final class HostView: UIView {
+        private weak var webView: WKWebView?
+
+        func attach(_ webView: WKWebView) {
+            self.webView = webView
+            if webView.superview !== self {
+                webView.removeFromSuperview()
+                addSubview(webView)
+            }
+            webView.frame = bounds
+            webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            guard let webView, webView.superview === self else { return }
+            webView.frame = bounds
+        }
     }
 }
 
@@ -891,9 +922,7 @@ struct ComputerUseViewerOverlay: View {
     private func desktopSurface(cornerRadius: CGFloat) -> some View {
         ZStack {
             if controller.state != .failed && controller.state != .ended {
-                ComputerVNCWebView(controller: controller)
-                    .accessibilityLabel("Computer desktop preview")
-                    .accessibilityIdentifier("computerDesktopPreview")
+                ComputerVNCWebView(controller: controller, presentation: .floating)
                     .background(.black)
             }
             ComputerConnectionStatusView(controller: controller, compact: true)
@@ -1423,8 +1452,7 @@ private struct ComputerInspectorPreview: View {
     var body: some View {
         ZStack {
             if controller.state != .failed && controller.state != .ended {
-                ComputerVNCWebView(controller: controller)
-                    .accessibilityIdentifier("computerInspectorPreview")
+                ComputerVNCWebView(controller: controller, presentation: .inspector)
                     .opacity(controller.state == .live || controller.state == .reconnecting ? 1 : 0)
             }
             if controller.state == .live || controller.state == .reconnecting {

@@ -1,8 +1,35 @@
 import Foundation
 import Testing
+import UIKit
+import WebKit
 @testable import VladChat
 
 struct VladChatTests {
+    @MainActor @Test func computerDesktopMovesBetweenHostsWithoutOldHostChangingItsFrame() {
+        let webView = WKWebView()
+        webView.accessibilityIdentifier = "computerDesktopPreview"
+        let preview = ComputerVNCWebView.HostView(frame: CGRect(x: 0, y: 0, width: 208, height: 117))
+        let inspector = ComputerVNCWebView.HostView(frame: CGRect(x: 0, y: 0, width: 390, height: 220))
+
+        preview.attach(webView)
+        #expect(webView.superview === preview)
+        #expect(webView.frame == preview.bounds)
+
+        inspector.attach(webView)
+        preview.frame.size = CGSize(width: 100, height: 100)
+        preview.layoutSubviews()
+        #expect(preview.subviews.isEmpty)
+        #expect(webView.superview === inspector)
+        #expect(webView.frame == inspector.bounds)
+
+        preview.attach(webView)
+        inspector.layoutSubviews()
+        #expect(inspector.subviews.isEmpty)
+        #expect(webView.superview === preview)
+        #expect(webView.frame == preview.bounds)
+        #expect(webView.accessibilityIdentifier == "computerDesktopPreview")
+    }
+
     @Test func agentRunStatusPresentationProjectsActivePhasesAndHidesTerminalStates() throws {
         let cases: [(String, AgentRunStatusPresentationPhase?)] = [
             (#"{"runId":"run","status":"running"}"#, .starting),
