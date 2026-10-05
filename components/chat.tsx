@@ -28,7 +28,6 @@ import {
   ToolOutput,
   ToolInput,
 } from '@/components/ai-elements/tool';
-import { CodeBlock, CodeBlockCopyButton } from '@/components/ai-elements/code-block';
 import { Fragment, useEffect, useMemo, useRef, useState, useCallback, type ComponentProps } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useUIMessages } from '@convex-dev/agent/react';
@@ -37,7 +36,7 @@ import { AlertCircleIcon, BarChart3Icon, CopyIcon, KeyRoundIcon, MessageCircleIc
 import { SiNotion } from '@icons-pack/react-simple-icons';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
-import { groupConsecutiveScreenshots, screenshotReference, type ScreenshotReference } from '@/lib/computer-use/screenshot-contract';
+import { computerScreenshotGroups, type ScreenshotReference } from '@/lib/computer-use/screenshot-contract';
 import {
   Source,
   Sources,
@@ -60,7 +59,8 @@ import { api } from '@/convex/_generated/api';
 import { PROVIDER_MODELS, isModelEnabled } from '@/lib/provider';
 import { SUBSCRIPTION_GRANT_CREDITS } from '@/lib/billing';
 import posthog from 'posthog-js';
-import { ComputerScreenshotOutput } from '@/components/computer-screenshot-output';
+import { ComputerScreenshotTool } from '@/components/computer-screenshot-tool';
+import { CodeRunPanel, type CodeRunView } from '@/components/ai-elements/code-run-panel';
 
 const models = PROVIDER_MODELS.map(({ id, name }) => ({ name, value: id }));
 
@@ -94,72 +94,6 @@ type ToolOutputTextItem = {
 
 type ToolHeaderType = ComponentProps<typeof ToolHeader>['type'];
 type ToolHeaderState = ComponentProps<typeof ToolHeader>['state'];
-
-type CodeRunView = {
-  code: string;
-  description: string;
-  status: 'running' | 'completed' | 'failed' | 'stopped' | 'interrupted';
-  stdout: string;
-  stderr: string;
-  outputTruncated: boolean;
-  returnValue?: string;
-  errorText?: string;
-};
-
-function CodeRunPanel({ code, description, run, fallbackStatus, persistedOutput, errorText }: {
-  code: string;
-  description: string;
-  run?: CodeRunView;
-  fallbackStatus: CodeRunView['status'];
-  persistedOutput?: string;
-  errorText?: string;
-}) {
-  const [tab, setTab] = useState<'code' | 'output'>('code');
-  const status = run?.status ?? fallbackStatus;
-  const statusLabel = status === 'running' ? 'Running'
-    : status === 'completed' ? 'Completed'
-      : status === 'stopped' ? 'Stopped'
-        : status === 'interrupted' ? 'Interrupted' : 'Error';
-  const output = [
-    run?.stdout ? `stdout:\n${run.stdout}` : '',
-    run?.stderr ? `stderr:\n${run.stderr}` : '',
-    run?.returnValue ? `Return value: ${run.returnValue}` : '',
-    run?.errorText ?? errorText ?? '',
-    run?.outputTruncated ? 'Output truncated at 64 KiB.' : '',
-  ].filter(Boolean).join('\n\n') || persistedOutput || (status === 'running' ? 'Waiting for output…' : 'No output.');
-
-  return (
-    <div className="space-y-2 p-4">
-      <p className="text-sm text-muted-foreground">{description}</p>
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex rounded-md bg-muted p-1" role="tablist" aria-label="Code run details">
-          {(['code', 'output'] as const).map((name) => (
-            <button
-              key={name}
-              type="button"
-              role="tab"
-              aria-selected={tab === name}
-              onClick={() => setTab(name)}
-              className={`rounded px-3 py-1 text-xs capitalize ${tab === name ? 'bg-background shadow-sm' : 'text-muted-foreground'}`}
-            >
-              {name}
-            </button>
-          ))}
-        </div>
-        <span className="text-xs text-muted-foreground" aria-live="polite">{statusLabel}</span>
-      </div>
-      {tab === 'code' ? (
-        <CodeBlock code={code} language="typescript" className="max-h-96 overflow-auto">
-          <CodeBlockCopyButton aria-label="Copy TypeScript" />
-        </CodeBlock>
-      ) : (
-        <pre className="max-h-96 min-h-24 overflow-auto whitespace-pre-wrap rounded-md bg-muted/50 p-4 font-mono text-xs" aria-live="polite">
-          {output}
-        </pre>
-      )}
-    </div>
-  );
-}
 
 function codeInput(value: unknown): { code: string; description: string } | null {
   if (typeof value !== 'object' || value === null) return null;
@@ -574,18 +508,9 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                 {(messages ?? []).map((message, messageIndex) => {
                   const messageKey = `${message.order}-${message.stepOrder}`
                   const parts = message.parts as ChatMessagePart[]
-                  const screenshotAt = (part: ChatMessagePart): ScreenshotReference | undefined => {
-                    const name = part.toolName ??
-                      (part.type.startsWith('tool-') ? part.type.slice(5) : part.type)
-                    if (name !== 'computer_screenshot' || part.state !== 'output-available') return undefined
-                    const reference = screenshotReference(part.output)
-                    if (!reference) return undefined
-                    if (reference.url.startsWith('/') && !reference.url.startsWith('//')) return reference
-                    return reference.url.startsWith('https://') ? reference : undefined
-                  }
                   const screenshotGroups = new Map<number, ScreenshotReference[]>()
                   const groupedScreenshotIndexes = new Set<number>()
-                  for (const group of groupConsecutiveScreenshots(parts.map(screenshotAt))) {
+                  for (const group of computerScreenshotGroups(parts)) {
                     screenshotGroups.set(group.startIndex, group.screenshots)
                     for (let index = group.startIndex + 1; index < group.endIndex; index += 1) {
                       groupedScreenshotIndexes.add(index)
@@ -645,12 +570,24 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                       ? output
                       : output == null ? undefined : JSON.stringify(output)
                     const inputCode = rawToolName === 'run_code' ? codeInput(part.input) : null
-                    const matchingCodeRun = inputCode && (toolState === 'input-streaming' || toolState === 'input-available')
+                    const matchingCodeRun = inputCode
                       ? liveCodeRuns?.find((run) =>
                           run.code === inputCode.code &&
                           run.description === inputCode.description,
                         )
                       : undefined
+
+                    if (rawToolName === 'computer_screenshot') {
+                      return (
+                        <ComputerScreenshotTool
+                          key={`${messageKey}-${partIndex}`}
+                          state={toolState}
+                          input={part.input}
+                          output={output}
+                          errorText={part.errorText}
+                        />
+                      )
+                    }
 
                     return (
                       <Tool key={`${messageKey}-${partIndex}`} defaultOpen={false}>
@@ -717,7 +654,13 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
                         parts.map((part, partIndex) => {
                           const screenshotGroup = screenshotGroups.get(partIndex)
                           if (screenshotGroup) {
-                            return <ComputerScreenshotOutput key={`${messageKey}-${partIndex}`} screenshots={screenshotGroup} />
+                            return (
+                              <ComputerScreenshotTool
+                                key={`${messageKey}-${partIndex}`}
+                                state="output-available"
+                                screenshots={screenshotGroup}
+                              />
+                            )
                           }
                           if (groupedScreenshotIndexes.has(partIndex)) return null
                           switch (part.type) {

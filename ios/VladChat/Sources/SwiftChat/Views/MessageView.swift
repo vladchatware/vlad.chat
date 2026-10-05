@@ -1592,12 +1592,11 @@ struct ToolOutputSheet: View {
                                     Text(tool.status.rawValue.capitalized)
                                         .font(.system(.caption, design: .rounded).weight(.medium))
                                         .foregroundColor(isDarkMode ? .white.opacity(0.55) : Color.black.opacity(0.55))
-                                    Text(tool.output ?? tool.errorText ?? "Waiting for output…")
-                                        .font(.system(.body, design: .monospaced))
-                                        .foregroundColor(tool.errorText == nil
-                                            ? (isDarkMode ? .white.opacity(0.9) : Color.black.opacity(0.8))
-                                            : .red.opacity(0.82))
-                                        .textSelection(.enabled)
+                                    RunCodeOutputView(
+                                        output: tool.output,
+                                        errorText: tool.errorText,
+                                        isDarkMode: isDarkMode
+                                    )
                                     if tool.outputTruncated == true {
                                         Text("Preview truncated")
                                             .font(.system(.footnote))
@@ -1641,6 +1640,104 @@ struct ToolOutputSheet: View {
     private var sheetTitle: String {
         if let title = tool.title, !title.isEmpty { return title }
         return tool.name.replacingOccurrences(of: "_", with: " ")
+    }
+}
+
+private struct RunCodeOutputView: View {
+    let output: String?
+    let errorText: String?
+    let isDarkMode: Bool
+
+    private var foregroundColor: Color {
+        errorText == nil
+            ? (isDarkMode ? .white.opacity(0.9) : Color.black.opacity(0.8))
+            : .red.opacity(0.82)
+    }
+
+    var body: some View {
+        let sections = RunCodeOutputSections.parse(output ?? "")
+        Group {
+            if sections.hasRecognizedSections {
+                VStack(alignment: .leading, spacing: 12) {
+                    if let stdout = sections.stdout {
+                        outputSection(title: "stdout", value: stdout)
+                    }
+                    if let stderr = sections.stderr {
+                        outputSection(title: "stderr", value: stderr)
+                    }
+                    if let returnValue = sections.returnValue {
+                        outputSection(title: nil, value: Self.prettyJSON(returnValue))
+                    }
+                    ForEach(sections.details.indices, id: \.self) { index in
+                        outputSection(title: nil, value: sections.details[index])
+                    }
+                }
+            } else {
+                let value = output?.isEmpty == false ? output : nil
+                Text(Self.prettyJSON(value ?? errorText ?? "Waiting for output…"))
+                    .font(.system(.body, design: .monospaced))
+                    .foregroundColor(foregroundColor)
+                    .textSelection(.enabled)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func outputSection(title: String?, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if let title {
+                Text(title)
+                    .font(.system(.caption, design: .rounded).weight(.medium))
+                    .foregroundColor(isDarkMode ? .white.opacity(0.55) : Color.black.opacity(0.55))
+            }
+            Text(value)
+                .font(.system(.body, design: .monospaced))
+                .foregroundColor(foregroundColor)
+                .textSelection(.enabled)
+        }
+    }
+
+    private static func prettyJSON(_ value: String) -> String {
+        guard let data = value.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]),
+              let prettyData = try? JSONSerialization.data(
+                withJSONObject: json,
+                options: [.prettyPrinted, .sortedKeys, .fragmentsAllowed]
+              ),
+              let pretty = String(data: prettyData, encoding: .utf8) else {
+            return value
+        }
+        return pretty
+    }
+}
+
+private struct RunCodeOutputSections {
+    var stdout: String?
+    var stderr: String?
+    var returnValue: String?
+    var details: [String] = []
+    var hasRecognizedSections: Bool {
+        stdout != nil || stderr != nil || returnValue != nil || !details.isEmpty
+    }
+
+    static func parse(_ output: String) -> RunCodeOutputSections {
+        var sections = RunCodeOutputSections()
+        for section in output.components(separatedBy: "\n\n") {
+            if section.hasPrefix("Program:") || section.hasPrefix("Run ID:") ||
+                section.hasPrefix("Status:") || section.hasPrefix("Exit code:") {
+                continue
+            }
+            if section.hasPrefix("stdout:\n") {
+                sections.stdout = String(section.dropFirst("stdout:\n".count))
+            } else if section.hasPrefix("stderr:\n") {
+                sections.stderr = String(section.dropFirst("stderr:\n".count))
+            } else if section.hasPrefix("Return value: ") {
+                sections.returnValue = String(section.dropFirst("Return value: ".count))
+            } else if !section.isEmpty {
+                sections.details.append(section)
+            }
+        }
+        return sections
     }
 }
 

@@ -118,6 +118,7 @@ export type MobileCodeRun = {
   stdout: string;
   stderr: string;
   outputTruncated: boolean;
+  returnValue?: string;
   errorText?: string;
 };
 
@@ -217,6 +218,7 @@ export function attachCodeRunProgress(
   const output = [
     run.stdout ? `stdout:\n${run.stdout}` : "",
     run.stderr ? `stderr:\n${run.stderr}` : "",
+    run.returnValue === undefined ? "" : `Return value: ${run.returnValue}`,
   ].filter(Boolean).join("\n\n");
   const status: MobileToolStatus = run.status === "interrupted" ? "failed" : run.status;
   const inputSummary = `${run.description ? `// ${run.description}\n\n` : ""}${run.code}`.slice(0, 64 * 1024);
