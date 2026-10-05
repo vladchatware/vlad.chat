@@ -10,6 +10,19 @@ import SwiftUI
 import Combine
 import QuartzCore
 
+/// Self-sizing hosting cells can resolve their heights after a scroll finishes.
+final class TranscriptTableView: UITableView {
+    var contentSizeDidChange: (() -> Void)?
+    private var lastContentSize = CGSize.zero
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard contentSize != lastContentSize else { return }
+        lastContentSize = contentSize
+        contentSizeDidChange?()
+    }
+}
+
 /// Owns the transcript's safe area and the material beneath its floating composer.
 final class MessageTableViewController: UIViewController {
     let tableView: UITableView
@@ -136,7 +149,7 @@ struct MessageTableView: UIViewControllerRepresentable {
     }
 
     func makeUIViewController(context: Context) -> MessageTableViewController {
-        let tableView = UITableView(frame: .zero, style: .plain)
+        let tableView = TranscriptTableView(frame: .zero, style: .plain)
         tableView.backgroundColor = .clear
         tableView.separatorStyle = .none
         tableView.delegate = context.coordinator
@@ -158,6 +171,9 @@ struct MessageTableView: UIViewControllerRepresentable {
         }
 
         context.coordinator.tableView = tableView
+        tableView.contentSizeDidChange = { [weak coordinator = context.coordinator] in
+            coordinator?.resumeFollowingLatestAfterLayout()
+        }
 
         return MessageTableViewController(tableView: tableView, composerTop: composerTop, isDarkMode: isDarkMode)
     }
@@ -415,6 +431,7 @@ struct MessageTableView: UIViewControllerRepresentable {
         var messageHeightCache: [String: CGFloat] = [:]
         var shownMessageIds: Set<String> = []
         private var followLatestScheduled = false
+        private var followsContentSizeChanges = false
         private var followLatestGeneration = 0
         private var readerPositionRestoreScheduled = false
         private var lastFollowLatestAt: TimeInterval = 0
@@ -606,6 +623,7 @@ struct MessageTableView: UIViewControllerRepresentable {
             cell.backgroundColor = .clear
 
             if parent.messages.isEmpty {
+                cell.accessibilityIdentifier = "transcriptWelcome"
                 cell.contentConfiguration = UIHostingConfiguration {
                     WelcomeView(isDarkMode: parent.isDarkMode)
                         .padding(.vertical, 16)
@@ -617,6 +635,7 @@ struct MessageTableView: UIViewControllerRepresentable {
                 .margins(.all, 0)
                 .background(.clear)
             } else if showsWaitingRow && indexPath.row == parent.messages.count {
+                cell.accessibilityIdentifier = "transcriptWaiting"
                 cell.contentConfiguration = UIHostingConfiguration {
                     AssistantActivityView(
                         activity: ResponseActivity(phase: .waiting, tools: []),
@@ -636,6 +655,7 @@ struct MessageTableView: UIViewControllerRepresentable {
                 .background(.clear)
             } else {
                 let message = parent.messages[indexPath.row]
+                cell.accessibilityIdentifier = "transcriptMessage-\(message.id)"
                 let isLastMessage = indexPath.row == parent.messages.count - 1
                 let isArchived = indexPath.row < parent.archivedMessagesStartIndex
                 let showArchiveSeparator = indexPath.row == parent.archivedMessagesStartIndex && parent.archivedMessagesStartIndex > 0
@@ -650,9 +670,12 @@ struct MessageTableView: UIViewControllerRepresentable {
                     messageIndex: indexPath.row
                 )
 
-                // Always recreate the content configuration to ensure correct wrapper is used
+                // UIKit reuses the hosting view as well as the cell. Scope its
+                // SwiftUI state (including parsed Markdown) to the message's
+                // wrapper, which survives streaming and ID reconciliation.
                 cell.contentConfiguration = UIHostingConfiguration {
                     ObservableMessageCell(wrapper: wrapper, viewModel: parent.viewModel)
+                        .id(ObjectIdentifier(wrapper))
                 }
                 .minSize(width: 0, height: 0)
                 .margins(.all, 0)
@@ -790,22 +813,23 @@ struct MessageTableView: UIViewControllerRepresentable {
         func scrollToBottom(animated: Bool) {
             guard let tableView = tableView else { return }
             guard !parent.messages.isEmpty else { return }
+            followsContentSizeChanges = !parent.userHasScrolled
 
             updateContentInset()
             tableView.layoutIfNeeded()
 
-            let inset = tableView.adjustedContentInset
-            let maxOffsetY = max(
-                -inset.top,
-                tableView.contentSize.height - tableView.bounds.height + inset.bottom
-            )
-            let targetOffset = CGPoint(x: tableView.contentOffset.x, y: maxOffsetY)
+            // Unmaterialized self-sizing rows still have estimated heights.
+            // A contentSize offset can land several messages before the end.
+            // Target the row so UIKit resolves the actual final cells first.
+            let lastRow = tableView.numberOfRows(inSection: 0) - 1
+            guard lastRow >= 0 else { return }
+            let indexPath = IndexPath(row: lastRow, section: 0)
 
             if animated {
-                tableView.setContentOffset(targetOffset, animated: true)
+                tableView.scrollToRow(at: indexPath, at: .bottom, animated: true)
             } else {
                 UIView.performWithoutAnimation {
-                    tableView.setContentOffset(targetOffset, animated: false)
+                    tableView.scrollToRow(at: indexPath, at: .bottom, animated: false)
                 }
             }
         }
@@ -817,6 +841,7 @@ struct MessageTableView: UIViewControllerRepresentable {
             guard !parent.userHasScrolled,
                   !isDragging,
                   !followLatestScheduled else { return }
+            followsContentSizeChanges = true
             followLatestScheduled = true
             let generation = followLatestGeneration
 
@@ -864,6 +889,14 @@ struct MessageTableView: UIViewControllerRepresentable {
             }
         }
 
+        func resumeFollowingLatestAfterLayout() {
+            // Reaching the current bottom is temporary while rows self-size.
+            // A manual drag or terminal Markdown reflow explicitly ends the
+            // follow intent and must not restart it from a layout callback.
+            guard followsContentSizeChanges else { return }
+            scheduleFollowLatestIfNeeded()
+        }
+
         fileprivate func advanceFollowingLatest(_ displayLink: CADisplayLink) {
             guard !parent.userHasScrolled, !isDragging, let tableView else {
                 stopFollowingLatest()
@@ -881,7 +914,7 @@ struct MessageTableView: UIViewControllerRepresentable {
                 if distance != 0 {
                     tableView.contentOffset.y = targetOffsetY
                 }
-                stopFollowingLatest()
+                stopFollowingLatest(preservingFollowIntent: true)
                 checkIfAtBottom()
                 return
             }
@@ -892,7 +925,10 @@ struct MessageTableView: UIViewControllerRepresentable {
             tableView.contentOffset.y += min(easedStep, maximumStep)
         }
 
-        fileprivate func stopFollowingLatest() {
+        fileprivate func stopFollowingLatest(preservingFollowIntent: Bool = false) {
+            if !preservingFollowIntent {
+                followsContentSizeChanges = false
+            }
             followLatestGeneration += 1
             followLatestScheduled = false
             followLatestDisplayLink?.invalidate()

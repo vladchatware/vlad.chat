@@ -283,26 +283,14 @@ final class VladChatUITests: XCTestCase {
 
         let table = app.tables.firstMatch
         XCTAssertTrue(table.waitForExistence(timeout: 8))
-        let anchor = app.staticTexts.containing(
+        let anchorCell = table.cells["transcriptMessage-sync-history-assistant-4"]
+        let anchor = anchorCell.staticTexts.matching(
             NSPredicate(format: "label CONTAINS %@", "SYNC_HISTORY_ASSISTANT_4")
         ).firstMatch
-        let latest = app.staticTexts.containing(
-            NSPredicate(format: "label CONTAINS %@", "SYNC_CURRENT_RESPONSE")
-        ).firstMatch
-        let initialSnapshotVisible = NSPredicate { _, _ in
-            latest.exists && latest.frame.intersects(table.frame)
-        }
-        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: initialSnapshotVisible, object: nil)], timeout: 8), .completed,
-                       "The initial snapshot must finish following to the latest response before scrolling")
-        for _ in 0..<8 {
-            // UITableView can remove an offscreen row from its accessibility
-            // snapshot after a swipe. Search without asking a missing row
-            // for its frame.
-            if anchor.exists && anchor.frame.intersects(table.frame) { break }
-            table.swipeDown()
-        }
+        waitForInitialThreadSnapshot(in: table)
+        scrollTranscript(table, to: anchorCell, towardHistory: true)
         XCTAssertTrue(anchor.exists, "The earlier message must be materialized after scrolling")
-        XCTAssertTrue(anchor.frame.intersects(table.frame), "An earlier message must be visible before the same-thread snapshot arrives")
+        XCTAssertTrue(anchor.frame.intersects(transcriptVisibleFrame(in: table)), "An earlier message must be visible before the same-thread snapshot arrives")
         let originalY = anchor.frame.minY
 
         let applySync = app.buttons["applySameThreadSyncFixture"]
@@ -312,14 +300,14 @@ final class VladChatUITests: XCTestCase {
         let snapshotApplied = NSPredicate { _, _ in applySync.value as? String == "Update 1" }
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: snapshotApplied, object: nil)], timeout: 3), .completed)
         let anchorMoved = NSPredicate { _, _ in
-            !anchor.exists || !anchor.frame.intersects(table.frame) || abs(anchor.frame.minY - originalY) >= 48
+            !anchor.exists || !anchor.frame.intersects(self.transcriptVisibleFrame(in: table)) || abs(anchor.frame.minY - originalY) >= 48
         }
         let deferredLayoutMovedAnchor = XCTNSPredicateExpectation(predicate: anchorMoved, object: nil)
         deferredLayoutMovedAnchor.isInverted = true
         XCTAssertEqual(XCTWaiter.wait(for: [deferredLayoutMovedAnchor], timeout: 1), .completed,
                        "Deferred same-thread layout must preserve the reader's viewport")
         XCTAssertTrue(anchor.exists, "A same-thread snapshot must retain the earlier message")
-        XCTAssertTrue(anchor.frame.intersects(table.frame), "A same-thread snapshot should not jump the reader to the latest response")
+        XCTAssertTrue(anchor.frame.intersects(transcriptVisibleFrame(in: table)), "A same-thread snapshot should not jump the reader to the latest response")
         XCTAssertLessThan(abs(anchor.frame.minY - originalY), 48, "A same-thread sync update moved the reader's viewport")
     }
 
@@ -329,6 +317,7 @@ final class VladChatUITests: XCTestCase {
 
         let table = app.tables.firstMatch
         XCTAssertTrue(table.waitForExistence(timeout: 8))
+        waitForInitialThreadSnapshot(in: table)
         let jumpButton = app.buttons["jumpToLatestButton"]
         XCTAssertFalse(jumpButton.exists, "The button should be hidden at the latest message")
 
@@ -342,13 +331,33 @@ final class VladChatUITests: XCTestCase {
         )
         XCTAssertFalse(jumpButton.exists, "A small scroll nudge should stay inside the hidden tolerance zone")
 
-        table.swipeDown()
+        dragTranscript(table, towardHistory: true)
         XCTAssertTrue(jumpButton.waitForExistence(timeout: 2), "A meaningful scroll away from the latest message should reveal the button")
 
-        for _ in 0..<8 where jumpButton.exists {
-            table.swipeUp()
+        for _ in 0..<24 where jumpButton.exists {
+            dragTranscript(table, towardHistory: false)
         }
         XCTAssertFalse(jumpButton.exists, "Returning near the latest message should hide the button")
+    }
+
+    func testReusedTranscriptCellsKeepTheirOwnMessageText() {
+        app.launchArguments = ["--ui-test-thread-sync-scroll"]
+        app.launch()
+        let table = app.tables.firstMatch
+        XCTAssertTrue(table.waitForExistence(timeout: 8))
+        waitForInitialThreadSnapshot(in: table)
+
+        // Visit both directions so completed Markdown is cached, then rendered
+        // again in hosting cells previously used by other messages.
+        for (index, towardHistory) in [(6, true), (4, true), (2, true), (1, true), (4, false), (6, false), (8, false)] {
+            let cell = table.cells["transcriptMessage-sync-history-assistant-\(index)"]
+            scrollTranscript(table, to: cell, towardHistory: towardHistory)
+            XCTAssertTrue(cell.exists)
+            XCTAssertTrue(cell.frame.intersects(transcriptVisibleFrame(in: table)))
+            XCTAssertTrue(cell.staticTexts.matching(
+                NSPredicate(format: "label CONTAINS %@", "SYNC_HISTORY_ASSISTANT_\(index) —")
+            ).firstMatch.exists, "A reused row must render its own message, not cached text from a previous row")
+        }
     }
 
     func testThinkingPreviewRemainsBelowVisibleAnswerAfterCompletion() {
@@ -1008,6 +1017,52 @@ final class VladChatUITests: XCTestCase {
                        thenDragTo: gallery.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: endY)),
                        withVelocity: .slow,
                        thenHoldForDuration: 0.1)
+        }
+    }
+
+    private func waitForInitialThreadSnapshot(in table: XCUIElement) {
+        let latest = app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@", "SYNC_CURRENT_RESPONSE")
+        ).firstMatch
+        let visible = NSPredicate { _, _ in latest.exists && latest.frame.intersects(self.transcriptVisibleFrame(in: table)) }
+        let result = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: visible, object: nil)], timeout: 8)
+        XCTAssertEqual(result, .completed,
+                       "The initial snapshot must reach the latest response before scrolling")
+    }
+
+    private func transcriptVisibleFrame(in table: XCUIElement) -> CGRect {
+        var frame = table.frame.intersection(app.windows.firstMatch.frame)
+        let input = app.textViews["messageInput"]
+        if input.exists {
+            frame.size.height = max(0, min(frame.maxY, input.frame.minY - 24) - frame.minY)
+        }
+        return frame
+    }
+
+    private func dragTranscript(_ table: XCUIElement, towardHistory: Bool) {
+        // The table extends behind the composer. Default swipes start inside
+        // that overlay on SE and never reach the scroll view.
+        let frame = transcriptVisibleFrame(in: table)
+        let startY = towardHistory ? 0.35 : 0.70
+        let endY = towardHistory ? 0.70 : 0.35
+        let origin = app.coordinate(withNormalizedOffset: .zero)
+        origin.withOffset(CGVector(dx: frame.midX, dy: frame.minY + frame.height * startY))
+            .press(forDuration: 0.05,
+                   thenDragTo: origin.withOffset(CGVector(dx: frame.midX, dy: frame.minY + frame.height * endY)),
+                   withVelocity: .slow,
+                   thenHoldForDuration: 0.1)
+    }
+
+    private func scrollTranscript(_ table: XCUIElement, to cell: XCUIElement, towardHistory: Bool) {
+        for _ in 0..<24 {
+            let visibleFrame = transcriptVisibleFrame(in: table)
+            if cell.exists {
+                let frame = cell.frame
+                if visibleFrame.contains(CGPoint(x: frame.midX, y: frame.midY)) { return }
+                dragTranscript(table, towardHistory: frame.midY < visibleFrame.minY)
+            } else {
+                dragTranscript(table, towardHistory: towardHistory)
+            }
         }
     }
 
