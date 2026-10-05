@@ -246,7 +246,7 @@ private struct TranscriptScrollSurfaceModifier: ViewModifier {
     @ViewBuilder
     func body(content: Content) -> some View {
         if #available(iOS 26, *) {
-            content.ignoresSafeArea(.container, edges: .bottom)
+            content.ignoresSafeArea(.container, edges: [.top, .bottom])
         } else {
             content
         }

@@ -23,7 +23,7 @@ final class TranscriptTableView: UITableView {
     }
 }
 
-/// Owns the transcript's safe area and the material beneath its floating composer.
+/// Exposes the transcript to system bars and reserves space for its composer.
 final class MessageTableViewController: UIViewController {
     let tableView: UITableView
     var composerTop: CGFloat? {
@@ -31,19 +31,13 @@ final class MessageTableViewController: UIViewController {
             if isViewLoaded, composerTop != oldValue { view.setNeedsLayout() }
         }
     }
-    var isDarkMode: Bool {
-        didSet {
-            if isViewLoaded, isDarkMode != oldValue { view.setNeedsLayout() }
-        }
-    }
-    private let bottomBlur = UIVisualEffectView()
-    private let bottomBlurMask = CAGradientLayer()
-    private var isBottomBlurConfigured = false
+    private let bottomBlur = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
+    private let bottomBlurMask = UIView()
+    private let bottomBlurGradient = CAGradientLayer()
 
-    init(tableView: UITableView, composerTop: CGFloat?, isDarkMode: Bool) {
+    init(tableView: UITableView, composerTop: CGFloat?) {
         self.tableView = tableView
         self.composerTop = composerTop
-        self.isDarkMode = isDarkMode
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -59,37 +53,22 @@ final class MessageTableViewController: UIViewController {
         container.addSubview(tableView)
 
         view = container
+        setContentScrollView(tableView, for: .all)
 
         guard #available(iOS 26, *) else { return }
+        tableView.bottomEdgeEffect.isHidden = true
         bottomBlur.isUserInteractionEnabled = false
-        bottomBlurMask.colors = [
+        // Use a stable, light material rather than an animator whose partial
+        // blur can reset when UIKit rebuilds its effects.
+        bottomBlurGradient.colors = [
             UIColor.clear.cgColor,
             UIColor.black.cgColor,
             UIColor.black.cgColor,
         ]
-        bottomBlurMask.locations = [0, 0.8, 1]
-        bottomBlurMask.startPoint = CGPoint(x: 0.5, y: 0)
-        bottomBlurMask.endPoint = CGPoint(x: 0.5, y: 1)
-        bottomBlur.layer.mask = bottomBlurMask
+        bottomBlurGradient.startPoint = CGPoint(x: 0.5, y: 0)
+        bottomBlurGradient.endPoint = CGPoint(x: 0.5, y: 1)
+        bottomBlurMask.layer.addSublayer(bottomBlurGradient)
         container.addSubview(bottomBlur)
-    }
-
-    override func viewDidAppear(_ animated: Bool) {
-        super.viewDidAppear(animated)
-        guard #available(iOS 26, *), !isBottomBlurConfigured else { return }
-        // Configure the partial effect after attachment to its window; UIKit
-        // can rebuild material effects when an unattached view first appears.
-        let animator = UIViewPropertyAnimator(duration: 1, curve: .linear) { [bottomBlur] in
-            bottomBlur.effect = UIBlurEffect(style: .regular)
-        }
-        animator.startAnimation()
-        animator.pauseAnimation()
-        animator.fractionComplete = 0.2
-        // Commit the partial material as a finished effect. Keeping a paused
-        // animator active makes UI automation wait indefinitely for idle.
-        animator.stopAnimation(false)
-        animator.finishAnimation(at: .current)
-        isBottomBlurConfigured = true
     }
 
     override func viewDidLayoutSubviews() {
@@ -115,17 +94,22 @@ final class MessageTableViewController: UIViewController {
             bottomBlur.isHidden = true
             return
         }
-        // Begin the soft material at zero at the composer's top. A single
-        // restrained pass avoids compounding tint beneath the composer glass.
-        tableView.bottomEdgeEffect.isHidden = true
-        let composerY = view.convert(CGPoint(x: 0, y: composerTop), from: window).y
-        let startY = max(0, composerY)
+        let startY = max(0, view.convert(CGPoint(x: 0, y: composerTop), from: window).y)
         let height = max(0, view.bounds.height - startY)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         bottomBlur.isHidden = height == 0
         bottomBlur.frame = CGRect(x: 0, y: startY, width: view.bounds.width, height: height)
         bottomBlurMask.frame = bottomBlur.bounds
+        bottomBlurGradient.frame = bottomBlurMask.bounds
+        let systemBottomInset = max(0, view.safeAreaInsets.bottom - additionalSafeAreaInsets.bottom)
+        let composerBottom = height > 0 ? max(0, min(1, (height - systemBottomInset) / height)) : 1
+        // Finish the fade at the composer's lower edge and hold it through the
+        // home-indicator area, so sharp transcript text cannot reappear there.
+        bottomBlurGradient.locations = [0, NSNumber(value: Double(composerBottom)), 1]
+        // UIVisualEffectView copies its mask internally. Reassign after size
+        // changes so keyboard and window resizing cannot leave a stale mask.
+        bottomBlur.mask = bottomBlurMask
         CATransaction.commit()
     }
 }
@@ -163,6 +147,7 @@ struct MessageTableView: UIViewControllerRepresentable {
         tableView.clipsToBounds = false
 
         if #available(iOS 26, *) {
+            tableView.topEdgeEffect.style = .soft
             tableView.bottomEdgeEffect.style = .soft
         }
 
@@ -175,13 +160,12 @@ struct MessageTableView: UIViewControllerRepresentable {
             coordinator?.resumeFollowingLatestAfterLayout()
         }
 
-        return MessageTableViewController(tableView: tableView, composerTop: composerTop, isDarkMode: isDarkMode)
+        return MessageTableViewController(tableView: tableView, composerTop: composerTop)
     }
 
     func updateUIViewController(_ controller: MessageTableViewController, context: Context) {
         let tableView = controller.tableView
         controller.composerTop = composerTop
-        controller.isDarkMode = isDarkMode
         controller.updateComposerSafeArea()
         context.coordinator.parent = self
 
