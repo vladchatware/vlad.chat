@@ -1205,7 +1205,7 @@ final class ChatViewModel: ObservableObject {
     private static func userFacingMessage(for error: Error) -> String {
         let text = error.localizedDescription
         if let range = text.range(of: "ConvexError(data:") {
-            let payload = text[range.upperBound...]
+            let payload = String(text[range.upperBound...])
                 .trimmingCharacters(in: CharacterSet(charactersIn: " )"))
             if let data = payload.data(using: .utf8),
                let decoded = try? JSONDecoder().decode(String.self, from: data) {
