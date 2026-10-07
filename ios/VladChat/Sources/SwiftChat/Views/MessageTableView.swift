@@ -452,6 +452,10 @@ struct MessageTableView: UIViewControllerRepresentable {
 
         private static let followLatestResponse: TimeInterval = 0.2
         private static let maximumFollowLatestSpeed: CGFloat = 1_800
+        // The floating navigation identity extends 28pt below the navigation
+        // bar. Keep transcript rows clear of it when a new user message is
+        // positioned at the top for streaming.
+        private static let transcriptHeaderClearance: CGFloat = 36
 
         var showsWaitingRow: Bool {
             parent.isLoading && parent.messages.last?.role == .user
@@ -756,6 +760,11 @@ struct MessageTableView: UIViewControllerRepresentable {
             guard let tableView = tableView else { return }
             isUpdatingContentInset = true
             defer { isUpdatingContentInset = false }
+
+            if tableView.contentInset.top != Self.transcriptHeaderClearance {
+                tableView.contentInset.top = Self.transcriptHeaderClearance
+                tableView.verticalScrollIndicatorInsets.top = Self.transcriptHeaderClearance
+            }
 
             let targetInset: CGFloat
 
