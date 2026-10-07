@@ -113,6 +113,10 @@ final class ChatViewModel: ObservableObject {
     func sendMessage(text rawText: String) -> Bool {
         let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !isLoading, (!text.isEmpty || !pendingAttachments.isEmpty) else { return false }
+        guard canUse(currentModel) else {
+            attachmentError = Self.subscriptionRequiredMessage
+            return false
+        }
         guard let client else {
             attachmentError = "Vlad is still connecting."
             return false
@@ -265,6 +269,10 @@ final class ChatViewModel: ObservableObject {
         let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         let outgoingAttachments = pendingAttachments
         guard !text.isEmpty || !outgoingAttachments.isEmpty else { return }
+        guard canUse(currentModel) else {
+            attachmentError = Self.subscriptionRequiredMessage
+            return
+        }
         guard let client else {
             attachmentError = "Vlad is still connecting."
             return
@@ -342,6 +350,7 @@ final class ChatViewModel: ObservableObject {
     }
 
     func changeModel(to model: ModelType) {
+        guard canUse(model) else { return }
         currentModel = model
         AppConfig.shared.currentModel = model
         if var chat = currentChat {
@@ -349,6 +358,10 @@ final class ChatViewModel: ObservableObject {
             currentChat = chat
             replaceChat(chat)
         }
+    }
+
+    func canUse(_ model: ModelType) -> Bool {
+        !model.requiresSubscription || account?.hasSubscription == true
     }
 
     func createNewChat(language: String? = nil, modelType: ModelType? = nil, focusInput: Bool = true) {
@@ -686,6 +699,12 @@ final class ChatViewModel: ObservableObject {
             uniquingKeysWith: { _, latest in latest }
         )
         account = mobileChat.account
+        if mobileChat.account?.hasSubscription != true,
+           currentModel.requiresSubscription,
+           let freeModel = AppConfig.shared.availableModels.first(where: { !$0.requiresSubscription }) {
+            currentModel = freeModel
+            AppConfig.shared.currentModel = freeModel
+        }
         if hasObservedLocalGeneration(in: mobileChat, order: localGenerationExpectedOrder) {
             localGenerationActive = false
             localGenerationExpectedOrder = nil
@@ -1125,6 +1144,10 @@ final class ChatViewModel: ObservableObject {
 
     private func replaceMessages(from index: Int, with rawText: String) {
         let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard canUse(currentModel) else {
+            attachmentError = Self.subscriptionRequiredMessage
+            return
+        }
         guard !isLoading,
               !text.isEmpty,
               messages.indices.contains(index),
@@ -1181,11 +1204,22 @@ final class ChatViewModel: ObservableObject {
 
     private static func userFacingMessage(for error: Error) -> String {
         let text = error.localizedDescription
+        if let range = text.range(of: "ConvexError(data:") {
+            let payload = text[range.upperBound...]
+                .trimmingCharacters(in: CharacterSet(charactersIn: " )"))
+            if let data = payload.data(using: .utf8),
+               let decoded = try? JSONDecoder().decode(String.self, from: data) {
+                return decoded.trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+            }
+        }
         if let range = text.range(of: "ConvexError: ") {
             return String(text[range.upperBound...]).components(separatedBy: " at ").first ?? text
         }
         return text
     }
+
+    private static let subscriptionRequiredMessage =
+        "This model requires a vlad.chat subscription."
 
     private static func mimeType(for fileExtension: String) -> String {
         switch fileExtension.lowercased() {

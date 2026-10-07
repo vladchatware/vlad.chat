@@ -18,6 +18,7 @@ struct ModelType: Identifiable, Codable, Hashable, Equatable {
     let isMultimodal: Bool
 
     var modelName: String { id }
+    var requiresSubscription: Bool { id != "zai/glm-5.3-flash" }
 
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
     static func == (lhs: ModelType, rhs: ModelType) -> Bool { lhs.id == rhs.id }

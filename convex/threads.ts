@@ -1841,6 +1841,7 @@ const mobileThreadValidator = v.object({
 
 const mobileAccountValidator = v.object({
   isAnonymous: v.boolean(),
+  hasSubscription: v.boolean(),
   name: v.optional(v.string()),
   email: v.optional(v.string()),
   trialMessages: v.number(),
@@ -2104,6 +2105,7 @@ export const getMobileChat = query({
 
 function mobileAccount(user: {
   isAnonymous?: boolean;
+  subscriptionStatus?: string;
   name?: string;
   email?: string;
   trialMessages?: number;
@@ -2112,6 +2114,8 @@ function mobileAccount(user: {
 }) {
   return {
     isAnonymous: Boolean(user.isAnonymous),
+    hasSubscription:
+      user.subscriptionStatus === "active" || user.subscriptionStatus === "past_due",
     ...(user.name === undefined ? {} : { name: user.name }),
     ...(user.email === undefined ? {} : { email: user.email }),
     trialMessages: user.trialMessages ?? 0,

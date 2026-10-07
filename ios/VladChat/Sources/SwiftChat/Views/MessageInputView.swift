@@ -365,6 +365,7 @@ struct MessageInputView: View {
                         Text(model.displayName)
                     }
                 }
+                .disabled(!viewModel.canUse(model))
             }
         } label: {
             HStack(spacing: 5) {
