@@ -43,7 +43,7 @@ for (const scene of captionScenes) {
 
 const toScreen = input => `${input}scale=916:1992:force_original_aspect_ratio=decrease,pad=916:1992:(ow-iw)/2:(oh-ih)/2:color=0x07191f,setsar=1,fps=${fps}`;
 const filters = [
-  `[0:v]trim=start=11.4:end=22.36,setpts=PTS-STARTPTS,${toScreen('')}[chat]`,
+  `[0:v]trim=start=15:end=25.96,setpts=PTS-STARTPTS,${toScreen('')}[chat]`,
   `[0:v]trim=start=30.8:end=36.94,setpts=PTS-STARTPTS,${toScreen('')}[computer]`,
   `[0:v]trim=start=53.6:end=57.22,setpts=PTS-STARTPTS,${toScreen('')}[handoff]`,
   `[1:v]trim=duration=10.62,setpts=PTS-STARTPTS,${toScreen('')}[result]`,
