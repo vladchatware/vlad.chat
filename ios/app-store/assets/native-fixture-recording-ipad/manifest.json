@@ -1,0 +1,35 @@
+[
+  {
+    "attachments": [
+      {
+        "configurationName": "Configuration 1",
+        "deviceId": "C45A9ADF-3C2C-454A-8A58-1A0C486C279D",
+        "deviceName": "Vlad App Store iPad 13-inch",
+        "exportedFileName": "completed-profile-task-ipad.png",
+        "isAssociatedWithFailure": false,
+        "suggestedHumanReadableName": "Completed profile task_0_64BE8BE1-6A6C-41A6-8172-962C95015B88.png",
+        "timestamp": 1791365895.718
+      },
+      {
+        "configurationName": "Configuration 1",
+        "deviceId": "C45A9ADF-3C2C-454A-8A58-1A0C486C279D",
+        "deviceName": "Vlad App Store iPad 13-inch",
+        "exportedFileName": "login-state-computer-inspector-ipad.png",
+        "isAssociatedWithFailure": false,
+        "suggestedHumanReadableName": "Login state in Computer inspector_0_09798FEE-6136-4DB7-B3B5-C473B161728E.png",
+        "timestamp": 1791365866.65
+      },
+      {
+        "configurationName": "Configuration 1",
+        "deviceId": "C45A9ADF-3C2C-454A-8A58-1A0C486C279D",
+        "deviceName": "Vlad App Store iPad 13-inch",
+        "exportedFileName": "native-fixture-screen-recording-ipad.mp4",
+        "isAssociatedWithFailure": false,
+        "suggestedHumanReadableName": "Screen Recording 2026-10-07 at 04.37.16 PM.mp4",
+        "timestamp": 1791365836.444
+      }
+    ],
+    "testIdentifier": "VladChatUITests/testAppStoreComputerUseFixtureProgressesThroughRealNativeUI()",
+    "testIdentifierURL": "test://com.apple.xcode/VladChat/VladChatUITests/VladChatUITests/testAppStoreComputerUseFixtureProgressesThroughRealNativeUI"
+  }
+]
