@@ -525,7 +525,7 @@ final class ChatViewModel: ObservableObject {
             agentRunStatus = nil
             agentRunStatusPresentation = nil
             do {
-                let _: [String: ConvexEncodable?] = try await client.action(
+                let _: DeleteAccountResult = try await client.action(
                     "account:deleteAccount",
                     with: ["confirm": "DELETE"]
                 )
