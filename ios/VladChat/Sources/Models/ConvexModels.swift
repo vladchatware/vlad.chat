@@ -324,6 +324,7 @@ struct MobileThread: Decodable, Identifiable, Equatable, Sendable {
 
 struct MobileAccount: Decodable, Equatable, Sendable {
     let isAnonymous: Bool
+    let hasSubscription: Bool?
     let name: String?
     let email: String?
     let trialMessages: Double
