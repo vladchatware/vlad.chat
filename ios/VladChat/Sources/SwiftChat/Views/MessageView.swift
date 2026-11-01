@@ -443,10 +443,10 @@ struct MessageView: View {
     }
 
     private var hasOrderedResponseParts: Bool {
-        guard message.role == .assistant, let parts = message.responseActivity?.parts else {
+        guard message.role == .assistant, let activity = message.responseActivity else {
             return false
         }
-        return parts.contains { part in
+        return !activity.tools.isEmpty || activity.parts.contains { part in
             switch part.type {
             case .text, .reasoning:
                 return part.text != nil
@@ -1158,6 +1158,41 @@ struct OrderedResponsePartsView: View {
         var items: [OrderedResponseRenderItem] = []
         var pendingComputerTools: [ResponseTool] = []
 
+        // `tools` and `parts` can cross the mobile subscription on adjacent
+        // snapshots. Keep every known call rendered during that handoff, and
+        // prefer the latest tool lifecycle state when both projections have it.
+        var seenToolIDs = Set<String>()
+        var orderedParts = activity.parts.map { part in
+            guard part.type == .tool, let partTool = part.tool else { return part }
+            seenToolIDs.insert(partTool.id)
+            guard let latestTool = activity.tools.first(where: { $0.id == partTool.id }) else {
+                return part
+            }
+            return ResponsePart(
+                id: part.id,
+                type: part.type,
+                text: part.text,
+                state: part.state,
+                sourceId: part.sourceId,
+                url: part.url,
+                title: part.title,
+                tool: latestTool
+            )
+        }
+        orderedParts.append(contentsOf: activity.tools.compactMap { tool in
+            guard seenToolIDs.insert(tool.id).inserted else { return nil }
+            return ResponsePart(
+                id: tool.id,
+                type: .tool,
+                text: nil,
+                state: nil,
+                sourceId: nil,
+                url: nil,
+                title: nil,
+                tool: tool
+            )
+        })
+
         func flushComputerTools() {
             guard let firstTool = pendingComputerTools.first else { return }
             items.append(OrderedResponseRenderItem(
@@ -1168,7 +1203,7 @@ struct OrderedResponsePartsView: View {
             pendingComputerTools.removeAll(keepingCapacity: true)
         }
 
-        for part in activity.parts {
+        for part in orderedParts {
             if part.type == .tool,
                let tool = part.tool,
                tool.isComputerUseTool {
@@ -1215,7 +1250,7 @@ struct OrderedResponsePartsView: View {
     }
 
     private var hasVisiblePartContent: Bool {
-        activity.parts.contains { part in
+        !activity.tools.isEmpty || activity.parts.contains { part in
             switch part.type {
             case .text, .reasoning:
                 return !(part.text?.isEmpty ?? true)
