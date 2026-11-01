@@ -469,6 +469,11 @@ struct DeleteMobileMessagesResult: Decodable, Sendable {
     let deleted: Bool
 }
 
+struct DeleteAccountResult: Decodable, Sendable {
+    let threadsDeleted: Int
+    let threadsFailed: Int
+}
+
 struct StoreRedemptionResult: Decodable, Sendable {
     let tokensGranted: Double
     let alreadyRedeemed: Bool
