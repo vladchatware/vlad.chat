@@ -31,6 +31,13 @@ export type ConsecutiveScreenshotGroup = {
   screenshots: ScreenshotReference[];
 };
 
+export type ScreenshotToolPart = {
+  type: string;
+  toolName?: string;
+  state?: string;
+  output?: unknown;
+};
+
 /** Preserve order while grouping only adjacent successful screenshot calls. */
 export function groupConsecutiveScreenshots(
   references: readonly (ScreenshotReference | undefined)[],
@@ -52,6 +59,27 @@ export function groupConsecutiveScreenshots(
     groups.push({ startIndex, endIndex: index, screenshots });
   }
   return groups;
+}
+
+/** Project successful screenshot tool parts into the groups rendered in chat. */
+export function computerScreenshotGroups(
+  parts: readonly ScreenshotToolPart[],
+): ConsecutiveScreenshotGroup[] {
+  const references = parts.map((part) => {
+    const name = part.toolName ??
+      (part.type.startsWith("tool-") ? part.type.slice(5) : part.type);
+    if (name !== "computer_screenshot" || part.state !== "output-available") {
+      return undefined;
+    }
+
+    const reference = screenshotReference(part.output);
+    if (!reference) return undefined;
+    if (reference.url.startsWith("/") && !reference.url.startsWith("//")) {
+      return reference;
+    }
+    return reference.url.startsWith("https://") ? reference : undefined;
+  });
+  return groupConsecutiveScreenshots(references);
 }
 
 /** Read intrinsic PNG/JPEG dimensions; never substitute a viewport guess. */

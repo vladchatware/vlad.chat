@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" fill="none">
+  <rect width="1280" height="720" rx="24" fill="#F4F4F5"/>
+  <path d="M24 1h1232a23 23 0 0 1 23 23v58H1V24A23 23 0 0 1 24 1Z" fill="#E4E4E7"/>
+  <circle cx="32" cy="42" r="8" fill="#F87171"/><circle cx="60" cy="42" r="8" fill="#FBBF24"/><circle cx="88" cy="42" r="8" fill="#4ADE80"/>
+  <rect x="300" y="22" width="680" height="40" rx="12" fill="#FAFAFA"/>
+  <text x="330" y="48" fill="#52525B" font-family="Arial, sans-serif" font-size="18">https://example.com/search?q=agent+tools</text>
+  <rect y="82" width="1280" height="76" fill="#18181B"/>
+  <text x="72" y="130" fill="#FFFFFF" font-family="Arial, sans-serif" font-size="25" font-weight="700">Example</text>
+  <text x="72" y="246" fill="#18181B" font-family="Arial, sans-serif" font-size="42" font-weight="700">Search results</text>
+  <text x="72" y="286" fill="#52525B" font-family="Arial, sans-serif" font-size="20">Found 3 pages for “agent tools”</text>
+  <rect x="72" y="330" width="1136" height="86" rx="14" fill="#FFFFFF" stroke="#D4D4D8"/>
+  <text x="100" y="366" fill="#6D28D9" font-family="Arial, sans-serif" font-size="21" font-weight="700">Agent tools overview</text>
+  <text x="100" y="394" fill="#71717A" font-family="Arial, sans-serif" font-size="16">Computer use, code runs, and captured screenshots</text>
+  <rect x="72" y="438" width="1136" height="86" rx="14" fill="#FFFFFF" stroke="#D4D4D8"/>
+  <text x="100" y="474" fill="#6D28D9" font-family="Arial, sans-serif" font-size="21" font-weight="700">Computer use guide</text>
+  <text x="100" y="502" fill="#71717A" font-family="Arial, sans-serif" font-size="16">Browser actions and visual verification</text>
+  <rect x="72" y="546" width="1136" height="86" rx="14" fill="#FFFFFF" stroke="#D4D4D8"/>
+  <text x="100" y="582" fill="#6D28D9" font-family="Arial, sans-serif" font-size="21" font-weight="700">Code run reference</text>
+  <text x="100" y="610" fill="#71717A" font-family="Arial, sans-serif" font-size="16">Run TypeScript in the active computer session</text>
+</svg>
