@@ -38,6 +38,7 @@ final class ChatViewModel: ObservableObject {
     @Published private(set) var queuedAgentRuns: [QueuedAgentRun] = []
     @Published var isLinkingAccount = false
     @Published var isLoggingOut = false
+    @Published var isDeletingAccount = false
 
     var messages: [Message] {
         let transcript = currentChat?.messages ?? []
@@ -499,6 +500,38 @@ final class ChatViewModel: ObservableObject {
             agentRunStatusPresentation = nil
             await client.logout()
             do {
+                if case .failure(let error) = await client.login() {
+                    throw error
+                }
+                subscribe(using: client)
+            } catch {
+                attachmentError = Self.userFacingMessage(for: error)
+            }
+        }
+    }
+
+    /// Permanently deletes the signed-in account and every record tied to it.
+    /// Billing is cancelled server-side; local session state is dropped after.
+    func deleteAccount() {
+        guard let client, !isDeletingAccount, !isLoggingOut else { return }
+        isDeletingAccount = true
+        Task { [weak self] in
+            guard let self else { return }
+            defer { isDeletingAccount = false }
+            subscriptionTask?.cancel()
+            usageSubscriptionTask?.cancel()
+            agentRunSubscriptionTask?.cancel()
+            agentRunSubscriptionThreadId = nil
+            agentRunStatus = nil
+            agentRunStatusPresentation = nil
+            do {
+                let _: [String: ConvexEncodable?] = try await client.action(
+                    "account:deleteAccount",
+                    with: ["confirm": "DELETE"]
+                )
+                // The auth session was deleted server-side; reset to a fresh
+                // anonymous session so the app leaves the deleted account.
+                await client.logout()
                 if case .failure(let error) = await client.login() {
                     throw error
                 }

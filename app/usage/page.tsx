@@ -5,6 +5,7 @@ import type { Metadata } from 'next';
 import { ArrowLeftIcon } from 'lucide-react';
 
 import { Progress } from '@/components/ui/progress';
+import { DeleteAccountSection } from '@/components/delete-account';
 import { api } from '@/convex/_generated/api';
 
 export const metadata: Metadata = {
@@ -113,6 +114,8 @@ export default async function UsagePage() {
             </div>
           </div>
         </section>
+
+        <DeleteAccountSection />
       </div>
     </main>
   );
