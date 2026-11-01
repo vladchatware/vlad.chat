@@ -4,6 +4,7 @@ import AuthenticationServices
 struct AccountView: View {
     @ObservedObject var viewModel: ChatViewModel
     @StateObject private var store = StorePurchaseService()
+    @State private var isConfirmingAccountDeletion = false
 
     var body: some View {
         ScrollView {
@@ -39,6 +40,13 @@ struct AccountView: View {
                     .buttonStyle(.plain)
                     .disabled(viewModel.isLoggingOut)
                 }
+
+                DeleteAccountSection(
+                    isDeleting: viewModel.isDeletingAccount,
+                    isBusy: viewModel.isLoggingOut,
+                    isConfirming: $isConfirmingAccountDeletion,
+                    onDelete: { viewModel.deleteAccount() }
+                )
             }
             .padding(.horizontal, 16)
             .padding(.top, 16)
@@ -487,6 +495,57 @@ private struct AppleOAuthButton: UIViewRepresentable {
 
         @objc func didTap() {
             action()
+        }
+    }
+}
+
+/// Destructive account-deletion row shown on the Account screen.
+/// Deletion is permanent and available to anonymous and signed-in accounts
+/// alike (App Store Guideline 5.1.1(v)).
+private struct DeleteAccountSection: View {
+    let isDeleting: Bool
+    let isBusy: Bool
+    @Binding var isConfirming: Bool
+    let onDelete: () -> Void
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Button(role: .destructive) {
+                isConfirming = true
+            } label: {
+                HStack(spacing: 8) {
+                    if isDeleting {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Image(systemName: "trash")
+                            .accessibilityHidden(true)
+                    }
+                    Text(isDeleting ? "Deleting Account" : "Delete Account")
+                }
+                .font(.body.weight(.medium))
+                .foregroundStyle(.red)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(isDeleting || isBusy)
+
+            Text("Permanently deletes your account, conversations, API keys and unused credits. This cannot be undone.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .confirmationDialog(
+            "Delete account?",
+            isPresented: $isConfirming,
+            titleVisibility: .visible
+        ) {
+            Button("Delete Account", role: .destructive, action: onDelete)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Your conversations, API keys and any unused credits will be permanently deleted. Your subscription, if any, will be cancelled.")
         }
     }
 }
