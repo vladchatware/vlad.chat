@@ -200,8 +200,13 @@ struct StreamingScrollE2EView: View {
         guard !didSeedFixture else { return }
         didSeedFixture = true
 
+        // Keep the seeded row taller than the largest supported viewport
+        // (13" iPad, ~1280pt) so the transcript is always scrollable. Without
+        // that, the "reader scrolled into history" premise of the scroll tests
+        // silently does not hold on large screens.
+        let filler = "This paragraph carries enough lines that the transcript stays taller than the largest supported viewport, so moving rows above the reader still has scroll slack to compensate with."
         var paragraphs = (1...10).map { index in
-            "STREAM_ANCHOR_\(String(format: "%02d", index)) — Paragraph \(index) keeps enough readable text on screen to exercise streaming row height and scroll preservation. The reader should remain at this paragraph when the stream completes."
+            "STREAM_ANCHOR_\(String(format: "%02d", index)) — Paragraph \(index) keeps enough readable text on screen to exercise streaming row height and scroll preservation. The reader should remain at this paragraph when the stream completes. \(filler) \(filler) \(filler)"
         }
         let exercisesMarkdownCompletion = ProcessInfo.processInfo.arguments.contains("--ui-test-streaming-markdown-reflow")
         if exercisesMarkdownCompletion {
