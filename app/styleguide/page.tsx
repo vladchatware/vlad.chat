@@ -45,6 +45,10 @@ import {
 import { Loader } from '@/components/ai-elements/loader';
 import { Suggestion, Suggestions } from '@/components/ai-elements/suggestion';
 import { Action, Actions } from '@/components/ai-elements/actions';
+import { CodeRunPanel } from '@/components/ai-elements/code-run-panel';
+import { Checkpoint, CheckpointIcon, CheckpointTrigger } from '@/components/ai-elements/checkpoint';
+import { ComputerScreenshotTool } from '@/components/computer-screenshot-tool';
+import { computerScreenshotGroups, type ScreenshotToolPart } from '@/lib/computer-use/screenshot-contract';
 
 const models = [
   { name: 'GPT 5 mini', value: 'openai/gpt-5-mini' },
@@ -57,9 +61,52 @@ const suggestions = [
   'Notion Templates',
 ];
 
+const screenshotToolParts: ScreenshotToolPart[] = [
+  {
+    type: 'tool-computer_screenshot',
+    toolName: 'computer_screenshot',
+    state: 'output-available',
+    output: {
+      ok: true,
+      op: 'screenshot',
+      screenshotId: 'cu_styleguide_step_1',
+      screenshotUrl: '/computer-use-styleguide.svg',
+      width: 1280,
+      height: 720,
+    },
+  },
+  {
+    type: 'tool-computer_screenshot',
+    toolName: 'computer_screenshot',
+    state: 'output-available',
+    output: {
+      ok: true,
+      op: 'screenshot',
+      screenshotId: 'cu_styleguide_step_2',
+      screenshotUrl: '/computer-use-styleguide-step-2.svg',
+      width: 1280,
+      height: 720,
+    },
+  },
+  {
+    type: 'tool-computer_screenshot',
+    toolName: 'computer_screenshot',
+    state: 'output-available',
+    output: {
+      ok: true,
+      op: 'screenshot',
+      screenshotId: 'cu_styleguide_step_3',
+      screenshotUrl: '/computer-use-styleguide-step-3.svg',
+      width: 1280,
+      height: 720,
+    },
+  },
+];
+
 export default function StyleguidePage() {
   const [input, setInput] = useState('');
   const [model, setModel] = useState<string>(models[0].value);
+  const [checkpointRestored, setCheckpointRestored] = useState(false);
   const { messages, sendMessage, status, error, regenerate } = useChat({
     onError: (error) => {
       console.log('error caught', error);
@@ -458,21 +505,110 @@ $$`}
           </div>
         </section>
 
-        {/* Tools */}
+        {/* Agent Tools */}
         <section className="mb-12">
-          <h2 className="text-2xl font-semibold mb-4">Tool Component</h2>
+          <h2 className="text-2xl font-semibold mb-4">Agent Tools</h2>
           <div className="space-y-4 border rounded-lg p-4 bg-muted/20">
             <Tool defaultOpen={true}>
               <ToolHeader
-                type="tool-notion"
+                type="tool-computer_act"
                 state="output-available"
-                title="Notion Tool"
+                title="computer_act"
               />
               <ToolContent>
-                <ToolInput input={{ query: 'Search for documents' }} />
-                <ToolOutput output="Found 3 documents" errorText="" />
+                <ToolInput input={{ action: { type: 'click', x: 612, y: 348, button: 'left' } }} />
+                <ToolOutput output={{ ok: true, action: 'click', title: 'Example page' }} errorText="" />
               </ToolContent>
             </Tool>
+            <Tool defaultOpen={true}>
+              <ToolHeader
+                type="tool-run_code"
+                state="output-available"
+                title="run_code"
+              />
+              <ToolContent>
+                <CodeRunPanel
+                  description="Read the current page title"
+                  code={'const shot = await tools.computer.screenshot();\nreturn { title: shot.title };'}
+                  fallbackStatus="completed"
+                  run={{
+                    code: 'const shot = await tools.computer.screenshot();\nreturn { title: shot.title };',
+                    description: 'Read the current page title',
+                    status: 'completed',
+                    stdout: '',
+                    stderr: '',
+                    outputTruncated: false,
+                    returnValue: JSON.stringify({ title: 'Example page' }),
+                  }}
+                />
+              </ToolContent>
+            </Tool>
+          </div>
+        </section>
+
+        {/* Computer Screenshot */}
+        <section className="mb-12">
+          <h2 className="mb-4 text-2xl font-semibold">Computer Screenshot</h2>
+          <div className="space-y-6 rounded-lg border bg-muted/20 p-4">
+            <div>
+              <p className="mb-3 text-sm text-muted-foreground">
+                Completed captures render inline with the custom viewer shared by main chat. Consecutive screenshot outputs stack together. The captures below are mock data.
+              </p>
+              {computerScreenshotGroups(screenshotToolParts).map((group) => (
+                <ComputerScreenshotTool
+                  key={group.startIndex}
+                  state="output-available"
+                  screenshots={group.screenshots}
+                />
+              ))}
+            </div>
+            <div className="space-y-3 border-t pt-4">
+              <div>
+                <h3 className="text-sm font-medium">Tool call states</h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Before a screenshot is available, main chat keeps the call in the regular Tool row.
+                </p>
+              </div>
+              <ComputerScreenshotTool
+                state="input-streaming"
+                input={{ sessionId: 'cu_styleguide_pending' }}
+              />
+              <ComputerScreenshotTool
+                state="input-available"
+                input={{ sessionId: 'cu_styleguide_running' }}
+              />
+              <ComputerScreenshotTool
+                state="output-error"
+                input={{ sessionId: 'cu_styleguide_error' }}
+                errorText="Screenshot capture failed."
+              />
+            </div>
+          </div>
+        </section>
+
+        {/* Checkpoint */}
+        <section className="mb-12">
+          <h2 className="text-2xl font-semibold mb-4">Checkpoint</h2>
+          <div className="rounded-lg border bg-muted/20 p-4">
+            <Checkpoint className="max-w-md">
+              <CheckpointIcon aria-label="Checkpoint" />
+              <CheckpointTrigger
+                tooltip="Restore this conversation state"
+                onClick={() => setCheckpointRestored(true)}
+              >
+                Restore checkpoint
+              </CheckpointTrigger>
+            </Checkpoint>
+            <p className="mt-3 text-sm text-muted-foreground">
+              {checkpointRestored ? 'Checkpoint restored.' : 'Marks a conversation state that can be restored.'}
+            </p>
+          </div>
+        </section>
+
+        {/* Generic Tool States */}
+        <section className="mb-12">
+          <h2 className="text-2xl font-semibold mb-4">Tool States</h2>
+          <div className="space-y-4 border rounded-lg p-4 bg-muted/20">
             <Tool defaultOpen={false}>
               <ToolHeader
                 type="tool-notion"
@@ -805,4 +941,3 @@ $$`}
     </div>
   );
 }
-
