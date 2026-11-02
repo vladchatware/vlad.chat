@@ -276,8 +276,8 @@ struct MessageTableView: UIViewControllerRepresentable {
         if messageCountChanged || waitingRowChanged || (chatIdChanged && !isIdConversion) {
             context.coordinator.lastMessageCount = messages.count
             context.coordinator.heightCache.removeAll()
-            context.coordinator.reloadDataPreservingReaderPosition()
-            if !isCompletingStream {
+            let anchoredReader = context.coordinator.reloadDataPreservingReaderPosition()
+            if !isCompletingStream && !anchoredReader {
                 context.coordinator.scheduleFollowLatestIfNeeded()
             }
         } else if !messages.isEmpty {
@@ -520,20 +520,50 @@ struct MessageTableView: UIViewControllerRepresentable {
         /// Preserve the message the reader is looking at when a subscription
         /// inserts/reconciles rows above it. A raw content offset points to a
         /// different message once variable-height rows move.
-        func reloadDataPreservingReaderPosition() {
-            guard let tableView else { return }
-            guard parent.userHasScrolled,
-                  !readerPositionRestoreScheduled,
-                  let anchors = readerAnchors(in: tableView),
-                  !anchors.isEmpty else {
+        ///
+        /// Returns `true` when the viewport was anchored, so callers can skip
+        /// following the latest response for a turn that only prepended history.
+        @discardableResult
+        func reloadDataPreservingReaderPosition() -> Bool {
+            guard let tableView else { return false }
+            let anchors = readerAnchors(in: tableView)
+            let newSequence = parent.messages.map(\.id)
+            // History that arrives above the newest message is not "new
+            // response" content. It must never move the reader, even when a
+            // short transcript has already cleared the scroll intent by
+            // treating itself as pinned to the bottom.
+            let insertsAboveNewestMessage = !renderedMessageSequence.isEmpty
+                && newSequence.count > renderedMessageSequence.count
+                && newSequence.last == renderedMessageSequence.last
+
+            guard !readerPositionRestoreScheduled,
+                  let anchors,
+                  !anchors.isEmpty,
+                  parent.userHasScrolled || insertsAboveNewestMessage else {
                 tableView.reloadData()
-                renderedMessageSequence = parent.messages.map(\.id)
-                return
+                renderedMessageSequence = newSequence
+                return false
             }
 
             readerPositionRestoreScheduled = true
-            tableView.reloadData()
-            renderedMessageSequence = parent.messages.map(\.id)
+            // New rows above the reader have no measured height yet; resolve
+            // them before the reload so the correction below is exact.
+            if let anchorRow = anchors.lazy.compactMap({ anchor in
+                self.parent.messages.firstIndex { $0.id == anchor.id }
+            }).first {
+                primeHeightsForUnmeasuredRows(above: anchorRow, in: tableView)
+            }
+            // Apply the compensating offset in the same run-loop turn as the
+            // reload. Otherwise the reader's row is visibly displaced for the
+            // frames before the async pass lands.
+            UIView.performWithoutAnimation {
+                tableView.reloadData()
+                renderedMessageSequence = newSequence
+                tableView.layoutIfNeeded()
+                restoreReaderPosition(from: anchors, in: tableView)
+                recordVisibleRowHeights(in: tableView)
+            }
+
             DispatchQueue.main.async { [weak self, weak tableView] in
                 guard let self, let tableView else { return }
                 defer { self.readerPositionRestoreScheduled = false }
@@ -542,6 +572,7 @@ struct MessageTableView: UIViewControllerRepresentable {
                 self.restoreReaderPosition(from: anchors, in: tableView)
                 self.recordVisibleRowHeights(in: tableView)
             }
+            return true
         }
 
         /// Self-sizing hosting cells publish height changes after their model
@@ -707,6 +738,32 @@ struct MessageTableView: UIViewControllerRepresentable {
                 }
             }
             return 100
+        }
+
+        /// Rows that have never been displayed have no measured height, so the
+        /// offset correction after a reload would use `estimatedHeightForRowAt`
+        /// for them and land the reader off by that error (a flat 100pt is off
+        /// by the device's line height). Measure the rows above the anchor
+        /// before reloading so the correction is exact.
+        private func primeHeightsForUnmeasuredRows(above row: Int, in tableView: UITableView) {
+            let upperBound = min(row, parent.messages.count)
+            guard upperBound > 0, tableView.bounds.width > 0 else { return }
+
+            for index in 0..<upperBound {
+                let message = parent.messages[index]
+                guard messageHeightCache[message.id] == nil else { continue }
+
+                let cell = self.tableView(tableView, cellForRowAt: IndexPath(row: index, section: 0))
+                cell.bounds = CGRect(x: 0, y: 0, width: tableView.bounds.width, height: 1)
+                cell.layoutIfNeeded()
+                let fittingSize = cell.contentView.systemLayoutSizeFitting(
+                    CGSize(width: tableView.bounds.width, height: 0),
+                    withHorizontalFittingPriority: .required,
+                    verticalFittingPriority: .fittingSizeLevel
+                )
+                guard fittingSize.height > 1 else { continue }
+                messageHeightCache[message.id] = fittingSize.height
+            }
         }
 
         func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
