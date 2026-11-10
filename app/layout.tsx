@@ -42,6 +42,12 @@ export const metadata: Metadata = {
     description: "Chat with Vlad, a software developer with over a decade of experience. Get expert answers, technical insights, and personalized assistance for your coding questions. Start your conversation today.",
     images: ["/opengraph-image"],
   },
+  // Renders <meta name="apple-itunes-app" content="app-id=6812765245, app-argument=https://vlad.chat" />
+  // Enables the iOS Smart App Banner in Safari. iOS app: "Vlad: Personal AI Agent", bundle id chat.vlad.ios.
+  itunes: {
+    appId: "6812765245",
+    appArgument: "https://vlad.chat",
+  },
 };
 
 export default function RootLayout({
