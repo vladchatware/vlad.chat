@@ -15,7 +15,14 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const APP_STORE_APP_ID = "6812765245";
+
 export const metadata: Metadata = {
+  // Drives the iOS Safari smart app banner: tapping it opens the App Store
+  // listing (or the installed app) instead of leaving visitors stranded.
+  itunes: {
+    appId: APP_STORE_APP_ID,
+  },
   title: {
     default: "Chat with Vlad - Expert Developer",
     template: "%s | Vlad.chat",
