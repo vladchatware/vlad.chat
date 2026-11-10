@@ -263,6 +263,10 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
 
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const prevScrollHeight = useRef<number>(0);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const handleScrollElement = useCallback((element: HTMLDivElement | null) => {
+    scrollContainerRef.current = element
+  }, [])
 
   useEffect(() => {
     if (!activeThreadId && defaultThreadId) {
@@ -270,28 +274,37 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
     }
   }, [activeThreadId, defaultThreadId])
 
-  // Scroll-based pagination: load more when scrolled to top
+  // Scroll-based pagination: load more when scrolled to top.
+  // The transcript scrolls inside `Conversation`, not the document (see the
+  // comment there), so pagination reads the container too.
   useEffect(() => {
+    const element = scrollContainerRef.current
+    if (!element) return
+
     const handleScroll = () => {
       // Only trigger if near top (within 100px) and we can load more
-      if (window.scrollY < 100 && paginationStatus === 'CanLoadMore' && !isLoadingMore) {
+      if (element.scrollTop < 100 && paginationStatus === 'CanLoadMore' && !isLoadingMore) {
         setIsLoadingMore(true);
-        prevScrollHeight.current = document.documentElement.scrollHeight;
+        prevScrollHeight.current = element.scrollHeight;
         loadMore(50);
       }
     };
 
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
+    element.addEventListener('scroll', handleScroll, { passive: true });
+    return () => element.removeEventListener('scroll', handleScroll);
   }, [paginationStatus, loadMore, isLoadingMore]);
 
   // After loading more, maintain scroll position
   useEffect(() => {
     if (isLoadingMore && paginationStatus !== 'LoadingMore') {
       requestAnimationFrame(() => {
-        const newScrollHeight = document.documentElement.scrollHeight;
-        const scrollDiff = newScrollHeight - prevScrollHeight.current;
-        window.scrollTo(0, window.scrollY + scrollDiff);
+        const element = scrollContainerRef.current
+        if (!element) {
+          setIsLoadingMore(false)
+          return
+        }
+        const scrollDiff = element.scrollHeight - prevScrollHeight.current;
+        element.scrollTop = element.scrollTop + scrollDiff;
         setIsLoadingMore(false);
       });
     }
@@ -542,7 +555,11 @@ export const ChatBotDemo = ({ autoMessage }: ChatBotDemoProps = {}) => {
       </div>
       <div className="">
         <div className="md:px-72">
-          <Conversation className="">
+          <Conversation
+            className="h-[100dvh]"
+            onScrollElement={handleScrollElement}
+            anchorKey={activeThreadId}
+          >
             <ConversationContent>
               <div>
                 <Message from="assistant">
