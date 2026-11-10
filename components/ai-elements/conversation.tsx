@@ -27,39 +27,78 @@ export const useScrollContext = () => useContext(ScrollContext);
 
 export type ConversationProps = ComponentProps<"div"> & {
   children: ReactNode;
+  /**
+   * Receives the transcript scroll container so callers can drive history
+   * pagination against it.
+   */
+  onScrollElement?: (element: HTMLDivElement | null) => void;
+  /**
+   * Change this (typically the active thread id) to re-anchor the transcript to
+   * the newest message without animating.
+   */
+  anchorKey?: string | null;
 };
 
+const AT_BOTTOM_THRESHOLD = 150;
+
+/**
+ * The transcript scrolls inside this element, never the document.
+ *
+ * A document-level scroll is what collapses iOS Safari's Smart App Banner
+ * (`apple-itunes-app`): Safari minimizes the banner on any downward page
+ * scroll, so auto-scrolling the window on history load hid the strip before a
+ * visitor could ever tap it. Keeping the scroll local leaves the document at
+ * scroll 0, which keeps the banner pinned.
+ */
 export const Conversation = ({
   className,
   children,
+  onScrollElement,
+  anchorKey,
   ...props
 }: ConversationProps) => {
   const [isAtBottom, setIsAtBottom] = useState(true);
   const userScrolledUp = useRef(false);
+  const scrollElementRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  // The first content mutation after mount / thread switch is the history
+  // paint: jump to the bottom instantly instead of animating the history away.
+  const hasAnchored = useRef(false);
+
+  const setScrollElement = useCallback(
+    (element: HTMLDivElement | null) => {
+      scrollElementRef.current = element;
+      onScrollElement?.(element);
+    },
+    [onScrollElement]
+  );
 
   const checkIfAtBottom = useCallback(() => {
-    const threshold = 150; // Increased threshold for better detection
-    const scrollTop = window.scrollY;
-    const windowHeight = window.innerHeight;
-    const documentHeight = document.documentElement.scrollHeight;
-    return scrollTop + windowHeight >= documentHeight - threshold;
+    const element = scrollElementRef.current;
+    if (!element) return true;
+    return (
+      element.scrollTop + element.clientHeight >=
+      element.scrollHeight - AT_BOTTOM_THRESHOLD
+    );
   }, []);
 
   const scrollToBottom = useCallback(() => {
+    const element = scrollElementRef.current;
     userScrolledUp.current = false;
-    window.scrollTo({
-      top: document.documentElement.scrollHeight,
-      behavior: "smooth",
-    });
+    hasAnchored.current = true;
+    if (!element || element.scrollHeight <= element.clientHeight) return;
+    element.scrollTo({ top: element.scrollHeight, behavior: "smooth" });
   }, []);
 
   // Track user scroll
   useEffect(() => {
-    let lastScrollTop = window.scrollY;
+    const element = scrollElementRef.current;
+    if (!element) return;
+
+    let lastScrollTop = element.scrollTop;
 
     const handleScroll = () => {
-      const currentScrollTop = window.scrollY;
+      const currentScrollTop = element.scrollTop;
       const atBottom = checkIfAtBottom();
       const scrollingDown = currentScrollTop > lastScrollTop;
       const scrollingUp = currentScrollTop < lastScrollTop;
@@ -83,24 +122,64 @@ export const Conversation = ({
       lastScrollTop = currentScrollTop;
     };
 
-    window.addEventListener("scroll", handleScroll, { passive: true });
-    return () => window.removeEventListener("scroll", handleScroll);
+    element.addEventListener("scroll", handleScroll, { passive: true });
+    return () => element.removeEventListener("scroll", handleScroll);
   }, [checkIfAtBottom]);
+
+  // Re-anchor when the caller switches threads: reset the intent flags so the
+  // first paint of the new thread jumps to the newest message instantly.
+  const isFirstAnchor = useRef(true);
+  useEffect(() => {
+    if (isFirstAnchor.current) {
+      isFirstAnchor.current = false;
+      return;
+    }
+
+    hasAnchored.current = false;
+    userScrolledUp.current = false;
+    setIsAtBottom(true);
+  }, [anchorKey]);
+
+  // Keep the transcript pinned to the newest message when the viewport itself
+  // resizes (iOS keyboard, orientation change) unless the user scrolled up.
+  useEffect(() => {
+    const element = scrollElementRef.current;
+    if (!element || typeof ResizeObserver === "undefined") return;
+
+    const observer = new ResizeObserver(() => {
+      if (userScrolledUp.current) return;
+      if (element.scrollHeight <= element.clientHeight) return;
+      element.scrollTop = element.scrollHeight;
+    });
+
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
 
   // Auto-scroll when content changes (if user hasn't scrolled up)
   useEffect(() => {
-    if (!contentRef.current) return;
+    const content = contentRef.current;
+    if (!content) return;
 
     const observer = new MutationObserver(() => {
-      if (!userScrolledUp.current) {
-        window.scrollTo({
-          top: document.documentElement.scrollHeight,
-          behavior: "smooth",
-        });
+      const element = scrollElementRef.current;
+      if (!element || userScrolledUp.current) return;
+
+      // Nothing overflows (empty or short thread): scrolling would be a no-op
+      // that only produces spurious scroll events.
+      if (element.scrollHeight <= element.clientHeight) return;
+
+      if (!hasAnchored.current) {
+        hasAnchored.current = true;
+        element.scrollTop = element.scrollHeight;
+        setIsAtBottom(true);
+        return;
       }
+
+      element.scrollTo({ top: element.scrollHeight, behavior: "smooth" });
     });
 
-    observer.observe(contentRef.current, {
+    observer.observe(content, {
       childList: true,
       subtree: true,
       characterData: true,
@@ -112,12 +191,12 @@ export const Conversation = ({
   return (
     <ScrollContext.Provider value={{ isAtBottom, scrollToBottom }}>
       <div
-        ref={contentRef}
-        className={cn("relative", className)}
+        ref={setScrollElement}
+        className={cn("relative overflow-y-auto overscroll-contain", className)}
         role="log"
         {...props}
       >
-        {children}
+        <div ref={contentRef}>{children}</div>
       </div>
     </ScrollContext.Provider>
   );
